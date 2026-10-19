@@ -69,7 +69,7 @@
       "ok": true
     }
   },
-  "estado_atual": "instalada a 1.4.2 desde 19/10/2026, 18h29 (cópia em ~/.agents/skills, junção em ~/.claude/skills); versões anteriores (1.3.0 a 1.4.1) guardadas em ~/.agents/skills-anteriores/",
+  "estado_atual": "instalada a 1.4.3 desde 19/10/2026, 20h05 (cópia em ~/.agents/skills, junção em ~/.claude/skills); versões anteriores (1.3.0 a 1.4.2) guardadas em ~/.agents/skills-anteriores/",
   "descoberta_pelo_host": "observada: logo após a instalação, o Claude Code desta sessão (aplicativo desktop, aba Code) passou a listar a skill fundacao-ia-multiprojetos entre as skills disponíveis, com a descrição do SKILL.md 1.3.0",
   "nao_observado": "acionamento real da skill instalada por um pedido de usuário; descoberta pelo Codex",
   "atualizacao_1_3_2": {
@@ -418,5 +418,108 @@
     "descoberta_pelo_host": "observada: logo após a atualização, esta sessão do Claude Code recebeu de novo a lista de skills com fundacao-ia-multiprojetos e a descrição do SKILL.md; a descrição é a mesma desde a 1.2.0, então a lista não distingue a versão, que foi conferida no SKILL.md lido pela junção",
     "nao_observado": "acionamento da skill 1.4.2 instalada por um pedido de usuário; descoberta pelo Codex; envio ao claude.ai",
     "registros": "fundacao-ia-multiprojetos-workspace/auditoria-1.4.1/execucoes/11-instalacao-1.4.2/"
+  },
+  "atualizacao_1_4_3": {
+    "executado_em": "2026-10-19T20:05-03:00",
+    "versao": "1.4.3",
+    "autorizacao": "OK do titular nesta sessão, em 19/10/2026 (\"Sim, atualize a cópia instalada para a 1.4.3 com instalar_skill.py atualizar --sha256 e confira com verificar --origem.\")",
+    "pacote": "entrega/dist/fundacao-ia-multiprojetos.skill",
+    "sha256_pacote": "a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b",
+    "instalador": "entrega/instalar_skill.py da 1.4.3 (sha256 0f7a9416ebf532b5e6abc88e09a25569cbd65ca0d60b554ed1289388c92ce3c5): hash do pacote conferido antes de extrair e troca por duas renomeações com marca",
+    "comandos": [
+      "python -B entrega/instalar_skill.py verificar --origem entrega/dist/anteriores/1.4.2/fundacao-ia-multiprojetos.skill",
+      "python -B entrega/instalar_skill.py atualizar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b",
+      "python -B entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b"
+    ],
+    "antes_verificar_contra_1_4_2": {
+      "copia": "C:\\Users\\<usuario>\\.agents\\skills\\fundacao-ia-multiprojetos",
+      "copia_existe": true,
+      "ligacao": "C:\\Users\\<usuario>\\.claude\\skills\\fundacao-ia-multiprojetos",
+      "ligacao_ok": true,
+      "skill_md_legivel_pela_ligacao": true,
+      "arquivos": 121,
+      "divergentes": [],
+      "ok": true,
+      "informativo": {
+        "sqlite": "3.49.1",
+        "fts5_unicode61_remove_diacritics_2": true,
+        "nota": "o kit da fundação precisa desse FTS5; não entra em ok"
+      },
+      "integridade_do_pacote": {
+        "sha256": "6b61af725b1bebeb5a6456ed83a36987282c56bc7a37820bbfcb8be65468d389",
+        "conferido_com": [
+          "SHA256SUMS.txt"
+        ],
+        "ok": true
+      }
+    },
+    "atualizar": {
+      "copia": "C:\\Users\\<usuario>\\.agents\\skills\\fundacao-ia-multiprojetos",
+      "copia_existe": true,
+      "ligacao": "C:\\Users\\<usuario>\\.claude\\skills\\fundacao-ia-multiprojetos",
+      "ligacao_ok": true,
+      "skill_md_legivel_pela_ligacao": true,
+      "arquivos": 123,
+      "divergentes": [],
+      "ok": true,
+      "informativo": {
+        "sqlite": "3.49.1",
+        "fts5_unicode61_remove_diacritics_2": true,
+        "nota": "o kit da fundação precisa desse FTS5; não entra em ok"
+      },
+      "passos": [
+        "versão anterior guardada em C:\\Users\\<usuario>\\.agents\\skills-anteriores\\fundacao-ia-multiprojetos-20261019-200532",
+        "cópia instalada",
+        "ligacao-ja-existia"
+      ],
+      "integridade_do_pacote": {
+        "sha256": "a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b",
+        "conferido_com": [
+          "--sha256",
+          "SHA256SUMS.txt"
+        ],
+        "ok": true
+      }
+    },
+    "depois_verificar_contra_1_4_3": {
+      "copia": "C:\\Users\\<usuario>\\.agents\\skills\\fundacao-ia-multiprojetos",
+      "copia_existe": true,
+      "ligacao": "C:\\Users\\<usuario>\\.claude\\skills\\fundacao-ia-multiprojetos",
+      "ligacao_ok": true,
+      "skill_md_legivel_pela_ligacao": true,
+      "arquivos": 123,
+      "divergentes": [],
+      "ok": true,
+      "informativo": {
+        "sqlite": "3.49.1",
+        "fts5_unicode61_remove_diacritics_2": true,
+        "nota": "o kit da fundação precisa desse FTS5; não entra em ok"
+      },
+      "integridade_do_pacote": {
+        "sha256": "a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b",
+        "conferido_com": [
+          "--sha256",
+          "SHA256SUMS.txt"
+        ],
+        "ok": true
+      }
+    },
+    "juncao": {
+      "isjunction": true,
+      "realpath": "C:\\Users\\<usuario>\\.agents\\skills\\fundacao-ia-multiprojetos"
+    },
+    "versao_pela_juncao": "version: \"1.4.3\"",
+    "licenca_na_copia": "license: MIT (texto integral em LICENSE.txt, na raiz desta skill); LICENSE.txt presente na cópia",
+    "copia_guardada_1_4_2": {
+      "pasta": [
+        "fundacao-ia-multiprojetos-20261019-200532"
+      ],
+      "confere_com_o_pacote_1_4_2": true,
+      "arquivos": 121
+    },
+    "area_de_preparo_sobrou": false,
+    "registros": "fundacao-ia-multiprojetos-workspace/auditoria-final-1.4.2/execucoes/28-instalacao-1.4.3/",
+    "nao_verificado": "acionamento da 1.4.3 instalada pelo host num pedido real (a listagem pelo Claude Code foi conferida só até a 1.4.2)",
+    "descoberta_pelo_host": "o Claude Code recarregou o catálogo na própria sessão da atualização e passou a listar a skill (descrição inalterada); acionamento num pedido real não ensaiado"
   }
 }
