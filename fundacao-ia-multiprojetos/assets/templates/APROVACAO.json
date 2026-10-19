@@ -1,0 +1,17 @@
+{
+  "schema_version": "fundacao.approval/1",
+  "approval_id": null,
+  "project_id": "juridico-lab",
+  "task_id": null,
+  "artifact_id": null,
+  "artifact_version": null,
+  "content_hash": null,
+  "hash_alg": "sha256-canonico (UTF-8, LF, NFC; JSON RFC 8785)",
+  "approved_action": "gerar_minuta_de_contrato",
+  "approved_by": null,
+  "approved_at": null,
+  "expires_at": null,
+  "revoked_at": null,
+  "decision": "pending",
+  "notes": "approved_by é preenchido pela sessão autenticada, nunca pela IA. Compare o hash no momento do uso: se o conteúdo mudou, a aprovação não cobre a nova versão. Aprovar gerar minuta não autoriza assinar, enviar ou protocolar."
+}

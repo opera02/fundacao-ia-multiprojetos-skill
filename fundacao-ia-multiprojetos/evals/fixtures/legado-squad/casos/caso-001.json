@@ -1,0 +1,12 @@
+{
+  "case_id": "AUR-001",
+  "qualificacao": "",
+  "endereco_reu": "",
+  "competencia": "",
+  "facts": [
+    {"text": "Compra da estante Aurora por R$ 1.200,00 em 03/08/2026", "doc": "D1"},
+    {"text": "Pagamento integral por Pix em 03/08/2026", "doc": "D2"},
+    {"text": "Vendedora informou indisponibilidade em 13/08/2026", "doc": "D3"},
+    {"text": "Houve confirmação por telefone", "doc": ""}
+  ]
+}

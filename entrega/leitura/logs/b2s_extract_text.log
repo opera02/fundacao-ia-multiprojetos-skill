@@ -1,0 +1,26 @@
+book-to-skill · turns a document into a structured agent skill
+free and MIT-licensed · maintained in personal time · github.com/virgiliojr94/book-to-skill
+
+Extracting PDF: C:\Users\<usuario>\AppData\Local\Temp\claude\E--Desenvolvimento\9d72b597-bb95-484b-b06b-78b0927a4d01\scratchpad\inputs\livro_2.0.pdf
+Mode: text — using pdftotext...
+Trying pdftotext... OK
+  chapters: 3 (numeric)
+Extracting text document: C:\Users\<usuario>\AppData\Local\Temp\claude\E--Desenvolvimento\9d72b597-bb95-484b-b06b-78b0927a4d01\scratchpad\inputs\correcoes_2.0_para_3.0.md
+  chapters: 11 (structural)
+
+Extraction complete:
+   Sources : 2 processed
+   Size    : 0.87 MB
+   Total Pages: 219
+   Words   : 84,585
+   Tokens  : ~112K
+   Chapters: 3 detected overall (numeric)
+   ToC     : not detected
+   WARN    : No table of contents detected — chapter mapping in Step 3 will rely on heading scan only, which may miss or duplicate sections.
+
+   Workdir -> C:\Users\<usuario>\AppData\Local\Temp\claude\E--Desenvolvimento\9d72b597-bb95-484b-b06b-78b0927a4d01\scratchpad\b2s_work_text
+   Text    -> C:\Users\<usuario>\AppData\Local\Temp\claude\E--Desenvolvimento\9d72b597-bb95-484b-b06b-78b0927a4d01\scratchpad\b2s_work_text\full_text.txt
+   Meta    -> C:\Users\<usuario>\AppData\Local\Temp\claude\E--Desenvolvimento\9d72b597-bb95-484b-b06b-78b0927a4d01\scratchpad\b2s_work_text\metadata.json
+
+   book-to-skill is free, and maintained in personal time.
+   If it saves you work, you can fund its upkeep: github.com/sponsors/virgiliojr94

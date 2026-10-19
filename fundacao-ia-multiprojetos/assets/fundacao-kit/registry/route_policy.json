@@ -1,0 +1,40 @@
+{
+  "schema_version": "fundacao.route/1",
+  "titular": null,
+  "observacao": "Preencha 'titular' com a identidade do assinante. Se outra pessoa usar a fundação, mantenha cli_assinatura desligada. Habilite rotas somente após confirmar autenticação, termos vigentes e orçamento (fontes datadas em references/fontes-verificadas.md da skill). Tarefas 'sigiloso' usam só a rota local: incluir rota externa exige o checklist de dados reais e decisão registrada do titular (references/privacidade-sigilo.md da skill).",
+  "routes": {
+    "cli_assinatura": {
+      "enabled": false,
+      "only_titular": true
+    },
+    "api_creditos": {
+      "enabled": false,
+      "only_titular": false,
+      "max_usd": null
+    },
+    "api_paga": {
+      "enabled": false,
+      "only_titular": false,
+      "max_usd": null
+    },
+    "local": {
+      "enabled": false,
+      "only_titular": false
+    },
+    "simulado": {
+      "enabled": true,
+      "only_titular": false
+    }
+  },
+  "task_routes": {
+    "default": [
+      "cli_assinatura",
+      "api_creditos",
+      "local",
+      "simulado"
+    ],
+    "sigiloso": [
+      "local"
+    ]
+  }
+}

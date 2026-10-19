@@ -1,0 +1,22 @@
+[
+  {"query": "quero montar uma base única pra todos os meus projetos de IA (jurídico, software, marketing) com memória e RAG separados por projeto — por onde começo? já tenho o Claude Code e o Codex instalados aqui no notebook", "should_trigger": true},
+  {"query": "tenho um squad de agentes que gera petições numa pasta E:\\projetos\\squad-peticoes; quero plugar ele na minha fundação de IA sem quebrar nada do que já funciona", "should_trigger": true},
+  {"query": "cria um projeto novo chamado atendimento-lab dentro da minha fundação de IA multiprojetos, com instruções e contrato de entregas a partir do modelo", "should_trigger": true},
+  {"query": "faz uma auditoria da minha fundação de IA: quero saber o que está implementado e ativo, o que é só simulação e o que está bloqueado, com evidência de cada um", "should_trigger": true},
+  {"query": "minha execução de tarefa no orquestrador caiu no meio, como retomo sem repetir as chamadas pagas que já foram feitas? é aquela base com sqlite e recibos por etapa", "should_trigger": true},
+  {"query": "quero ligar o CAG de verdade (reaproveitar o KV cache do modelo local) no meu laboratório jurídico e medir modo frio vs quente", "should_trigger": true},
+  {"query": "preciso garantir que o projeto do cliente A nunca veja memória, RAG ou cache do cliente B na minha plataforma de agentes; implementa a camada de autorização e os testes negativos", "should_trigger": true},
+  {"query": "atualizei o modelo de projeto da fundação (novos arquivos de instrução); como migro as instâncias antigas sem perder os dados delas?", "should_trigger": true},
+  {"query": "configura rotas com Claude e Codex como provedores, com fallback autorizado e teto de chamadas, no núcleo de IA que uso pra vários projetos", "should_trigger": true},
+  {"query": "o banco da fundação corrompeu; restaura o backup de ontem sem ressuscitar o documento que foi retirado da base de conhecimento depois do backup", "should_trigger": true},
+  {"query": "redige uma petição inicial de indenização por atraso na entrega de uma estante comprada pela internet, com base nesses fatos que vou colar", "should_trigger": false},
+  {"query": "calcula os honorários de êxito de 20% sobre R$ 880,00 e divide em três parcelas", "should_trigger": false},
+  {"query": "transforma esse PDF de livro de gestão em uma skill pra eu usar no Claude", "should_trigger": false},
+  {"query": "cria uma skill simples que formata mensagens de commit no padrão conventional commits", "should_trigger": false},
+  {"query": "o que é RAG e qual a diferença pra fine-tuning? só quero entender o conceito, sem implementar nada", "should_trigger": false},
+  {"query": "conserta esse erro no meu script python: ModuleNotFoundError: No module named 'yaml'", "should_trigger": false},
+  {"query": "configura um servidor MCP do GitHub no meu Claude Code pra eu ler issues", "should_trigger": false},
+  {"query": "audita essa skill jurídica que baixei de um repositório antes de eu instalar", "should_trigger": false},
+  {"query": "faz um dashboard em React com as métricas de vendas do trimestre", "should_trigger": false},
+  {"query": "escreve um hook do Claude Code que roda o prettier depois de cada edição de arquivo", "should_trigger": false}
+]

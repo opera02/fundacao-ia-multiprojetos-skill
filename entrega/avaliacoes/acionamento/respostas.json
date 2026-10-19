@@ -1,0 +1,22 @@
+{
+  "1": {"skill": "brainstorming", "motivo": "Fazer um dashboard em React é construir componentes novos, e brainstorming é a única skill do catálogo voltada a trabalho criativo antes de implementar, já que nenhuma outra cobre frontend ou visualização."},
+  "2": {"skill": "fundacao-ia-multiprojetos", "motivo": "Pede para criar um projeto a partir do modelo dentro da fundação de IA multiprojetos, caso citado de forma explícita na descrição."},
+  "3": {"skill": "nenhuma", "motivo": "É só uma dependência ausente (instalar o PyYAML), e nenhuma skill do catálogo se aplica."},
+  "4": {"skill": "fundacao-ia-multiprojetos", "motivo": "Trata de isolar memória, RAG e cache entre projetos numa plataforma multiprojetos, o que significa estender a fundação com autorização e testes negativos."},
+  "5": {"skill": "fundacao-ia-multiprojetos", "motivo": "Configurar dois provedores com fallback autorizado e teto de chamadas no núcleo multiprojetos se encaixa em 'dois ou mais provedores' e 'consumo' da fundação."},
+  "6": {"skill": "fundacao-ia-multiprojetos", "motivo": "O usuário quer implantar do zero uma base única para vários projetos de IA, com memória e RAG separados por projeto, que é exatamente a fundação."},
+  "7": {"skill": "fundacao-ia-multiprojetos", "motivo": "Ativar o CAG real num projeto do laboratório e medir os modos frio e quente é estender um componente (CAG) que a fundação cobre."},
+  "8": {"skill": "nenhuma", "motivo": "É um cálculo simples de honorários avulsos, que a descrição da fundação exclui expressamente, e nenhuma outra skill se aplica."},
+  "9": {"skill": "skill-creator", "motivo": "Criar uma skill isolada é o caso do skill-creator, e a fundação exclui esse uso expressamente."},
+  "10": {"skill": "fundacao-ia-multiprojetos", "motivo": "Auditar a fundação separando o que está ativo, o que é simulação e o que está bloqueado, com evidência, é um caso de auditoria previsto na descrição."},
+  "11": {"skill": "fundacao-ia-multiprojetos", "motivo": "Restaurar o backup do banco da fundação respeitando o que foi retirado da base de conhecimento depois dele cai em 'backup e restauração' da fundação."},
+  "12": {"skill": "book-to-skill", "motivo": "Converter um livro em PDF numa skill para usar no Claude é exatamente o que o book-to-skill faz."},
+  "13": {"skill": "hook-development", "motivo": "Um hook PostToolUse que roda o prettier depois de cada edição é o caso de uso direto do hook-development."},
+  "14": {"skill": "nenhuma", "motivo": "Redigir peças está excluído da fundação, não há skill de petições no catálogo e o pedido não exige arquivo Word."},
+  "15": {"skill": "nenhuma", "motivo": "É só uma explicação de conceito, sem implementar nada, o que a fundação exclui e nenhuma outra skill cobre."},
+  "16": {"skill": "fundacao-ia-multiprojetos", "motivo": "Retomar uma execução interrompida do orquestrador sem repetir chamadas pagas é a 'orquestração com retomada' da fundação."},
+  "17": {"skill": "fundacao-ia-multiprojetos", "motivo": "Migrar as instâncias antigas depois de atualizar o modelo de projeto da fundação é um caso de atualização e manutenção dela."},
+  "18": {"skill": "fundacao-ia-multiprojetos", "motivo": "Plugar um squad de agentes existente na fundação sem quebrar nada é diagnosticar e migrar um projeto existente, caso citado na descrição."},
+  "19": {"skill": "mcp-integration", "motivo": "Configurar um servidor MCP do GitHub no Claude Code corresponde aos gatilhos 'add MCP server' e 'integrate MCP' do mcp-integration."},
+  "20": {"skill": "skills-qa", "motivo": "Avaliar se uma skill baixada de um repositório é confiável antes de instalar é o uso declarado do skills-qa."}
+}

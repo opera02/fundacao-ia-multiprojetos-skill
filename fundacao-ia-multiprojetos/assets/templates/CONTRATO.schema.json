@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "fundacao.task_request/1",
+  "title": "Pedido de tarefa (contrato didático da fundação)",
+  "description": "Modelo de contrato entre conversa e execução (livro A31). A identidade NÃO faz parte do pedido: vem da sessão autenticada. Valide estrutura com este schema e regras de negócio no código.",
+  "type": "object",
+  "required": ["schema_version", "request_id", "project_id", "operation", "input_artifacts", "expected_output"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "fundacao.task_request/1"},
+    "request_id": {"type": "string", "pattern": "^req_[0-9a-f-]{36}$"},
+    "project_id": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$",
+                   "description": "Destino solicitado; é filtro, não credencial."},
+    "operation": {"type": "string", "enum": ["iniciar_tarefa", "consultar_estado", "listar_artefatos", "retomar_execucao", "revisar_contrato"]},
+    "input_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "revision"],
+        "additionalProperties": false,
+        "properties": {"id": {"type": "string"}, "revision": {"type": "integer", "minimum": 1}}
+      }
+    },
+    "expected_output": {"type": "string"},
+    "resume_run_id": {"type": ["string", "null"]}
+  }
+}

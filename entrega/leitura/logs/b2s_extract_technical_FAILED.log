@@ -1,0 +1,90 @@
+book-to-skill · turns a document into a structured agent skill
+free and MIT-licensed · maintained in personal time · github.com/virgiliojr94/book-to-skill
+
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+C:\Users\<usuario>\AppData\Local\Programs\Python\Python312\Lib\site-packages\huggingface_hub\file_download.py:138: UserWarning: `huggingface_hub` cache-system uses symlinks by default to efficiently store duplicated files but your machine does not support them in C:\Users\<usuario>\.cache\huggingface\hub\models--docling-project--docling-layout-heron. Caching files will still work but in a degraded version that might require more space on your disk. This warning can be disabled by setting the `HF_HUB_DISABLE_SYMLINKS_WARNING` environment variable. For more details, see https://huggingface.co/docs/huggingface_hub/how-to-cache#limitations.
+To support symlinks on Windows, you either need to activate Developer Mode or to run Python as an administrator. In order to activate developer mode, see this article: https://docs.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development
+  warnings.warn(message)
+Extracting PDF: C:\Users\<usuario>\AppData\Local\Temp\claude\E--Desenvolvimento\9d72b597-bb95-484b-b06b-78b0927a4d01\scratchpad\inputs\livro_2.0.pdf
+Mode: technical — using Docling (layout-aware)...
+Loading weights:   0%|          | 0/770 [00:00<?, ?it/s]Loading weights:  90%|████████▉ | 690/770 [00:00<00:00, 6842.81it/s]Loading weights: 100%|██████████| 770/770 [00:00<00:00, 6940.72it/s]
+C:\Users\<usuario>\AppData\Local\Programs\Python\Python312\Lib\site-packages\huggingface_hub\file_download.py:138: UserWarning: `huggingface_hub` cache-system uses symlinks by default to efficiently store duplicated files but your machine does not support them in C:\Users\<usuario>\.cache\huggingface\hub\models--docling-project--docling-models. Caching files will still work but in a degraded version that might require more space on your disk. This warning can be disabled by setting the `HF_HUB_DISABLE_SYMLINKS_WARNING` environment variable. For more details, see https://huggingface.co/docs/huggingface_hub/how-to-cache#limitations.
+To support symlinks on Windows, you either need to activate Developer Mode or to run Python as an administrator. In order to activate developer mode, see this article: https://docs.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development
+  warnings.warn(message)
+Stage preprocess failed for run 1, pages [16]: std::bad_alloc
+Stage preprocess failed for run 1, pages [17]: std::bad_alloc
+Stage preprocess failed for run 1, pages [18]: std::bad_alloc
+Stage preprocess failed for run 1, pages [19]: std::bad_alloc
+Stage preprocess failed for run 1, pages [20]: std::bad_alloc
+Stage preprocess failed for run 1, pages [21]: std::bad_alloc
+Stage preprocess failed for run 1, pages [22]: std::bad_alloc
+Stage preprocess failed for run 1, pages [23]: std::bad_alloc
+Stage preprocess failed for run 1, pages [24]: std::bad_alloc
+Stage preprocess failed for run 1, pages [25]: std::bad_alloc
+Stage preprocess failed for run 1, pages [26]: std::bad_alloc
+Stage preprocess failed for run 1, pages [27]: std::bad_alloc
+Stage preprocess failed for run 1, pages [28]: std::bad_alloc
+Stage preprocess failed for run 1, pages [29]: std::bad_alloc
+Stage preprocess failed for run 1, pages [30]: std::bad_alloc
+Stage preprocess failed for run 1, pages [31]: std::bad_alloc
+Stage preprocess failed for run 1, pages [32]: std::bad_alloc
+Stage preprocess failed for run 1, pages [33]: std::bad_alloc
+Stage preprocess failed for run 1, pages [34]: std::bad_alloc
+Stage preprocess failed for run 1, pages [35]: std::bad_alloc
+Stage preprocess failed for run 1, pages [36]: std::bad_alloc
+Stage preprocess failed for run 1, pages [37]: std::bad_alloc
+Stage preprocess failed for run 1, pages [38]: std::bad_alloc
+Stage preprocess failed for run 1, pages [39]: std::bad_alloc
+Stage preprocess failed for run 1, pages [40]: std::bad_alloc
+Stage preprocess failed for run 1, pages [41]: std::bad_alloc
+Stage preprocess failed for run 1, pages [42]: std::bad_alloc
+Stage preprocess failed for run 1, pages [43]: std::bad_alloc
+Stage preprocess failed for run 1, pages [44]: std::bad_alloc
+Stage preprocess failed for run 1, pages [45]: std::bad_alloc
+Stage preprocess failed for run 1, pages [46]: std::bad_alloc
+Stage preprocess failed for run 1, pages [47]: std::bad_alloc
+Stage preprocess failed for run 1, pages [48]: std::bad_alloc
+Stage preprocess failed for run 1, pages [49]: std::bad_alloc
+Stage preprocess failed for run 1, pages [50]: std::bad_alloc
+Stage preprocess failed for run 1, pages [51]: std::bad_alloc
+Stage preprocess failed for run 1, pages [52]: std::bad_alloc
+Stage preprocess failed for run 1, pages [53]: std::bad_alloc
+Stage preprocess failed for run 1, pages [54]: std::bad_alloc
+Stage preprocess failed for run 1, pages [55]: std::bad_alloc
+Stage preprocess failed for run 1, pages [56]: std::bad_alloc
+Stage preprocess failed for run 1, pages [57]: std::bad_alloc
+Stage preprocess failed for run 1, pages [58]: std::bad_alloc
+Stage preprocess failed for run 1, pages [59]: std::bad_alloc
+Stage preprocess failed for run 1, pages [61]: std::bad_alloc
+Stage preprocess failed for run 1, pages [62]: std::bad_alloc
+Stage preprocess failed for run 1, pages [63]: std::bad_alloc
+Stage preprocess failed for run 1, pages [64]: std::bad_alloc
+Stage preprocess failed for run 1, pages [65]: std::bad_alloc
+Stage preprocess failed for run 1, pages [66]: std::bad_alloc
+Stage preprocess failed for run 1, pages [67]: std::bad_alloc
+Stage preprocess failed for run 1, pages [68]: std::bad_alloc
+Stage preprocess failed for run 1, pages [69]: std::bad_alloc
+Stage preprocess failed for run 1, pages [70]: std::bad_alloc
+Stage preprocess failed for run 1, pages [71]: std::bad_alloc
+Stage preprocess failed for run 1, pages [72]: std::bad_alloc
+Stage preprocess failed for run 1, pages [73]: std::bad_alloc
+Stage preprocess failed for run 1, pages [74]: std::bad_alloc
+Stage preprocess failed for run 1, pages [75]: std::bad_alloc
+Stage preprocess failed for run 1, pages [76]: std::bad_alloc
+Stage preprocess failed for run 1, pages [77]: std::bad_alloc
+Stage preprocess failed for run 1, pages [78]: std::bad_alloc
+Stage preprocess failed for run 1, pages [79]: std::bad_alloc
+Stage preprocess failed for run 1, pages [80]: std::bad_alloc
+Stage preprocess failed for run 1, pages [81]: std::bad_alloc
+Stage preprocess failed for run 1, pages [82]: std::bad_alloc
+Stage preprocess failed for run 1, pages [83]: std::bad_alloc
+Stage preprocess failed for run 1, pages [84]: std::bad_alloc
+Stage preprocess failed for run 1, pages [85]: std::bad_alloc
+Stage preprocess failed for run 1, pages [86]: std::bad_alloc
+Stage preprocess failed for run 1, pages [87]: std::bad_alloc
+Stage preprocess failed for run 1, pages [88]: std::bad_alloc
+Stage preprocess failed for run 1, pages [89]: std::bad_alloc
+Stage preprocess failed for run 1, pages [90]: std::bad_alloc
+Stage preprocess failed for run 1, pages [91]: std::bad_alloc
+Stage preprocess failed for run 1, pages [92]: std::bad_alloc
+exit=139

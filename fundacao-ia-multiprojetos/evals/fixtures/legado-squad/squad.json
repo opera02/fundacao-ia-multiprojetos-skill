@@ -1,0 +1,7 @@
+{
+  "name": "peticoes-demo",
+  "agents": [
+    {"id": "triagem", "file": "agents/triagem.md"},
+    {"id": "redator", "file": "agents/redator.md"}
+  ]
+}

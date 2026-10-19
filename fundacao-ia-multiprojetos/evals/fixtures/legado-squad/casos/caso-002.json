@@ -1,0 +1,9 @@
+{
+  "case_id": "TST-002",
+  "qualificacao": "Pessoa fictícia de teste",
+  "endereco_reu": "Endereço fictício",
+  "competencia": "a definir pelo profissional",
+  "facts": [
+    {"text": "Contrato fictício assinado em 01/09/2026", "doc": "C1"}
+  ]
+}

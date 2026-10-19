@@ -1,0 +1,97 @@
+{
+  "fonte": "benchmark.json da iteração 1 (skill 1.0.0); recálculo determinístico, não é rodada nova",
+  "publicado_antes": {
+    "pass_rate": "+0.06",
+    "time_seconds": "+626.9",
+    "tokens": "+62887"
+  },
+  "pareado": {
+    "pares": 7,
+    "cenarios": [
+      "E1",
+      "E2",
+      "E3",
+      "E4",
+      "E5",
+      "E6",
+      "E7"
+    ],
+    "time_seconds": {
+      "media_com_skill": 3268.57,
+      "media_sem_skill": 2536.1,
+      "delta_medio": 732.47,
+      "delta_relativo_pct": 28.88,
+      "por_cenario": {
+        "E1": 1121.0,
+        "E2": 1122.3000000000002,
+        "E3": 562.0,
+        "E4": 1892.3000000000002,
+        "E5": -1444.6,
+        "E6": 1445.5,
+        "E7": 428.79999999999995
+      }
+    },
+    "tokens": {
+      "media_com_skill": 305677.43,
+      "media_sem_skill": 238840.57,
+      "delta_medio": 66836.86,
+      "delta_relativo_pct": 27.98,
+      "por_cenario": {
+        "E1": 470878,
+        "E2": 149887,
+        "E3": 86604,
+        "E4": 172330,
+        "E5": -50534,
+        "E6": -417547,
+        "E7": 56240
+      }
+    },
+    "pass_rate": {
+      "E1": {
+        "com": 1.0,
+        "sem": 0.86
+      },
+      "E2": {
+        "com": 1.0,
+        "sem": 0.88
+      },
+      "E3": {
+        "com": 1.0,
+        "sem": 1.0
+      },
+      "E4": {
+        "com": 1.0,
+        "sem": 1.0
+      },
+      "E5": {
+        "com": 1.0,
+        "sem": 1.0
+      },
+      "E6": {
+        "com": 1.0,
+        "sem": 0.83
+      },
+      "E7": {
+        "com": 1.0,
+        "sem": 1.0
+      }
+    }
+  },
+  "so_com_a_skill": {
+    "E8": {
+      "time_seconds": 2424.1,
+      "tokens": 274077,
+      "pass_rate": 1.0
+    }
+  },
+  "telemetria": {
+    "tool_calls": "nao_medido",
+    "errors": "nao_medido"
+  },
+  "limites": [
+    "um run por configuração e cenário: sem variabilidade do mesmo pedido",
+    "E2–E7 tinham o kit instalado na linha de base: mede o ganho das instruções sobre o kit",
+    "unidades de tempo e tokens do benchmark histórico; não é custo faturado",
+    "não mede a 1.3.4 nem a 1.4.0"
+  ]
+}

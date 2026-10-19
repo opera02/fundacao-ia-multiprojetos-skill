@@ -1,0 +1,31 @@
+{
+  "schema_version": "fundacao.source/1",
+  "source_id": "GUIA-001",
+  "version": 1,
+  "project_id": "juridico-lab",
+  "case_id": null,
+  "source_kind": "documento_ficticio_do_laboratorio",
+  "original_hash": null,
+  "prepared_hash": null,
+  "locator": "pagina:1",
+  "transformation": "extracao_conferida",
+  "rubric": {
+    "origem": {"resultado": "pendente", "evidencia": null},
+    "fidelidade": {"resultado": "pendente", "evidencia": null},
+    "vigencia": {"resultado": "pendente", "evidencia": null},
+    "acesso": {"resultado": "pendente", "evidencia": null},
+    "finalidade": {"resultado": "pendente", "evidencia": null}
+  },
+  "criteria_version": "curadoria-v1",
+  "status": "pending",
+  "purpose": null,
+  "approved_by": null,
+  "approved_at": null,
+  "review_due": null,
+  "official_source_url": null,
+  "derived_artifact_ids": [],
+  "prov": {"wasDerivedFrom": [], "wasRevisionOf": null, "wasInvalidatedBy": null},
+  "withdrawn_at": null,
+  "withdrawal_reason": null,
+  "notes": "Aprovação refere-se ao hash do texto publicado. Retirada usa marcador (tombstone) e não precisa conservar o conteúdo."
+}

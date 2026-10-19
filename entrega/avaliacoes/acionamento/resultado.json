@@ -1,0 +1,150 @@
+{
+  "tipo": "simulação por agente separado (não é o mecanismo real do host)",
+  "acertos": 20,
+  "total": 20,
+  "verdadeiros_positivos": 10,
+  "positivos": 10,
+  "falsos_positivos": 0,
+  "linhas": [
+    {
+      "n": 1,
+      "query": "faz um dashboard em React com as métricas de vendas do trimestre",
+      "esperado": false,
+      "escolha": "brainstorming",
+      "acertou": true
+    },
+    {
+      "n": 2,
+      "query": "cria um projeto novo chamado atendimento-lab dentro da minha fundação de IA multiprojetos, com instruções e contrato de entregas a partir do modelo",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 3,
+      "query": "conserta esse erro no meu script python: ModuleNotFoundError: No module named 'yaml'",
+      "esperado": false,
+      "escolha": "nenhuma",
+      "acertou": true
+    },
+    {
+      "n": 4,
+      "query": "preciso garantir que o projeto do cliente A nunca veja memória, RAG ou cache do cliente B na minha plataforma de agentes; implementa a camada de autorização e os testes negativos",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 5,
+      "query": "configura rotas com Claude e Codex como provedores, com fallback autorizado e teto de chamadas, no núcleo de IA que uso pra vários projetos",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 6,
+      "query": "quero montar uma base única pra todos os meus projetos de IA (jurídico, software, marketing) com memória e RAG separados por projeto — por onde começo? já tenho o Claude Code e o Codex instalados aqui no notebook",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 7,
+      "query": "quero ligar o CAG de verdade (reaproveitar o KV cache do modelo local) no meu laboratório jurídico e medir modo frio vs quente",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 8,
+      "query": "calcula os honorários de êxito de 20% sobre R$ 880,00 e divide em três parcelas",
+      "esperado": false,
+      "escolha": "nenhuma",
+      "acertou": true
+    },
+    {
+      "n": 9,
+      "query": "cria uma skill simples que formata mensagens de commit no padrão conventional commits",
+      "esperado": false,
+      "escolha": "skill-creator",
+      "acertou": true
+    },
+    {
+      "n": 10,
+      "query": "faz uma auditoria da minha fundação de IA: quero saber o que está implementado e ativo, o que é só simulação e o que está bloqueado, com evidência de cada um",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 11,
+      "query": "o banco da fundação corrompeu; restaura o backup de ontem sem ressuscitar o documento que foi retirado da base de conhecimento depois do backup",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 12,
+      "query": "transforma esse PDF de livro de gestão em uma skill pra eu usar no Claude",
+      "esperado": false,
+      "escolha": "book-to-skill",
+      "acertou": true
+    },
+    {
+      "n": 13,
+      "query": "escreve um hook do Claude Code que roda o prettier depois de cada edição de arquivo",
+      "esperado": false,
+      "escolha": "hook-development",
+      "acertou": true
+    },
+    {
+      "n": 14,
+      "query": "redige uma petição inicial de indenização por atraso na entrega de uma estante comprada pela internet, com base nesses fatos que vou colar",
+      "esperado": false,
+      "escolha": "nenhuma",
+      "acertou": true
+    },
+    {
+      "n": 15,
+      "query": "o que é RAG e qual a diferença pra fine-tuning? só quero entender o conceito, sem implementar nada",
+      "esperado": false,
+      "escolha": "nenhuma",
+      "acertou": true
+    },
+    {
+      "n": 16,
+      "query": "minha execução de tarefa no orquestrador caiu no meio, como retomo sem repetir as chamadas pagas que já foram feitas? é aquela base com sqlite e recibos por etapa",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 17,
+      "query": "atualizei o modelo de projeto da fundação (novos arquivos de instrução); como migro as instâncias antigas sem perder os dados delas?",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 18,
+      "query": "tenho um squad de agentes que gera petições numa pasta E:\\projetos\\squad-peticoes; quero plugar ele na minha fundação de IA sem quebrar nada do que já funciona",
+      "esperado": true,
+      "escolha": "fundacao-ia-multiprojetos",
+      "acertou": true
+    },
+    {
+      "n": 19,
+      "query": "configura um servidor MCP do GitHub no meu Claude Code pra eu ler issues",
+      "esperado": false,
+      "escolha": "mcp-integration",
+      "acertou": true
+    },
+    {
+      "n": 20,
+      "query": "audita essa skill jurídica que baixei de um repositório antes de eu instalar",
+      "esperado": false,
+      "escolha": "skills-qa",
+      "acertou": true
+    }
+  ]
+}

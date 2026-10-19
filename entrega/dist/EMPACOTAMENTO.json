@@ -1,0 +1,17 @@
+{
+  "versao": "1.4.3",
+  "gerado_em": "2026-10-19T22:47:25+00:00",
+  "ferramenta": {
+    "skill_creator": "C:\\Users\\<usuario>\\AppData\\Local\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\Claude\\local-agent-mode-sessions\\skills-plugin\\15227e74-5e67-4674-b0ab-4676879a499c\\707dcdd1-5309-4264-9a7c-2461e2b93848\\skills\\skill-creator",
+    "package_skill_sha256": "1a33059b0db1ef73375d46d513e5ea81369d2e8838c970597b0d52ddef8d1c0f",
+    "quick_validate_sha256": "f65315971b2a723349234947062de2ffae76cad98884b7f441e453e6dbe01892"
+  },
+  "arquivos": {
+    "fundacao-ia-multiprojetos.skill": 123,
+    "fundacao-ia-multiprojetos-completo.zip": 146
+  },
+  "sha256": {
+    "fundacao-ia-multiprojetos.skill": "a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b",
+    "fundacao-ia-multiprojetos-completo.zip": "f49f0c935605302ac4936f32bd7ba7ad33bb225414cf2220b8039d202dde692e"
+  }
+}

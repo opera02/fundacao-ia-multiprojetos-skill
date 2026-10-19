@@ -1,0 +1,175 @@
+{
+  "schema_version": "fundacao.inventario_ambiente/1",
+  "observado_em": "2026-10-19T00:32:53.587186+00:00",
+  "acesso": "windows_nativo",
+  "sistema": {
+    "plataforma": "Windows-11-10.0.26200-SP0",
+    "maquina": "AMD64",
+    "cpus": 22,
+    "ram_bytes": 16672395264
+  },
+  "pasta": {
+    "caminho": "<raiz-do-projeto>",
+    "existe": true,
+    "livre_bytes": 961333297152,
+    "no_onedrive": false,
+    "sistema_de_arquivos": "exFAT",
+    "comprimento_do_caminho": 50,
+    "caminhos_longos_windows": true,
+    "permissoes_do_so": false,
+    "wsl_em_mnt_c": false
+  },
+  "shell": {
+    "COMSPEC_definido": true,
+    "SHELL": "bash.exe",
+    "PSModulePath_definido": true
+  },
+  "python_em_execucao": {
+    "executavel": "C:\\Users\\<usuario>\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+    "versao": "3.12.10",
+    "venv_ativo": false,
+    "PYTHONUTF8": false
+  },
+  "sqlite": {
+    "versao": "3.49.1",
+    "fts5_unicode61_remove_diacritics_2": true
+  },
+  "modulos_opcionais": {
+    "torch": true,
+    "transformers": true,
+    "jsonschema": true,
+    "yaml": true,
+    "mcp": true,
+    "langgraph": false,
+    "dbos": false,
+    "pytest": false
+  },
+  "programas": {
+    "bash": {
+      "presente": true,
+      "caminho": "C:\\Program Files\\Git\\usr\\bin\\bash.EXE",
+      "nivel": "presente (versão não consultada de propósito)"
+    },
+    "claude": {
+      "presente": true,
+      "caminho": "C:\\Users\\<usuario>\\.local\\bin\\claude.EXE",
+      "versao": {
+        "executado": true,
+        "codigo_saida": 0,
+        "saida": "2.1.302 (Claude Code)"
+      },
+      "nivel": "executado (versão)"
+    },
+    "codex": {
+      "presente": true,
+      "caminho": "C:\\nvm4w\\nodejs\\codex.CMD",
+      "versao": {
+        "executado": true,
+        "codigo_saida": 0,
+        "saida": "codex-cli 0.163.0"
+      },
+      "nivel": "executado (versão)"
+    },
+    "docker": {
+      "presente": true,
+      "caminho": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.EXE",
+      "versao": {
+        "executado": true,
+        "codigo_saida": 0,
+        "saida": "Docker version 29.6.2, build dfc4efb"
+      },
+      "nivel": "executado (versão)"
+    },
+    "git": {
+      "presente": true,
+      "caminho": "C:\\Program Files\\Git\\ucrt64\\bin\\git.EXE",
+      "versao": {
+        "executado": true,
+        "codigo_saida": 0,
+        "saida": "git version 2.56.0.windows.2"
+      },
+      "nivel": "executado (versão)"
+    },
+    "node": {
+      "presente": true,
+      "caminho": "C:\\nvm4w\\nodejs\\node.EXE",
+      "versao": {
+        "executado": true,
+        "codigo_saida": 0,
+        "saida": "v24.6.0"
+      },
+      "nivel": "executado (versão)"
+    },
+    "npm": {
+      "presente": true,
+      "caminho": "C:\\nvm4w\\nodejs\\npm.CMD",
+      "versao": {
+        "executado": true,
+        "codigo_saida": 0,
+        "saida": "11.5.1"
+      },
+      "nivel": "executado (versão)"
+    },
+    "powershell": {
+      "presente": true,
+      "caminho": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.EXE",
+      "nivel": "presente (versão não consultada de propósito)"
+    },
+    "pwsh": {
+      "presente": false,
+      "caminho": null
+    },
+    "py": {
+      "presente": true,
+      "caminho": "C:\\Users\\<usuario>\\AppData\\Local\\Programs\\Python\\Launcher\\py.EXE",
+      "nivel": "presente (versão não consultada de propósito)"
+    },
+    "pymanager": {
+      "presente": true,
+      "caminho": "C:\\Users\\<usuario>\\AppData\\Local\\Microsoft\\WindowsApps\\pymanager.EXE",
+      "nivel": "presente (versão não consultada de propósito)",
+      "listagem": {
+        "executado": true,
+        "codigo_saida": 0,
+        "saida": "Tag      Name                  Managed By  Version  Alias\r\n-- No runtimes. Use 'py install <version>' to install one. --\r\n\r\n* These runtimes were found, but cannot be updated or uninstalled. *\r\n3.12  *  Python 3.12 (64-bit)  PythonCore  3.12.10"
+      }
+    },
+    "python": {
+      "presente": true,
+      "caminho": "C:\\Users\\<usuario>\\AppData\\Local\\Programs\\Python\\Python312\\python.EXE",
+      "nivel": "presente (versão não consultada de propósito)"
+    },
+    "python3": {
+      "presente": true,
+      "caminho": "C:\\Users\\<usuario>\\AppData\\Local\\Microsoft\\WindowsApps\\python3.EXE",
+      "nivel": "presente (versão não consultada de propósito)"
+    },
+    "uv": {
+      "presente": true,
+      "caminho": "C:\\Users\\<usuario>\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\uv.EXE",
+      "versao": {
+        "executado": true,
+        "codigo_saida": 0,
+        "saida": "uv 0.11.7 (9d177269e 2026-04-15 x86_64-pc-windows-msvc)"
+      },
+      "nivel": "executado (versão)"
+    },
+    "wsl": {
+      "presente": true,
+      "caminho": "C:\\WINDOWS\\system32\\wsl.EXE",
+      "nivel": "presente (versão não consultada de propósito)",
+      "distribuicoes": {
+        "executado": true,
+        "codigo_saida": 0,
+        "saida": "NAME              STATE           VERSION\r\n* Ubuntu            Running         2\r\n  docker-desktop    Running         2"
+      }
+    }
+  },
+  "nao_verificado": [
+    "autenticação e modalidade das contas (assinatura × API)",
+    "saldo, créditos e limites",
+    "sandbox efetivo",
+    "permissões do sistema operacional entre projetos"
+  ],
+  "observacao": "Versão encontrada não prova autenticação nem integração funcional (livro A01/A03)."
+}
