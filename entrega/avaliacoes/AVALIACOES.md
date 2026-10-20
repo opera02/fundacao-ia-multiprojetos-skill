@@ -63,8 +63,11 @@ cabeçalho contra a lista de chaves do validador do Chat/Work), na **1.4.2** (10
 quatro formas de atribuição no PowerShell são negadas, AF-07; padrões `mcp__ccd_*` em
 `FUNDACAO_MCP_PERMITIDAS`, AF-08 — e o CEN-11 passou a comparar com o nome canônico e a registrar
 como *puladas*, sem contar nem reprovar, as duas verificações que dependem do perfil — `quick_validate`
-e varredura do book-to-skill —, AF-05; num perfil sem elas o cenário sai como `7/7, 2 pulada(s)`). O
-relatório com esperado × observado por verificação está em `cenarios/RESULTADOS-versao-1.4.3.md`;
+e varredura do book-to-skill —, AF-05; num perfil sem elas o cenário sai como `7/7, 2 pulada(s)`) e na
+**1.4.4** (**111/111**: o CEN-13 ganhou uma verificação — as formas explícitas de atribuição no PowerShell que a
+1.4.3 deixava passar são negadas, e `Get-ChildItem`/`-eq` seguem livres, CF-01 da conferência da 1.4.3; rodados
+em cópia descartável com perfil descartável que tinha cópias do validador e do book-to-skill, sem puladas). O
+relatório com esperado × observado por verificação está em `cenarios/RESULTADOS-versao-1.4.4.md`;
 os anteriores seguem na mesma pasta.
 
 | Cenário | Tipo | Requisitos | Resultado |
@@ -81,7 +84,7 @@ os anteriores seguem na mesma pasta.
 | CEN-10 CAG: prefill único, prefixo não recalculado, frio × quente, invalidação | real-local, modelo sintético | R26 R27 R28 | 6/6 |
 | CEN-11 Estrutura, `quick_validate`, varredura de injeção sobre todos os Markdown | estrutural | formato | 9/9 |
 | CEN-12 Conformidade do kit em instalação limpa | real-local | R03 R42 R58 R59 | 1/1 |
-| CEN-13 Hooks: 10 escritas indevidas, matcher documentado, evento malformado, troca de identidade, console legado sem `PYTHONUTF8`, limite declarado do hook de identidade | real-local, eventos simulados | R33 R52 | 10/10 |
+| CEN-13 Hooks: 10 escritas indevidas, matcher documentado, evento malformado, troca de identidade, console legado sem `PYTHONUTF8`, limite declarado do hook de identidade, leitura livre e formas de atribuição no PowerShell negadas (AF-07, CF-01), padrões em `FUNDACAO_MCP_PERMITIDAS` (AF-08) | real-local, eventos simulados | R33 R52 | 13/13 |
 | CEN-14 Matriz: estados honestos, impacto do bloqueio, ids do livro e da 3.0 | estrutural | R43 R50 | 3/3 |
 | CEN-15 MCP local por stdio: descoberta, chamada, negativa entre projetos, encerramento, versão de protocolo negociada | real-local (SDK mcp 2.3.0) | R34 | 6/6 |
 | CEN-16 Atualização do kit: conflito, substituição com retorno, versão instalada, `init` depois de atualizar | real-local | R46 R47 | 4/4 |

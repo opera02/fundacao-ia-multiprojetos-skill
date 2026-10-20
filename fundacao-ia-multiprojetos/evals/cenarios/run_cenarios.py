@@ -1037,6 +1037,20 @@ def cen13(W: Path) -> Cenario:
     c.check("ler FUNDACAO_PRINCIPAL segue; Set-Item, ${env:...}= e Remove-Item são negados (AF-07)",
             f"sem_decisao; {len(outras)} negadas", f"{leitura}; {len(negadas_ps)} negadas",
             leitura == "sem_decisao" and len(negadas_ps) == len(outras))
+    # CF-01 (conferência da 1.4.3): o padrão da 1.4.3 deixava passar formas comuns de atribuição explícita no
+    # PowerShell — caminho `env:` entre aspas, `-Path:`/`-Path=`, `Env:\`, `Remove-Item` entre aspas, `+=` e
+    # `New-Item -Path env: -Name` —, que a 1.4.2 negava; Get-ChildItem e `-eq` são leitura e seguem.
+    formas_cf01 = ['Set-Item -Path "env:FUNDACAO_PRINCIPAL" -Value "titular"', "Set-Item 'env:FUNDACAO_PRINCIPAL' 'titular'",
+                   "Set-Item -Path:env:FUNDACAO_PRINCIPAL -Value titular", "Set-Item -Path=env:FUNDACAO_PRINCIPAL -Value titular",
+                   "Set-Item Env:\\FUNDACAO_PRINCIPAL titular", 'Remove-Item "env:FUNDACAO_PRINCIPAL"',
+                   "$env:FUNDACAO_PRINCIPAL += 'x'", "New-Item -Path env: -Name FUNDACAO_PRINCIPAL -Value titular"]
+    leituras_cf01 = ["Get-ChildItem env:FUNDACAO_PRINCIPAL", "if ($env:FUNDACAO_PRINCIPAL -eq 'titular') { 'ok' }"]
+    negadas_cf = [t for t in formas_cf01 if decide({"tool_name": "PowerShell", "tool_input": {"command": t}}, h=hook_id) == "deny"]
+    livres_cf = [t for t in leituras_cf01 if decide({"tool_name": "PowerShell", "tool_input": {"command": t}}, h=hook_id) == "sem_decisao"]
+    c.check("aspas, -Path:/-Path=, Env:\\, Remove-Item entre aspas, += e New-Item -Name são negados; Get-ChildItem e -eq seguem (CF-01)",
+            f"{len(formas_cf01)} negadas; {len(leituras_cf01)} livres", f"{len(negadas_cf)} negadas; {len(livres_cf)} livres",
+            len(negadas_cf) == len(formas_cf01) and len(livres_cf) == len(leituras_cf01),
+            f"passaram: {[t for t in formas_cf01 if t not in negadas_cf]}")
     # AF-08: padrões com `*` em FUNDACAO_MCP_PERMITIDAS liberam as ferramentas MCP do próprio host.
     e_mcp = {**env, "FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*,mcp__fundacao__buscar"}
     host_ok = decide({"tool_name": "mcp__ccd_turn__update_plan", "tool_input": {}}, e_mcp)

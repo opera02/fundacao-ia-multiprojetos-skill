@@ -8,7 +8,7 @@ e restauração. Segue o livro *Fundação de IA Multiprojetos 2.0* (do próprio
 traz um **kit de referência** em Python + SQLite (biblioteca padrão) que implementa os contratos, com 166 testes
 de conformidade e 16 cenários determinísticos.
 
-Versão: **1.4.3** (19/10/2026) · kit de referência 1.4.1 · Licença: **MIT** (`LICENSE`).
+Versão: **1.4.4** (19/10/2026) · kit de referência 1.4.1 · Licença: **MIT** (`LICENSE`).
 
 ## O que há aqui
 
@@ -26,26 +26,29 @@ Pré-requisito: Python 3.10+ com SQLite/FTS5. O instalador não baixa nada, conf
 extrair e faz a troca por renomeação (a versão anterior fica guardada).
 
 ```bash
-python entrega/instalar_skill.py instalar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b
+python entrega/instalar_skill.py instalar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 b54b1714b466c411af49aab3c46fade3581e44f9527d04b75e501472d730401c
 python entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill
 ```
 
 Claude Code lê `~/.claude/skills/` (o instalador cria a cópia em `~/.agents/skills/` e uma junção ou link em
-`~/.claude/skills/`). Para o claude.ai (Chat/Work), envie `entrega/transferencia/fundacao-ia-multiprojetos-1.4.3-para-claude-ai.zip`
-em *Customize > Skills > Upload a skill*. Para outro computador, use `entrega/transferencia/fundacao-ia-multiprojetos-1.4.3.zip`
+`~/.claude/skills/`). Para o claude.ai (Chat/Work), envie `entrega/transferencia/fundacao-ia-multiprojetos-1.4.4-para-claude-ai.zip`
+em *Customize > Skills > Upload a skill*. Para outro computador, use `entrega/transferencia/fundacao-ia-multiprojetos-1.4.4.zip`
 (traz o `.skill`, o instalador, `SHA256SUMS.txt` e um `LEIA-ME.txt`). Remoção: `python entrega/instalar_skill.py remover --confirmar`.
 
-## Estado da verificação (1.4.3, Windows 11, Python 3.12.10)
+## Estado da verificação (1.4.4, Windows 11, Python 3.12.10)
 
 - kit: 166 testes OK (3 pulados: link simbólico de arquivo sem modo de desenvolvedor); scripts da skill: 23 OK;
-  ferramentas de entrega: 34 OK; cenários CEN-01–CEN-16: 16/16 (110/110 verificações); 258 referências conferidas,
-  0 ausentes; `quick_validate` do skill-creator válido (duas variantes).
+  ferramentas de entrega: 40 OK; cenários CEN-01–CEN-16: 16/16 (111/111 verificações); 258 referências conferidas,
+  0 ausentes; `quick_validate` do skill-creator válido (duas variantes), na árvore e no pacote extraído.
 - Não testado: Linux, macOS, Python 3.10/3.11 (só simulado), chamadas reais a provedores, claude.ai e Codex como hosts,
   acionamento da skill num pedido real do host, CAG com modelo real. Detalhes em `entrega/MATRIZ-HOSTS-E-VERIFICACOES.md`.
 - Auditorias: a 1.4.2 passou por uma auditoria final independente (só leitura, cópias e perfis descartáveis), com
   veredito *aprovada com ressalvas* — dez achados menores (P3), nenhum P1 ou P2 —, todos corrigidos na 1.4.3 com
   regressões que falham na 1.4.2 (`entrega/testes/test_auditoria_final_1_4_2.py` e
-  `fundacao-ia-multiprojetos/assets/fundacao-kit/tests/test_auditoria_final_1_4_2.py`).
+  `fundacao-ia-multiprojetos/assets/fundacao-kit/tests/test_auditoria_final_1_4_2.py`). A 1.4.3 passou por uma
+  conferência independente, com a mesma postura: as nove correções e todos os números confirmados; um achado P2
+  (o hook de identidade deixara de negar formas de atribuição no PowerShell) e cinco P3; os quatro de código
+  foram corrigidos na 1.4.4 com regressões que falham na 1.4.3 (`entrega/testes/test_conferencia_1_4_3.py`).
 
 ## Sobre esta cópia pública
 

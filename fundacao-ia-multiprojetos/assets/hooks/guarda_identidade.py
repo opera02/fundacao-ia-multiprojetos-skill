@@ -15,6 +15,10 @@ Limite: é um guarda-corpo para o caminho comum (atribuição explícita da vari
 ele, por exemplo, o nome da variável montado em tempo de execução, `python -c` que altere
 `os.environ` e a chamada direta da API do kit. Não substitui conta do SO separada nem aprovação
 com credencial fora do alcance do executor.
+Formas cobertas: `$env:X = …`, `${env:X} = …`, `+=`; Set-Item/Set-Content/New-Item/Remove-Item/
+Clear-Item sobre `env:X` (caminho com ou sem aspas, `-Path:`/`-Path=`, `Env:\\`, `-Name`, outros
+parâmetros antes); `[Environment]::SetEnvironmentVariable`; set/setx/export/unset e `X=valor comando`
+(conferência da 1.4.3, CF-01). Leitura e comparação (`echo`, `Get-ChildItem`, `-eq`, `==`) seguem.
 """
 
 from __future__ import annotations
@@ -25,12 +29,23 @@ import re
 import sys
 
 SHELL_TOOLS = {"Bash", "PowerShell"}
-# Só ATRIBUIÇÃO ou remoção da variável. Ler o valor (`echo $env:FUNDACAO_PRINCIPAL`) não é troca de
-# identidade e segue o fluxo normal (auditoria final da 1.4.2, AF-07).
-PADRAO = re.compile(r"FUNDACAO_PRINCIPAL\}?\s*=|SetEnvironmentVariable\([^)]*FUNDACAO_PRINCIPAL"
-                    r"|(?:^|[\s;&|])(?:set|setx|export|unset)\s+FUNDACAO_PRINCIPAL"
-                    r"|(?:Set-Item|Set-Content|New-Item|Remove-Item|Clear-Item)\s+(?:-\w+\s+)*(?:env:|Env:|ENV:)FUNDACAO_PRINCIPAL",
-                    re.IGNORECASE)
+# Só ATRIBUIÇÃO ou remoção da variável. Ler o valor (`echo $env:FUNDACAO_PRINCIPAL`, `Get-ChildItem`, `-eq`)
+# não é troca de identidade e segue o fluxo normal (auditoria final da 1.4.2, AF-07). As formas explícitas que
+# a 1.4.3 deixava passar — caminho `env:` entre aspas, `-Path:`/`-Path=`, `Env:\`, `Remove-Item` entre aspas,
+# `+=`, `New-Item -Path env: -Name`, parâmetro com valor antes de `-Path` — são negadas (conferência da 1.4.3, CF-01).
+PADRAO = re.compile(
+    # atribuição ou composição (`=`, `+=`, `-=`…), não comparação (`==`, `-eq`); `${env:X} =` pelo `\}?`
+    r"FUNDACAO_PRINCIPAL\}?\s*[+\-*/]?=(?!=)"
+    # API .NET
+    r"|SetEnvironmentVariable\([^)]*FUNDACAO_PRINCIPAL"
+    # cmd e Bash: set/setx/export/unset, com ou sem aspas em volta de NOME=valor
+    r"|(?:^|[\s;&|(])(?:set|setx|export|unset)\s+[\"']?FUNDACAO_PRINCIPAL"
+    # cmdlets do PowerShell sobre o drive env:: parâmetros antes (com valor ou não; `-Par:`/`-Par=`), caminho com
+    # aspas opcionais, `Env:\`, e a forma `New-Item -Path env: -Name X`
+    r"|(?:Set-Item|Set-Content|New-Item|Remove-Item|Clear-Item)\s+"
+    r"(?:-\w+[\s:=]+(?:(?:\"[^\"]*\"|'[^']*'|[^-\s\"'][^\s]*)\s+)?)*"
+    r"[\"']?env:[\\/]?(?:[\"']?\s+-Name[\s:=]+)?[\"']?FUNDACAO_PRINCIPAL",
+    re.IGNORECASE)
 
 
 def deny(reason: str) -> dict:

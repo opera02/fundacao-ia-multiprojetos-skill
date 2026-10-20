@@ -27,13 +27,16 @@ lugar — a anterior vai para ~/.agents/skills-anteriores/ e a preparada entra n
 renomeações, com uma marca de troca entre elas). Uma falha antes disso não altera nada; uma exceção na
 troca ou na ligação devolve a versão anterior e descarta a cópia preparada; se o processo cair entre as
 duas renomeações, o próximo `instalar` ou `atualizar` conclui a troca com a cópia preparada (já
-conferida), e o `verificar` avisa enquanto isso não acontecer (auditoria final da 1.4.2, AF-02).
+conferida), e o `verificar` avisa enquanto isso não acontecer (auditoria final da 1.4.2, AF-02); se a
+marca da troca estiver ilegível, as cópias preparadas que sobrarem em skills-preparo são removidas e
+relatadas em `passos`, em vez de ficarem órfãs (conferência da 1.4.3, CF-04).
 Ligação em conflito é recusada antes de copiar. A origem precisa declarar `name: fundacao-ia-multiprojetos`
-no SKILL.md (AF-03).
+no SKILL.md (AF-03; UTF-8 com BOM aceito, e a recusa diz quando não há `name` legível, CF-03).
 
 `remover` relata cada caminho e sai com código 1 se algo ficar no lugar; arquivo somente leitura
 não o interrompe; a área de preparo (sobras) também é removida; uma ligação em ~/.claude/skills com o
-nome desta skill que aponte para a pasta de OUTRA skill é mantida e relatada (AF-04). `verificar`
+nome desta skill que aponte para a pasta de OUTRA skill é mantida e relatada (AF-04), mas se o alvo
+não existir mais (ligação pendurada) só a ligação é removida e relatada (CF-02). `verificar`
 informa se o SQLite tem o FTS5 com o tokenizador do kit da fundação: é só informativo e não entra em
 `ok` (a skill instalada não depende dele; o kit, sim).
 """
@@ -137,6 +140,9 @@ def origem_como_pasta(origem: Path, tmp: Path) -> Path:
         if not (pasta / "SKILL.md").exists():
             raise Recusa(f"pacote sem a pasta {NOME}/SKILL.md na raiz; nada foi alterado")
     declarado = nome_declarado(pasta)
+    if declarado is None:
+        raise Recusa(f"o SKILL.md da origem não tem um `name` legível no cabeçalho (esperado name: {NOME}); "
+                     "nada foi alterado", name_declarado=None)
     if declarado != NOME:
         # A pasta instalada tem nome fixo: o host leria aqui uma skill de outro nome (AF-03).
         raise Recusa(f"o SKILL.md da origem declara name {declarado!r}, não {NOME!r}; nada foi alterado",
@@ -222,9 +228,10 @@ def verificar(referencia: dict[str, str] | None = None) -> dict:
 
 
 def nome_declarado(pasta: Path) -> str | None:
-    """`name` do cabeçalho do SKILL.md da pasta, ou None se não houver um legível."""
+    """`name` do cabeçalho do SKILL.md da pasta, ou None se não houver um legível. UTF-8 com BOM (arquivo
+    editado no Bloco de Notas) é aceito: `utf-8-sig` descarta a marca (conferência da 1.4.3, CF-03)."""
     try:
-        linhas = (pasta / "SKILL.md").read_text(encoding="utf-8").splitlines()
+        linhas = (pasta / "SKILL.md").read_text(encoding="utf-8-sig").splitlines()
     except (OSError, UnicodeDecodeError):
         return None
     if not linhas or linhas[0].strip() != "---":
@@ -316,31 +323,50 @@ def promover(preparo: Path) -> Path | None:
 
 def concluir_troca_interrompida() -> dict | None:
     """Queda do processo entre as duas renomeações da troca anterior: conclui a troca com a cópia
-    preparada (já conferida contra o pacote) ou, sem ela, devolve a anterior. Devolve o que fez."""
+    preparada (já conferida contra o pacote) ou, sem ela, devolve a anterior. Devolve o que fez.
+
+    Marca ilegível (JSON inválido ou sem `preparo`): a cópia preparada não pode ser identificada; as pastas
+    `<nome>-*` que sobrarem em skills-preparo — nenhum host as lê — são removidas e relatadas, em vez de
+    ficarem órfãs até um `remover` (conferência da 1.4.3, CF-04)."""
     if not TROCA.is_file():
         return None
     try:
         marca = json.loads(TROCA.read_text(encoding="utf-8"))
+        if not isinstance(marca, dict):
+            raise ValueError("marca não é objeto")
     except (OSError, ValueError):
         marca = {}
-    preparo = Path(marca["preparo"]) if marca.get("preparo") else None
+    legivel = bool(marca.get("preparo"))
+    preparo = Path(marca["preparo"]) if legivel else None
     anterior = Path(marca["anterior"]) if marca.get("anterior") else None
     if not os.path.lexists(AGENTS) and preparo is not None and preparo.is_dir():
         AGENTS.parent.mkdir(parents=True, exist_ok=True)
         os.replace(preparo, AGENTS)
         acao = "troca concluída com a cópia preparada"
     elif os.path.lexists(AGENTS):
+        acao = "a cópia instalada já estava no lugar"
         if preparo is not None and preparo.is_dir():
             shutil.rmtree(preparo, ignore_errors=True)
-        acao = "a cópia instalada já estava no lugar; cópia preparada descartada"
+            acao += "; cópia preparada descartada"
     elif anterior is not None and anterior.is_dir():
         os.replace(anterior, AGENTS)
         acao = "cópia preparada ausente: versão anterior devolvida ao lugar"
     else:
         acao = "nada a recuperar (sem cópia preparada nem anterior)"
+    orfas, nao_removidas = [], []
+    if not legivel:
+        acao = f"marca de troca ilegível; {acao}"
+        for sobra in sorted(PREPARO.glob(f"{NOME}-*")):
+            if not sobra.is_dir() or e_ligacao(sobra):
+                continue
+            try:
+                apagar_arvore(sobra)
+                orfas.append(sobra.name)
+            except OSError as e:
+                nao_removidas.append(f"{sobra.name}: {type(e).__name__}: {e}")
     TROCA.unlink(missing_ok=True)
     limpar_preparo()
-    return {"marca": marca, "acao": acao}
+    return {"marca": marca, "acao": acao, "orfas_removidas": orfas, "orfas_nao_removidas": nao_removidas}
 
 
 def desfazer(anterior: Path | None) -> None:
@@ -362,6 +388,11 @@ def planejar_remocao() -> list[dict]:
         alvo = os.path.realpath(CLAUDE)
         if os.path.normcase(alvo) == os.path.normcase(str(AGENTS)) or nome_declarado(Path(alvo)) == NOME:
             plano.append({"caminho": str(CLAUDE), "acao": "remover", "tipo": "ligação", "aponta_para": alvo})
+        elif not os.path.lexists(alvo):
+            # Ligação pendurada: o alvo não existe mais. Não é skill de ninguém e pode atrapalhar o host; só a
+            # ligação é removida, nunca um alvo (conferência da 1.4.3, CF-02).
+            plano.append({"caminho": str(CLAUDE), "acao": "remover", "tipo": "ligação", "aponta_para": alvo,
+                          "motivo": "ligação pendurada: o alvo não existe mais; só a ligação é removida"})
         else:
             # Ligação com o nome desta skill, mas para a pasta de outra: não foi este instalador que a criou (AF-04).
             plano.append({"caminho": str(CLAUDE), "acao": "manter", "tipo": "ligação", "aponta_para": alvo,
@@ -409,6 +440,12 @@ def instalar_ou_atualizar(acao: str, pasta: Path, integridade: dict) -> dict:
     referencia = referencia_de(pasta)
     recuperacao = concluir_troca_interrompida()
     passos = [f"troca interrompida concluída: {recuperacao['acao']}"] if recuperacao else []
+    if recuperacao and recuperacao.get("orfas_removidas"):
+        passos.append(f"marca de troca ilegível: cópia(s) preparada(s) órfã(s) removida(s) de {PREPARO}: "
+                      + ", ".join(recuperacao["orfas_removidas"]))
+    if recuperacao and recuperacao.get("orfas_nao_removidas"):
+        passos.append(f"sobras em {PREPARO} que não puderam ser removidas: "
+                      + "; ".join(recuperacao["orfas_nao_removidas"]))
     if recuperacao and acao == "instalar" and (AGENTS.exists() or e_ligacao(AGENTS)):
         acao = "atualizar"  # a troca concluída deixou uma versão no lugar: segue como atualização
     if acao == "instalar" and (AGENTS.exists() or e_ligacao(AGENTS)):

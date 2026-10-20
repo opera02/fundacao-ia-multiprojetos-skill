@@ -676,6 +676,13 @@ def md_escape(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
+# Conferência independente da 1.4.3 (CONFERENCIA-1.4.3.md §7): regressões CF-01 a CF-04 da 1.4.4.
+CONFERENCIA_143 = {
+    "R42": "entrega/testes/test_conferencia_1_4_3.py (CF-01 hook de identidade, CF-02 ligação pendurada, "
+           "CF-03 BOM no SKILL.md, CF-04 marca de troca ilegível)",
+}
+
+
 def main() -> int:
     entrega, skill = Path(sys.argv[1]), Path(sys.argv[2])
     for rid in list(R):
@@ -689,6 +696,8 @@ def main() -> int:
             row[5] = f"{row[5]}; regressão do relatório técnico da 1.4.0: {RELATORIO_TECNICO_140[rid]}"
         if rid in AUDITORIA_141:
             row[5] = f"{row[5]}; regressão da auditoria sobre a 1.4.1: {AUDITORIA_141[rid]}"
+        if rid in CONFERENCIA_143:
+            row[5] = f"{row[5]}; regressão da conferência da 1.4.3: {CONFERENCIA_143[rid]}"
         R[rid] = tuple(row)
     out_dir = entrega / "rastreabilidade"
     out_dir.mkdir(parents=True, exist_ok=True)
