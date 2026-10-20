@@ -66,9 +66,10 @@ como *puladas*, sem contar nem reprovar, as duas verificações que dependem do 
 e varredura do book-to-skill —, AF-05; num perfil sem elas o cenário sai como `7/7, 2 pulada(s)`) e na
 **1.4.4** (**111/111**: o CEN-13 ganhou uma verificação — as formas explícitas de atribuição no PowerShell que a
 1.4.3 deixava passar são negadas, e `Get-ChildItem`/`-eq` seguem livres, CF-01 da conferência da 1.4.3; rodados
-em cópia descartável com perfil descartável que tinha cópias do validador e do book-to-skill, sem puladas). O
-relatório com esperado × observado por verificação está em `cenarios/RESULTADOS-versao-1.4.4.md`;
-os anteriores seguem na mesma pasta.
+em cópia descartável com perfil descartável que tinha cópias do validador e do book-to-skill, sem puladas) e na
+**1.4.5** (**111/111**, a mesma execução em cópia e perfil descartáveis; a 1.4.5 só muda a redação do R46 em
+`requisitos.md` e a versão). O relatório com esperado × observado por verificação está em
+`cenarios/RESULTADOS-versao-1.4.5.md`; os anteriores seguem na mesma pasta.
 
 | Cenário | Tipo | Requisitos | Resultado |
 |---|---|---|---|

@@ -8,8 +8,27 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–19/10/2026 · Versão da skill: **1.4.4** (kit de referência 1.4.1) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–19/10/2026 · Versão da skill: **1.4.5** (kit de referência 1.4.1) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
+
+> **1.4.5 (19/10/2026):** fecha as pendências da conferência da 1.4.3 que a 1.4.4 deixou, a pedido do titular:
+> - **CF-05 (redação)** o bloco 1.4.2 deste README deixa de chamar a troca de "atômica" e remete à descrição da 1.4.3;
+>   o R46 do gerador de rastreabilidade (e, por ele, `MATRIZ-RASTREABILIDADE.md/.csv` e `references/requisitos.md`,
+>   que vai dentro da skill — daí a versão nova) descreve a atualização da skill "por renomeação, com retorno"; a matriz
+>   de hosts identifica a versão do plugin oficial do skill-creator que estava ativa (`ea10b213686c` até 20h08 de
+>   19/10, `a0b04d9ddcca` desde então, mesmo `quick_validate.py`);
+> - **CF-06b** o `.gitattributes` da cópia pública guarda `entrega/leitura/logs/*.log` byte a byte (`-text`): o
+>   `b2s_extract_text.log` volta a ter CRLF no remoto, como o arquivo saneado; a parte (a) já estava resolvida na 1.4.4;
+> - **versão do kit** mantida em **1.4.1**, por decisão do titular (nenhum arquivo do kit mudou); a regra está na seção 5.
+>
+> Nada mais mudou na skill além de `requisitos.md` (R46) e da versão. Resultados na 1.4.5, em cópias e perfis
+> descartáveis: kit 166 OK (3 pulados), scripts 23, entrega 40, cenários 16/16 (111/111), 258 referências e 0 ausentes
+> na árvore (257/0 + 1 fora no pacote), `quick_validate` válido na árvore e no pacote; pacote `.skill` `1134a4f1…1ac9`
+> (123 arquivos) e completo `5a601327…d3ad` (146), iguais à árvore, com as suítes do kit e dos scripts rodadas a partir
+> do pacote (166 OK e 3 pulados; 23 OK); transferência `fundacao-ia-multiprojetos-1.4.5.zip` (`93548ea7…e4e1`). A
+> **1.4.5 foi instalada no perfil em 19/10/2026, às 22h16** (`atualizar --sha256`; 123 arquivos, 0 divergências); a
+> 1.4.4 ficou em `~/.agents/skills-anteriores/` e confere com o pacote dela. Cópia pública sincronizada e enviada ao
+> repositório público. Registros: `fundacao-ia-multiprojetos-workspace/correcoes-1.4.5/`.
 
 > **1.4.4 (19/10/2026):** resposta à **conferência independente da 1.4.3** (`auditoria/CONFERENCIA-1.4.3.md`, sessão
 > independente — Fable 5.1 —, só leitura, em cópias e perfis descartáveis: APROVADA COM RESSALVAS; as nove correções
@@ -73,8 +92,9 @@ Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5),
 > instalador real, nem chega a aplicar, e o código dele não instala a skill. Mudanças:
 > - o instalador confere o hash do pacote **antes de extrair**, com `--sha256` e com o
 >   `SHA256SUMS.txt` ao lado do pacote, e recusa uma divergência sem alterar nada;
-> - instalar e atualizar ficaram **atômicos**: preparo fora das pastas de skills, troca por
->   renomeação e retorno à versão anterior se algo falhar;
+> - instalar e atualizar passaram a preparar a cópia fora das pastas de skills e a trocar por
+>   renomeação, com retorno à versão anterior se algo falhar (chamado de "atômico" na época; a 1.4.3
+>   corrigiu a descrição: são duas renomeações com uma marca entre elas, AF-02);
 > - uma ligação em conflito é recusada antes de copiar, e um pacote corrompido vira erro em JSON;
 > - `references/seguranca-isolamento.md` declara o limite de credencial por projeto;
 > - um arquivo de texto para revisão por IA de chat acompanha os zips.
@@ -113,7 +133,7 @@ R01–R51 do livro (mais R52–R60 da proposta 3.0) com origem por aula e págin
 registro, scripts de apoio e um kit de referência em Python + SQLite.
 
 O que sustenta cada afirmação:
-- **Testado em execução, em ambientes descartáveis (1.4.4):** 166 testes do kit (3 pulados:
+- **Testado em execução, em ambientes descartáveis (1.4.5):** 166 testes do kit (3 pulados:
   link simbólico de arquivo indisponível sem modo de desenvolvedor); 23 testes dos scripts da
   skill (`scripts/tests/`); 40 testes das ferramentas de entrega (`testes/`); 16 cenários
   determinísticos (111/111 verificações). **Histórico, não repetido desde a 1.4.0:** 17 execuções de
@@ -146,12 +166,13 @@ O que sustenta cada afirmação:
   independente, Fable 5.1; `auditoria/CONFERENCIA-1.4.3.md`): APROVADA COM RESSALVAS — as nove correções e
   todos os números da 1.4.3 confirmados; um P2 (CF-01) e cinco P3; CF-01 a CF-04 corrigidos na 1.4.4 (bloco
   acima), CF-05 e CF-06 pendentes.
-- **Instalado:** a **1.4.4** está instalada neste computador (cópia em `~/.agents/skills`, junção
+- **Instalado:** a **1.4.5** está instalada neste computador (cópia em `~/.agents/skills`, junção
   em `~/.claude/skills`). Histórico:
   - 18/10: a 1.3.0 às 22h41 e a 1.3.1 às 23h40;
   - 19/10: a 1.3.2 às 00h28, a 1.3.3 à 01h00 e a 1.3.4 à 01h39;
   - 19/10, cada uma com o OK do titular: a 1.4.0 às 10h35, a 1.4.1 às 11h51, a 1.4.2 às 18h29, a 1.4.3 às 20h05 e a
-    1.4.4 às 21h36 (esta a pedido direto do titular, depois das correções da conferência da 1.4.3).
+    1.4.4 às 21h36 (esta a pedido direto do titular, depois das correções da conferência da 1.4.3) e a 1.4.5 às
+    22h16 (idem, fechando CF-05 e CF-06b).
 
   Toda instalação teve releitura dos hashes e é reversível com `remover --confirmar`. Para outro
   computador, para o claude.ai e para revisão por outra IA: `transferencia/` (seção 2).
@@ -164,10 +185,10 @@ O que sustenta cada afirmação:
 
 | Estado | Situação | Evidência |
 |---|---|---|
-| Skill criada | **Sim** | 146 arquivos na 1.4.4 e na 1.4.3 (`ARVORE-SKILL.md`; 144 da 1.4.0 à 1.4.2; 134 na 1.3.4) |
+| Skill criada | **Sim** | 146 arquivos da 1.4.3 à 1.4.5 (`ARVORE-SKILL.md`; 144 da 1.4.0 à 1.4.2; 134 na 1.3.4) |
 | Skill validada estruturalmente | **Sim** | `quick_validate` válido na árvore e no pacote extraído (variantes `anthropic-skills` e plugin oficial `ea10b213686c`). Na 1.4.1, as chaves da raiz do cabeçalho também estão na lista do validador do Chat/Work (CEN-11 e pacote extraído; esse validador não rodou aqui). 258 referências conferidas na árvore (257 no pacote), 0 ausentes. As citações `<skill>/…` são conferidas em qualquer lugar, só pela raiz da skill e com a grafia exata: o CEN-08 planta três erros em cada uma das 24 ocorrências — arquivo inexistente, erro na primeira pasta e caixa trocada (72 acusados) — e remove cada um dos 11 arquivos assim citados (11 acusados); varredura de injeção sobre todos os Markdown com 1 aviso revisado |
 | Skill testada em execução | **Parcialmente: sim em ambientes descartáveis; nenhuma integração real com provedores** | seção 7 (166 testes do kit, 23 dos scripts, 40 da entrega, 111/111 verificações de cenário, MCP com SDK real em processo e por stdio; avaliações com subagentes só históricas) |
-| Skill instalada no ambiente | **Sim, a 1.4.4** (19/10/2026, 21h36; Claude Code deste computador; a pedido do titular) | Antes, `verificar --origem` contra o pacote 1.4.3 arquivado deu 123 arquivos e 0 divergências. Depois, `instalar_skill.py atualizar --sha256 b54b1714…401c` conferiu o hash do pacote antes de extrair, contra o hash informado e contra o `SHA256SUMS.txt` de `dist/`, e fez a troca por renomeação; a área de preparo foi removida. O `verificar --origem dist/fundacao-ia-multiprojetos.skill --sha256 …` deu 123 arquivos, 0 divergências, junção válida e integridade do pacote conferida. O `SKILL.md` lido pela junção tem `version: "1.4.4"`, e `LICENSE.txt` está na cópia. A 1.4.3 guardada em `~/.agents/skills-anteriores/` confere com o pacote dela (123 arquivos, 0 divergências), ao lado das versões 1.3.0 a 1.4.2. O Claude Code recarregou o catálogo de skills na própria sessão da atualização (`ambiente/instalacao-2026-10-18.json`, `atualizacao_1_4_4`). Não verificados: acionamento da 1.4.4 instalada num pedido real, Codex e claude.ai |
+| Skill instalada no ambiente | **Sim, a 1.4.5** (19/10/2026, 22h16; Claude Code deste computador; a pedido do titular) | Antes, `verificar --origem` contra o pacote 1.4.4 arquivado deu 123 arquivos e 0 divergências. Depois, `instalar_skill.py atualizar --sha256 1134a4f1…1ac9` conferiu o hash do pacote antes de extrair, contra o hash informado e contra o `SHA256SUMS.txt` de `dist/`, e fez a troca por renomeação; a área de preparo foi removida. O `verificar --origem dist/fundacao-ia-multiprojetos.skill --sha256 …` deu 123 arquivos, 0 divergências, junção válida e integridade do pacote conferida. O `SKILL.md` lido pela junção tem `version: "1.4.5"`, e `LICENSE.txt` está na cópia. A 1.4.4 guardada em `~/.agents/skills-anteriores/` confere com o pacote dela (123 arquivos, 0 divergências), ao lado das versões 1.3.0 a 1.4.3. Nas atualizações para a 1.4.4 e para a 1.4.5 o Claude Code recarregou o catálogo de skills na própria sessão (na 1.4.5, alguns minutos depois do `atualizar`; `ambiente/instalacao-2026-10-18.json`, `atualizacao_1_4_4` e `atualizacao_1_4_5`). Não verificados: acionamento da 1.4.5 instalada num pedido real, Codex e claude.ai |
 | Fundação implementada | **Não** | o kit só foi instalado em pastas de teste; a fundação do usuário será implantada quando a skill for acionada com raiz e escopo autorizados |
 | Projeto efetivamente adaptado | **Não** | só projetos fictícios de teste (`evals/fixtures/`); a migração de um projeto real exige evidências próprias sobre a origem |
 
@@ -178,7 +199,7 @@ O que sustenta cada afirmação:
 | Caminho | Conteúdo |
 |---|---|
 | `../fundacao-ia-multiprojetos/` | A skill completa (SKILL.md, referências, scripts, modelos, kit de referência, avaliações) |
-| `dist/fundacao-ia-multiprojetos.skill` | Pacote instalável no formato Agent Skills (zip com a pasta na raiz; 123 arquivos na 1.4.4 e na 1.4.3, 121 na 1.4.2; sem `evals/`) |
+| `dist/fundacao-ia-multiprojetos.skill` | Pacote instalável no formato Agent Skills (zip com a pasta na raiz; 123 arquivos da 1.4.3 à 1.4.5, 121 na 1.4.2; sem `evals/`) |
 | `dist/fundacao-ia-multiprojetos-completo.zip` | A mesma skill com `evals/` (cenários, avaliações e projetos fictícios de teste; o `.env` das fixtures tem valor fictício) |
 | `dist/SHA256SUMS.txt` | Hashes dos pacotes |
 | `dist/EMPACOTAMENTO.json` | Versão empacotada e ferramenta usada (caminho e hashes do skill-creator) |
@@ -192,9 +213,9 @@ O que sustenta cada afirmação:
 | `auditoria/` | Objetivo original, roteiro, relatório da auditoria independente, correções, resposta aos achados, reverificação, terceira e quarta conferências e as duas confirmações finais |
 | `ambiente/inventario-2026-10-18.json` | Inventário somente leitura do ambiente (versões, sistema de arquivos, módulos) |
 | `ambiente/instalacao-2026-10-18.json` | Resultado da instalação e da releitura (hashes) da skill neste computador |
-| `transferencia/fundacao-ia-multiprojetos-1.4.4.zip` | Para instalar em outro computador: o `.skill` da 1.4.4, o instalador, `SHA256SUMS.txt` e `LEIA-ME.txt` com os passos (SHA-256 do zip `387ce8b2…408e`); os zips das versões anteriores seguem na pasta |
-| `transferencia/fundacao-ia-multiprojetos-1.4.4-para-claude-ai.zip` | O mesmo `.skill` da 1.4.4, byte a byte, com extensão `.zip`, para o envio no claude.ai (SHA-256 `b54b1714…401c`) |
-| `transferencia/fundacao-ia-multiprojetos-1.4.4-para-revisao.md` | Os 123 arquivos do pacote, o instalador e o LEIA-ME em texto UTF-8, com o SHA-256 de cada um, para revisão por IA de chat. Não serve para instalar (`01ca09f1…6e36`) |
+| `transferencia/fundacao-ia-multiprojetos-1.4.5.zip` | Para instalar em outro computador: o `.skill` da 1.4.5, o instalador, `SHA256SUMS.txt` e `LEIA-ME.txt` com os passos (SHA-256 do zip `93548ea7…e4e1`); os zips das versões anteriores seguem na pasta |
+| `transferencia/fundacao-ia-multiprojetos-1.4.5-para-claude-ai.zip` | O mesmo `.skill` da 1.4.5, byte a byte, com extensão `.zip`, para o envio no claude.ai (SHA-256 `1134a4f1…1ac9`) |
+| `transferencia/fundacao-ia-multiprojetos-1.4.5-para-revisao.md` | Os 123 arquivos do pacote, o instalador e o LEIA-ME em texto UTF-8, com o SHA-256 de cada um, para revisão por IA de chat. Não serve para instalar (`0d38243a…4609`) |
 | `transferencia/…-1.4.2*`, `…-1.4.1*` e `…-1.4.0.zip` | Anteriores: 1.4.2 (zip `9968bceb…9fca`; claude.ai `6b61af72…d389`; revisão `18fc0355…f69f`), 1.4.1 (`e3b44216…7821`; claude.ai `bce7b510…5f29`) e 1.4.0 (`c5b4b740…8ed6`) |
 | `instalar_skill.py` · `empacotar.py` · `gerar_arvore.py` | Instalar/atualizar/verificar/remover · gerar os pacotes · gerar a árvore |
 
@@ -209,8 +230,9 @@ modelo local autorizado (CAG real). Requisitos por peça e o que rodou em cada v
 **Atualizar a cópia instalada** (guarda a anterior em `~/.agents/skills-anteriores/`; foi o comando
 usado em 19/10, sempre com o OK do titular, para passar à 1.4.0 às 10h35, à 1.4.1 às 11h51 e à 1.4.2
 às 18h29, esta com `--sha256`, à 1.4.3 às 20h05, com
-`--sha256 a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b`, e à 1.4.4 às 21h36, a pedido
-do titular, com `--sha256 b54b1714b466c411af49aab3c46fade3581e44f9527d04b75e501472d730401c`):
+`--sha256 a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b`, à 1.4.4 às 21h36, a pedido do
+titular, com `--sha256 b54b1714b466c411af49aab3c46fade3581e44f9527d04b75e501472d730401c`, e à 1.4.5 às 22h16, com
+`--sha256 1134a4f1cea654778499091dfd52ffe3c622a13fb7e7af6d4981ed1b556a1ac9`):
 
 ```powershell
 python <raiz-do-projeto>\entrega\instalar_skill.py atualizar --origem <raiz-do-projeto>\entrega\dist\fundacao-ia-multiprojetos.skill
@@ -239,7 +261,7 @@ nada; uma exceção na troca ou na ligação devolve a versão anterior e descar
 processo cair entre as duas renomeações, o próximo `instalar` ou `atualizar` conclui a troca com a cópia
 preparada, e `verificar` avisa enquanto isso não acontecer (1.4.3, AF-02; se a marca da troca estiver ilegível,
 as cópias preparadas que sobrarem em `skills-preparo/` são removidas e relatadas — 1.4.4, CF-04). **Neste computador a
-instalação já foi feita** (1.3.0 às 22h41 de 18/10/2026, atualizada até a 1.4.4 às 21h36 de 19/10; ver
+instalação já foi feita** (1.3.0 às 22h41 de 18/10/2026, atualizada até a 1.4.5 às 22h16 de 19/10; ver
 `ambiente/instalacao-2026-10-18.json`): o primeiro comando agora recusaria, e o segundo serve para
 reconferir. Em geral a skill passa a valer na próxima sessão (ou após
 `/reload-skills`); aqui, o Claude Code passou a listá-la na própria sessão da instalação.
@@ -249,7 +271,7 @@ reconferir. Em geral a skill passa a valer na próxima sessão (ou após
 `~/.claude/skills/` (pessoal) ou `.claude/skills/` (projeto); Codex — `~/.agents/skills/`
 ou `.agents/skills/` (compatibilidade projetada, **não testada**).
 
-**Outro computador:** `transferencia/fundacao-ia-multiprojetos-1.4.4.zip` traz o `.skill` da 1.4.4,
+**Outro computador:** `transferencia/fundacao-ia-multiprojetos-1.4.5.zip` traz o `.skill` da 1.4.5,
 o `instalar_skill.py`, o `SHA256SUMS.txt` e o `LEIA-ME.txt`. Os passos do LEIA-ME: conferir o hash
 (Windows, Linux e macOS), instalar com `--sha256`, verificar, enviar ao claude.ai, pedir revisão a
 outra IA e remover; ele traz também uma tabela de onde foi testado. O zip foi reaberto e conferido
@@ -261,11 +283,11 @@ instalação em outro computador e o `shasum` do macOS não foram testados. Mont
 
 **Revisão por outra IA:** zip anexado numa conversa de chat pode chegar ilegível; foi o que aconteceu
 na auditoria sobre a 1.4.1 (ING-01). Para pedir uma auditoria, anexe
-`transferencia/fundacao-ia-multiprojetos-1.4.4-para-revisao.md`. Ele tem os 123 arquivos do pacote,
+`transferencia/fundacao-ia-multiprojetos-1.4.5-para-revisao.md`. Ele tem os 123 arquivos do pacote,
 o instalador e o LEIA-ME em texto, com o SHA-256 de cada um, e o montador confere que cada bloco
 reproduz o arquivo byte a byte. Não serve para instalar.
 
-**claude.ai (Chat/Work):** envie `transferencia/fundacao-ia-multiprojetos-1.4.4-para-claude-ai.zip`,
+**claude.ai (Chat/Work):** envie `transferencia/fundacao-ia-multiprojetos-1.4.5-para-claude-ai.zip`,
 que é o mesmo `.skill` com extensão `.zip`. No claude.ai: Customize > Skills, botão "+", "Create
 skill" e "Upload a skill". O recurso exige a execução de código ligada (Settings > Capabilities).
 Passos conferidos na central de ajuda em 19/10/2026
@@ -320,6 +342,10 @@ você no terminal); dados fictícios × reais (reais só após
 
 ## 5. Atualização
 
+- **Numeração:** a versão da skill (`metadata.version` no `SKILL.md`) sobe a cada entrega; a do kit de
+  referência (`KIT_VERSION` em `assets/fundacao-kit/fundacao/__init__.py`) só sobe quando algum arquivo do
+  kit muda (as skills 1.4.1 e 1.4.2 mantiveram o kit 1.4.0; a 1.4.4 manteve o 1.4.1, por decisão do titular
+  em 19/10/2026). Assim, uma cópia restaurada só acusa "kit diferente" quando o kit mudou de fato.
 - **Da skill:** gere/obtenha o pacote novo e rode `instalar_skill.py atualizar --origem <pacote>`
   (a versão anterior fica guardada, com data, em `~/.agents/skills-anteriores/` — fora da pasta
   de skills, para não ser lida como uma segunda skill). Depois:
@@ -367,9 +393,9 @@ Detalhe completo em `avaliacoes/AVALIACOES.md`. Resumo:
 
 | Verificação | Resultado | Natureza |
 |---|---|---|
-| Suíte de conformidade do kit 1.4.1 (árvore da skill 1.4.4; na 1.4.3 também em instalação limpa e no pacote extraído) | 166 testes OK, 3 pulados (link simbólico de arquivo indisponível) | real-local; identidades de ensaio; inclui os 3 testes da auditoria final da 1.4.2 (AF-01, AF-09), os 48 testes novos da auditoria externa e do N1 (40 regressões que falham na 1.3.4, 5 controles que passam nas duas versões, 2 pulados e 1 complementar de caminho novo) e as provas reais de prazo, neto órfão e entrada padrão byte a byte das versões anteriores |
+| Suíte de conformidade do kit 1.4.1 (árvore e pacote extraído da skill 1.4.5; o mesmo na 1.4.4 e na 1.4.3) | 166 testes OK, 3 pulados (link simbólico de arquivo indisponível) | real-local; identidades de ensaio; inclui os 3 testes da auditoria final da 1.4.2 (AF-01, AF-09), os 48 testes novos da auditoria externa e do N1 (40 regressões que falham na 1.3.4, 5 controles que passam nas duas versões, 2 pulados e 1 complementar de caminho novo) e as provas reais de prazo, neto órfão e entrada padrão byte a byte das versões anteriores |
 | Testes dos scripts da skill e das ferramentas de entrega | 23 + 40 OK (os 6 novos da 1.4.4 são as regressões CF-01 a CF-04 da conferência da 1.4.3) | real-local; perfis, destinos e `dist` descartáveis; junções reais; ausência de `os.path.isjunction` e Python < 3.10 simulados |
-| Cenários determinísticos CEN-01–CEN-16 (1.4.4) | 16/16 (111/111 verificações; as que dependem do perfil aparecem como puladas quando ele não tem o validador ou o book-to-skill) | real-local; alguns com eventos ou rotas simulados (rotulados) |
+| Cenários determinísticos CEN-01–CEN-16 (1.4.5; o mesmo na 1.4.4) | 16/16 (111/111 verificações; as que dependem do perfil aparecem como puladas quando ele não tem o validador ou o book-to-skill) | real-local; alguns com eventos ou rotas simulados (rotulados) |
 | Avaliações com subagentes, iteração 1 (E1–E8) | com a skill 46/46; sem a skill 39/42 (E1–E7); custo pareado +732,5 s e +66.837 tokens por execução (E1–E7) | execução real de agentes (skill 1.0.0) em pastas descartáveis; não repetida na 1.4.0; reanálise em `avaliacoes/AVALIACOES.md` §8 |
 | Avaliação 9 (instrução embutida em conteúdo autorizado), iteração 2 | 4/5 nas duas configurações | idem; correção aplicada na 1.2.0 |
 | Acionamento (20 pedidos, 16 skills concorrentes) | 20/20 | simulação por agente separado, não o mecanismo do host |
@@ -468,10 +494,11 @@ negava) e cinco **P3** (CF-02 ligação pendurada mantida pelo `remover`; CF-03 
 mensagem enganosa; CF-04 cópia preparada órfã depois de marca ilegível; CF-05 redação; CF-06 cópia pública além
 do declarado). CF-01 a CF-04 foram corrigidos na **1.4.4**, com regressões em `testes/test_conferencia_1_4_3.py`
 (vermelhas no snapshot da 1.4.3, verdes na 1.4.4) e uma verificação nova no CEN-13; registros em
-`fundacao-ia-multiprojetos-workspace/correcoes-1.4.4/`. CF-05 ("atômico" no bloco 1.4.2 deste README, R46 da
-rastreabilidade, versão ativa do plugin na matriz de hosts) fica pendente; do CF-06, o bloco "Cópia pública" do
-README da cópia pública passou a ser produzido pelo montador (`correcoes-1.4.4/ferramentas/montar_copia_publica_1_4_4.py`)
-e o fim de linha do log no remoto segue como está.
+`fundacao-ia-multiprojetos-workspace/correcoes-1.4.4/`. Do CF-06, o bloco "Cópia pública" do README da cópia
+pública passou a ser produzido pelo montador (`correcoes-1.4.4/ferramentas/montar_copia_publica_1_4_4.py`) já na
+1.4.4. CF-05 (redação: bloco 1.4.2 deste README, R46 do gerador e da rastreabilidade, versão do plugin na matriz de
+hosts) e CF-06b (`.gitattributes` da cópia pública guardando os logs byte a byte) foram fechados na **1.4.5**, com o
+kit mantido em 1.4.1 por decisão do titular (registros em `fundacao-ia-multiprojetos-workspace/correcoes-1.4.5/`).
 
 ## 9. Bloqueios e o que falta executar no seu ambiente
 
@@ -494,7 +521,9 @@ e o fim de linha do log no remoto segue como está.
 | Cópia instalada na 1.4.3 | **feito** em 19/10/2026, 20h05, com o OK do titular | — | registro em `ambiente/instalacao-2026-10-18.json` (`atualizacao_1_4_3`) |
 | Correções da conferência da 1.4.3 (1.4.4) | **feito** em 19/10/2026: código, regressões (vermelhas no snapshot da 1.4.3, verdes na 1.4.4), suítes em cópias e perfis descartáveis, pacote `b54b1714…401c` conferido, transferência e cópia pública sincronizada | — | `auditoria/CONFERENCIA-1.4.3.md` §7; registros em `fundacao-ia-multiprojetos-workspace/correcoes-1.4.4/` |
 | Cópia instalada na 1.4.4 | **feito** em 19/10/2026, 21h36, a pedido do titular | — | registro em `ambiente/instalacao-2026-10-18.json` (`atualizacao_1_4_4`) |
-| Skill no claude.ai (Chat/Work) | não testado | o titular envia o ZIP no catálogo | `transferencia/fundacao-ia-multiprojetos-1.4.4-para-claude-ai.zip`; passos na seção 2 |
+| Pendências da conferência da 1.4.3 (1.4.5: CF-05, CF-06b e decisão sobre a versão do kit) | **feito** em 19/10/2026, a pedido do titular; kit mantido em 1.4.1 | — | registros em `fundacao-ia-multiprojetos-workspace/correcoes-1.4.5/` |
+| Cópia instalada na 1.4.5 | **feito** em 19/10/2026, 22h16, a pedido do titular | — | registro em `ambiente/instalacao-2026-10-18.json` (`atualizacao_1_4_5`) |
+| Skill no claude.ai (Chat/Work) | não testado | o titular envia o ZIP no catálogo | `transferencia/fundacao-ia-multiprojetos-1.4.5-para-claude-ai.zip`; passos na seção 2 |
 | Python 3.10/3.11 real (instalador e suíte) | só simulado | um Python 3.10 ou 3.11 disponível | rodar `testes/` e a suíte do kit nele |
 | Avaliações comportamentais da 1.4.0 | não repetidas | autorizar o custo (rodada completa ≈ 22 milhões de tokens; subconjunto ≈ 11 milhões) | `avaliacoes/AVALIACOES.md` §8 lista os cenários a repetir primeiro |
 

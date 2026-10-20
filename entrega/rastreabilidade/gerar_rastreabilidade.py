@@ -664,7 +664,8 @@ RELATORIO_TECNICO_140 = {
 # Regressões da auditoria sobre a 1.4.1 (falham na 1.4.1, passam na 1.4.2), por requisito.
 AUDITORIA_141 = {
     "R42": "entrega/testes/test_auditoria_1_4_1.py (SEC-02, OPS-01; controle do SEC-01)",
-    "R46": "entrega/testes/test_auditoria_1_4_1.py (OPS-01: atualização da skill atômica, com retorno)",
+    "R46": "entrega/testes/test_auditoria_1_4_1.py (OPS-01: atualização da skill por renomeação, com retorno à versão "
+           "anterior se algo falhar; a 1.4.3 descreve a troca como duas renomeações com uma marca entre elas)",
 }
 
 COLS = ["ID", "Requisito", "Origem (aula, seção, página)", "Interpretação operacional",

@@ -1,4 +1,4 @@
-# Matriz de hosts, validadores e verificações — skill 1.4.4
+# Matriz de hosts, validadores e verificações — skill 1.4.5
 
 Data: 19/10/2026. Responde aos itens F20, O2 e O4 da auditoria externa da 1.3.4
 (`auditoria/RELATORIO-AUDITORIA-EXTERNA-1.3.4.md`), ao PRM-02 do relatório técnico sobre a 1.4.0
@@ -10,14 +10,16 @@ CF-01 a CF-04 da conferência da 1.4.3), as suítes, os cenários, as referênci
 árvore corrigida, em cópias e perfis descartáveis (`fundacao-ia-multiprojetos-workspace/correcoes-1.4.4/execucoes/`);
 o pacote 1.4.4 (`b54b1714…401c`, 123 arquivos) foi gerado e conferido contra a árvore, com as suítes do kit e dos scripts
 rodadas a partir dele, e a cópia instalada foi atualizada para a 1.4.4 em 19/10/2026, às 21h36 (registros `12-` a `15-`).
+A 1.4.5 (CF-05 e CF-06b; kit mantido em 1.4.1) repetiu tudo: suítes, cenários, referências e validadores na árvore e no
+pacote 1.4.5 (`1134a4f1…1ac9`, 123 arquivos), instalada às 22h16 (`fundacao-ia-multiprojetos-workspace/correcoes-1.4.5/execucoes/`).
 
 ## 1. Validadores e empacotador (F20)
 
-| Ferramenta | Onde | Hash | Resultado sobre a 1.4.4 e a 1.4.3 (árvore e pacote extraído) | Situação |
+| Ferramenta | Onde | Hash | Resultado sobre a 1.4.5, a 1.4.4 e a 1.4.3 (árvore e pacote extraído) | Situação |
 |---|---|---|---|---|
 | Especificação Agent Skills (S1) | agentskills.io/specification | — | `compatibility` aceito na raiz (até 500 caracteres) ou como texto em `metadata`; desde a 1.4.1, está em `metadata` (436 caracteres na 1.4.3); descrição com 852 de 1.024; nome com 25 de 64; `license` na raiz como texto (MIT, apontando para `LICENSE.txt`) | referência normativa |
-| skill-creator `anthropic-skills` (aplicativo; usado no empacotamento) | `%APPDATA%\Claude\local-agent-mode-sessions\skills-plugin\…\skills\skill-creator` | `quick_validate.py` f6531597…e01892 · `package_skill.py` 1a33059b…8d1c0f | **Skill is valid!** (código 0) na árvore e no pacote 1.4.4 (`correcoes-1.4.4/execucoes/10-…` e `13-…`) e na árvore e no pacote 1.4.3 (`auditoria-final-1.4.2/execucoes/21-…`, `24-…`) | executado |
-| skill-creator do plugin oficial (versão ativa `ea10b213686c`) | `~\.claude\plugins\cache\claude-plugins-official\skill-creator\ea10b213686c\…` | `quick_validate.py` 67cf5703…5fde365 · `package_skill.py` igual ao de cima | **Skill is valid!** (código 0) na árvore e no pacote 1.4.4 (cópias do plugin em cache, mesmo `quick_validate.py` 67cf5703…) e na árvore e no pacote 1.4.3 | executado |
+| skill-creator `anthropic-skills` (aplicativo; usado no empacotamento) | `%APPDATA%\Claude\local-agent-mode-sessions\skills-plugin\…\skills\skill-creator` | `quick_validate.py` f6531597…e01892 · `package_skill.py` 1a33059b…8d1c0f | **Skill is valid!** (código 0) na árvore e no pacote 1.4.5 (`correcoes-1.4.5/execucoes/03-…` e `09-…`), 1.4.4 (`correcoes-1.4.4/execucoes/10-…` e `13-…`) e 1.4.3 (`auditoria-final-1.4.2/execucoes/21-…`, `24-…`) | executado |
+| skill-creator do plugin oficial (versão `ea10b213686c`, a ativa em 19/10/2026 até 20h08; desde então a ativa é `a0b04d9ddcca`, com o mesmo `quick_validate.py` 67cf5703…; as cópias em cache usadas na 1.4.4 têm o mesmo arquivo) | `~\.claude\plugins\cache\claude-plugins-official\skill-creator\ea10b213686c\…` | `quick_validate.py` 67cf5703…5fde365 · `package_skill.py` igual ao de cima | **Skill is valid!** (código 0) na árvore e no pacote 1.4.5 (cópia ativa `a0b04d9ddcca`) e 1.4.4 (cópias do plugin em cache, mesmo `quick_validate.py` 67cf5703…) e na árvore e no pacote 1.4.3 | executado |
 | skill-creator variante Work (da sessão do auditor) | não disponível aqui | — | na 1.4.0, recusou `compatibility` como chave inesperada e listou as permitidas: `allowed-tools`, `description`, `license`, `metadata` e `name` (registro do auditor, `audit/results/creator_validation.log`). Desde a 1.4.1, as chaves da raiz estão nessa lista (conferência da regra no CEN-11 e no pacote extraído da 1.4.3) | **não executado** aqui |
 
 **Decisão registrada (1.4.1, 19/10/2026):** o titular vai usar a skill no Chat/Work. Por isso,
@@ -32,12 +34,12 @@ usada, para que a variante fique identificada em cada pacote.
 
 ## 2. Hosts e formas de instalação (O2)
 
-| Destino | Como instala | Situação na 1.4.4 | Prova necessária |
+| Destino | Como instala | Situação na 1.4.5 | Prova necessária |
 |---|---|---|---|
-| Pacote Agent Skills (`.skill`) | arquivo zip com a pasta na raiz, sem `evals/` | gerado e conferido na 1.4.4 (`b54b1714…401c`; estrutura, hashes, igual à árvore; suítes do kit e dos scripts rodadas a partir dele; 123 arquivos, com `LICENSE.txt`) | — |
-| Claude Code (local) | `entrega/instalar_skill.py instalar|atualizar` → `~/.agents/skills/…` + junção em `~/.claude/skills/…` | **1.4.2 instalada** em 19/10, 18h29, com o OK do titular (a 1.4.0 às 10h35 e a 1.4.1 às 11h51): `atualizar --sha256` com o hash do pacote conferido antes de extrair e troca por renomeação; `verificar --origem` com 121 arquivos, 0 divergências, junção válida e integridade conferida; skill listada pelo host; carregamento num pedido real **não** testado. **1.4.3 instalada** em 19/10, 20h05, com o OK do titular (`atualizar --sha256`; 123 arquivos, 0 divergências, junção válida; a 1.4.2 guardada em `skills-anteriores` e conferida). **1.4.4 instalada** em 19/10, 21h36, a pedido do titular (`atualizar --sha256`; 123 arquivos, 0 divergências, junção válida; a 1.4.3 guardada em `skills-anteriores` e conferida com o pacote dela); o host recarregou o catálogo de skills na sessão; carregamento num pedido real **não** testado | ver a skill carregada pelo host num pedido real |
+| Pacote Agent Skills (`.skill`) | arquivo zip com a pasta na raiz, sem `evals/` | gerado e conferido na 1.4.5 (`1134a4f1…1ac9`; estrutura, hashes, igual à árvore; suítes do kit e dos scripts rodadas a partir dele; 123 arquivos, com `LICENSE.txt`); idem na 1.4.4 (`b54b1714…401c`) | — |
+| Claude Code (local) | `entrega/instalar_skill.py instalar|atualizar` → `~/.agents/skills/…` + junção em `~/.claude/skills/…` | **1.4.2 instalada** em 19/10, 18h29, com o OK do titular (a 1.4.0 às 10h35 e a 1.4.1 às 11h51): `atualizar --sha256` com o hash do pacote conferido antes de extrair e troca por renomeação; `verificar --origem` com 121 arquivos, 0 divergências, junção válida e integridade conferida; skill listada pelo host; carregamento num pedido real **não** testado. **1.4.3 instalada** em 19/10, 20h05, com o OK do titular (`atualizar --sha256`; 123 arquivos, 0 divergências, junção válida; a 1.4.2 guardada em `skills-anteriores` e conferida). **1.4.4 instalada** em 19/10, 21h36, a pedido do titular (`atualizar --sha256`; 123 arquivos, 0 divergências, junção válida; a 1.4.3 guardada em `skills-anteriores` e conferida com o pacote dela); o host recarregou o catálogo de skills na sessão. **1.4.5 instalada** em 19/10, 22h16, a pedido do titular (`atualizar --sha256`; 123 arquivos, 0 divergências, junção válida; a 1.4.4 guardada e conferida com o pacote dela); carregamento num pedido real **não** testado | ver a skill carregada pelo host num pedido real |
 | Codex (local) | mesma cópia em `~/.agents/skills/` | **projetado, não testado** (nenhuma sessão Codex rodou a skill) | sessão Codex que liste e invoque a skill |
-| Chat/Work (catálogo do aplicativo) | no claude.ai: Customize > Skills, "+", "Create skill", "Upload a skill", com um ZIP da pasta; exige a execução de código ligada (central de ajuda, conferida em 19/10/2026: https://support.claude.com/en/articles/12512180-using-skills-in-claude) | **não testado**. Desde a 1.4.1, o cabeçalho tem na raiz só chaves da lista do validador Work (conferência da regra, não o validador). O arquivo de envio é `transferencia/fundacao-ia-multiprojetos-1.4.4-para-claude-ai.zip`, o mesmo `.skill` com extensão `.zip`. Arquivos em `~/.agents` e `~/.claude` não provam instalação nesse catálogo | enviar no claude.ai e ver a skill listada e usada |
+| Chat/Work (catálogo do aplicativo) | no claude.ai: Customize > Skills, "+", "Create skill", "Upload a skill", com um ZIP da pasta; exige a execução de código ligada (central de ajuda, conferida em 19/10/2026: https://support.claude.com/en/articles/12512180-using-skills-in-claude) | **não testado**. Desde a 1.4.1, o cabeçalho tem na raiz só chaves da lista do validador Work (conferência da regra, não o validador). O arquivo de envio é `transferencia/fundacao-ia-multiprojetos-1.4.5-para-claude-ai.zip`, o mesmo `.skill` com extensão `.zip`. Arquivos em `~/.agents` e `~/.claude` não provam instalação nesse catálogo | enviar no claude.ai e ver a skill listada e usada |
 | `agents/openai.yaml` (apresentação no Codex) | opcional (skill-creator) | **não acrescentado**: Codex ainda não foi testado; é apresentação, não requisito do padrão | decidir junto com o primeiro teste em Codex |
 
 ## 3. Requisitos por peça (O2, F17)
@@ -63,8 +65,8 @@ desenvolvedor (link simbólico indisponível; junção disponível). Registros e
 |---|---|---|---|---|
 | Suíte do kit (166 testes) | **executado** (3 pulados: link simbólico de arquivo) | não executado | não executado nesta versão (o auditor rodou a 1.3.4 em Linux 3.12.14) | não executado |
 | Regressões das auditorias (vermelho na versão anterior, verde na seguinte) | **executado** (1.3.4→1.4.0, 1.4.0→1.4.1, 1.4.1→1.4.2, 1.4.2→1.4.3, 1.4.3→1.4.4) | não executado | não executado | não executado |
-| Testes dos scripts da skill (23) e da entrega (40 na 1.4.4; 34 na 1.4.3) | **executado** | não executado | não executado | não executado |
-| Cenários CEN-01 a CEN-16 (111 verificações na 1.4.4, 110 na 1.4.3; 2 delas puladas em perfil sem validador ou book-to-skill) | **executado** | não executado | não executado | não executado |
+| Testes dos scripts da skill (23) e da entrega (40 desde a 1.4.4; 34 na 1.4.3) | **executado** | não executado | não executado | não executado |
+| Cenários CEN-01 a CEN-16 (111 verificações desde a 1.4.4, 110 na 1.4.3; 2 delas puladas em perfil sem validador ou book-to-skill) | **executado** | não executado | não executado | não executado |
 | Ligações: junção (Windows) e link simbólico (Linux) | junção **executada**; link de arquivo indisponível | — | não executado (os testes criam link simbólico no Linux) | não executado |
 | Ciclo instalar/verificar/atualizar/remover com junção | **executado** com a API do 3.12 e com a ausência dela simulada | **não executado** (só simulado) | — | — |
 | MCP com SDK real | **executado** em processo e por stdio (sem host) | — (SDK exige 3.11+) | não executado | não executado |

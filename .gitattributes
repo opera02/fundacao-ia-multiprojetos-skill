@@ -8,3 +8,5 @@
 *.png binary
 *.jpg binary
 *.pdf binary
+# Logs de leitura: guardados byte a byte (o original tem CRLF; conferência da 1.4.3, CF-06b)
+entrega/leitura/logs/*.log -text
