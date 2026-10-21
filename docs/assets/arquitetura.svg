@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="920" viewBox="0 0 1200 920" role="img" aria-labelledby="titulo descricao">
+  <title id="titulo">Visão lógica da Fundação de IA Multiprojetos</title>
+  <desc id="descricao">Uma pessoa define objetivos, escopo e aprovações. A skill orienta o host executor pelos fluxos A, implantar; B, adaptar; e C, operar, com referências, scripts e modelos. A fundação compartilha contratos, identidade e ACL, execução e retomada, observabilidade e recuperação. Os projetos fictícios juridico-lab, reversa-lab e atendimento-lab preservam seus documentos, regras e escopos de memória, cache, casos e conhecimento GOLD. No kit, parte do estado fica em SQLite compartilhado, com autorização por escopo. Integrações externas são opcionais e dependem do host.</desc>
+  <defs>
+    <marker id="seta" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0 0L8 4L0 8Z" fill="#597889"/>
+    </marker>
+    <marker id="seta-opcional" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0 0L8 4L0 8Z" fill="#7F9DA7"/>
+    </marker>
+    <style>
+      text { font-family: "DejaVu Sans", Arial, sans-serif; }
+      .secao { font-size: 12px; font-weight: 700; letter-spacing: 1.25px; fill: #536B7A; }
+      .titulo-card { font-size: 18px; font-weight: 700; fill: #112D43; }
+      .texto { font-size: 16px; fill: #334E60; }
+      .apoio { font-size: 14px; fill: #5C7382; }
+      .conector { fill: none; stroke: #597889; stroke-width: 2; }
+      .projeto { font-size: 20px; font-weight: 700; fill: #0C626B; }
+      .etiqueta { font-size: 13px; font-weight: 700; fill: #235F68; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="920" fill="#F4F7FA"/>
+  <path d="M0 0H1200V112H0Z" fill="#102D43"/>
+  <rect x="48" y="27" width="5" height="16" rx="2" fill="#51D2D7"/>
+  <text x="65" y="40" font-size="12" font-weight="700" letter-spacing="1.65" fill="#AFE8EC">FUNDAÇÃO DE IA MULTIPROJETOS</text>
+  <text x="48" y="82" font-size="30" font-weight="700" fill="#FFFFFF">Uma base comum. Projetos com escopos próprios.</text>
+  <path d="M1104 27H1152V43H1104Z" fill="#1C5268"/>
+  <path d="M1136 27H1152V43H1136Z" fill="#51D2D7"/>
+
+  <text x="48" y="146" class="secao">01 · ORIENTAÇÃO E EXECUÇÃO</text>
+
+  <rect x="48" y="166" width="232" height="152" rx="12" fill="#FFFFFF" stroke="#CBD9E3"/>
+  <text x="70" y="199" class="titulo-card" style="font-size:17px">Pessoa responsável</text>
+  <circle cx="73" cy="230" r="3" fill="#169EA6"/>
+  <text x="87" y="235" class="texto">Define objetivos</text>
+  <circle cx="73" cy="256" r="3" fill="#169EA6"/>
+  <text x="87" y="261" class="texto">Delimita o escopo</text>
+  <circle cx="73" cy="282" r="3" fill="#169EA6"/>
+  <text x="87" y="287" class="texto">Aprova ações e custos</text>
+
+  <path d="M285 243H310" class="conector" marker-end="url(#seta)"/>
+
+  <rect x="316" y="166" width="458" height="152" rx="12" fill="#FFFFFF" stroke="#62BCC5" stroke-width="1.5"/>
+  <rect x="316" y="166" width="6" height="152" rx="3" fill="#159CA6"/>
+  <text x="338" y="199" class="titulo-card">Skill fundacao-ia-multiprojetos</text>
+  <rect x="338" y="218" width="128" height="29" rx="6" fill="#E5F5F5"/>
+  <rect x="476" y="218" width="124" height="29" rx="6" fill="#E5F5F5"/>
+  <rect x="610" y="218" width="120" height="29" rx="6" fill="#E5F5F5"/>
+  <text x="402" y="238" text-anchor="middle" class="etiqueta">A · Implantar</text>
+  <text x="538" y="238" text-anchor="middle" class="etiqueta">B · Adaptar</text>
+  <text x="670" y="238" text-anchor="middle" class="etiqueta">C · Operar</text>
+  <text x="338" y="274" class="texto">Referências · scripts · modelos</text>
+  <text x="338" y="299" class="apoio">Orienta o procedimento do host</text>
+
+  <path d="M779 243H804" class="conector" marker-end="url(#seta)"/>
+
+  <rect x="810" y="166" width="342" height="152" rx="12" fill="#FFFFFF" stroke="#CBD9E3"/>
+  <text x="832" y="199" class="titulo-card">Host executor</text>
+  <text x="832" y="235" class="texto">Claude Code · Codex</text>
+  <text x="832" y="261" class="texto">ou host compatível</text>
+  <text x="832" y="299" class="apoio">Usa as ferramentas disponíveis</text>
+
+  <path d="M981 319V369" class="conector" marker-end="url(#seta)"/>
+  <text x="996" y="351" font-size="11" font-weight="700" letter-spacing="0.7" fill="#536B7A">EXECUTA</text>
+  <path d="M1153 243H1175V850H1155" fill="none" stroke="#7F9DA7" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#seta-opcional)"/>
+
+  <text x="48" y="354" class="secao">02 · FUNDAÇÃO COMPARTILHADA</text>
+  <rect x="48" y="376" width="1104" height="117" rx="12" fill="#E7F1F5" stroke="#AEC7D3"/>
+  <path d="M324 395V474M600 395V474M876 395V474" stroke="#BED2DD"/>
+
+  <text x="70" y="411" class="titulo-card">Contratos</text>
+  <text x="70" y="442" font-size="15" fill="#334E60">Interfaces comuns</text>
+  <text x="70" y="465" font-size="15" fill="#334E60">e regras de integração</text>
+
+  <text x="346" y="411" class="titulo-card">Identidade e ACL</text>
+  <text x="346" y="442" font-size="15" fill="#334E60">Papéis, ações permitidas</text>
+  <text x="346" y="465" font-size="15" fill="#334E60">e autorização por escopo</text>
+
+  <text x="622" y="411" class="titulo-card">Execução e retomada</text>
+  <text x="622" y="442" font-size="15" fill="#334E60">Orquestração e continuidade</text>
+  <text x="622" y="465" font-size="15" fill="#334E60">com registro de estado</text>
+
+  <text x="898" y="411" class="titulo-card">Observabilidade</text>
+  <text x="898" y="442" font-size="15" fill="#334E60">Logs, consumo, backup</text>
+  <text x="898" y="465" font-size="15" fill="#334E60">e recuperação</text>
+
+  <text x="48" y="533" class="secao">03 · PROJETOS INDEPENDENTES · EXEMPLOS FICTÍCIOS</text>
+  <path d="M600 494V554M220 554H980M220 554V567M600 554V567M980 554V567" class="conector"/>
+  <path d="M220 561V568" class="conector" marker-end="url(#seta)"/>
+  <path d="M600 561V568" class="conector" marker-end="url(#seta)"/>
+  <path d="M980 561V568" class="conector" marker-end="url(#seta)"/>
+
+  <rect x="48" y="573" width="344" height="169" rx="12" fill="#FFFFFF" stroke="#A7C8D0"/>
+  <path d="M62 573H378" stroke="#179BA5" stroke-width="4" stroke-linecap="round"/>
+  <text x="70" y="608" class="projeto">juridico-lab</text>
+  <text x="70" y="635" class="texto">Documentos e regras próprios</text>
+  <rect x="70" y="657" width="88" height="31" rx="6" fill="#EAF4F6"/>
+  <rect x="164" y="657" width="60" height="31" rx="6" fill="#EAF4F6"/>
+  <rect x="230" y="657" width="60" height="31" rx="6" fill="#EAF4F6"/>
+  <rect x="296" y="657" width="74" height="31" rx="6" fill="#FBF2D6" stroke="#E4C97B"/>
+  <text x="114" y="678" text-anchor="middle" class="etiqueta">Memória</text>
+  <text x="194" y="678" text-anchor="middle" class="etiqueta">Cache</text>
+  <text x="260" y="678" text-anchor="middle" class="etiqueta">Casos</text>
+  <text x="333" y="678" text-anchor="middle" font-size="13" font-weight="700" fill="#806112">GOLD</text>
+  <text x="70" y="719" class="apoio">Acesso condicionado à identidade</text>
+
+  <rect x="428" y="573" width="344" height="169" rx="12" fill="#FFFFFF" stroke="#A7C8D0"/>
+  <path d="M442 573H758" stroke="#179BA5" stroke-width="4" stroke-linecap="round"/>
+  <text x="450" y="608" class="projeto">reversa-lab</text>
+  <text x="450" y="635" class="texto">Documentos e regras próprios</text>
+  <rect x="450" y="657" width="88" height="31" rx="6" fill="#EAF4F6"/>
+  <rect x="544" y="657" width="60" height="31" rx="6" fill="#EAF4F6"/>
+  <rect x="610" y="657" width="60" height="31" rx="6" fill="#EAF4F6"/>
+  <rect x="676" y="657" width="74" height="31" rx="6" fill="#FBF2D6" stroke="#E4C97B"/>
+  <text x="494" y="678" text-anchor="middle" class="etiqueta">Memória</text>
+  <text x="574" y="678" text-anchor="middle" class="etiqueta">Cache</text>
+  <text x="640" y="678" text-anchor="middle" class="etiqueta">Casos</text>
+  <text x="713" y="678" text-anchor="middle" font-size="13" font-weight="700" fill="#806112">GOLD</text>
+  <text x="450" y="719" class="apoio">Acesso condicionado à identidade</text>
+
+  <rect x="808" y="573" width="344" height="169" rx="12" fill="#FFFFFF" stroke="#A7C8D0"/>
+  <path d="M822 573H1138" stroke="#179BA5" stroke-width="4" stroke-linecap="round"/>
+  <text x="830" y="608" class="projeto">atendimento-lab</text>
+  <text x="830" y="635" class="texto">Documentos e regras próprios</text>
+  <rect x="830" y="657" width="88" height="31" rx="6" fill="#EAF4F6"/>
+  <rect x="924" y="657" width="60" height="31" rx="6" fill="#EAF4F6"/>
+  <rect x="990" y="657" width="60" height="31" rx="6" fill="#EAF4F6"/>
+  <rect x="1056" y="657" width="74" height="31" rx="6" fill="#FBF2D6" stroke="#E4C97B"/>
+  <text x="874" y="678" text-anchor="middle" class="etiqueta">Memória</text>
+  <text x="954" y="678" text-anchor="middle" class="etiqueta">Cache</text>
+  <text x="1020" y="678" text-anchor="middle" class="etiqueta">Casos</text>
+  <text x="1093" y="678" text-anchor="middle" font-size="13" font-weight="700" fill="#806112">GOLD</text>
+  <text x="830" y="719" class="apoio">Acesso condicionado à identidade</text>
+
+  <rect x="48" y="760" width="1104" height="46" rx="8" fill="#E8EEF3"/>
+  <circle cx="72" cy="783" r="10" fill="#456F83"/>
+  <text x="72" y="788" text-anchor="middle" font-size="14" font-weight="700" fill="#FFFFFF">i</text>
+  <text x="93" y="789" font-size="15" fill="#334E60">Visão lógica; no kit, parte do estado fica em SQLite compartilhado com autorização por escopo.</text>
+
+  <rect x="48" y="825" width="1104" height="51" rx="9" fill="#FFFFFF" stroke="#B9CBD5" stroke-dasharray="5 4"/>
+  <text x="70" y="847" font-size="16" font-weight="700" fill="#23475B">Integrações externas opcionais</text>
+  <text x="70" y="867" font-size="13" fill="#5C7382">Disponibilidade, permissões e configuração dependem do host.</text>
+  <text x="1130" y="856" text-anchor="end" font-size="15" fill="#426878">Provedores · MCP · plugins · serviços</text>
+
+  <text x="600" y="906" text-anchor="middle" font-size="17" font-weight="700" fill="#173F54">Reutilize procedimentos. Preserve o escopo dos dados.</text>
+</svg>
