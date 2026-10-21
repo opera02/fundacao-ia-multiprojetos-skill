@@ -40,8 +40,9 @@ class ProviderResult:
     usage: dict[str, Any] = field(default_factory=dict)
     simulated: bool = False
     diagnostic: str = ""
-    # False quando nada saiu para o provedor (executável ausente, sem login, entrada recusada):
-    # essa tentativa não conta no teto de chamadas nem deixa custo pendente.
+    # False quando nada saiu para o provedor (executável ausente, entrada recusada antes de iniciar): essa
+    # tentativa não conta no teto de chamadas nem deixa custo pendente. Com o processo da CLI iniciado, conta,
+    # também sem login (avaliação E11, F-04).
     dispatched: bool = True
     schema_version: str = SCHEMAS["provider_result"]
 

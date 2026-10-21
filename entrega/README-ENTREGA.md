@@ -8,10 +8,45 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–21/10/2026 · Versão da skill: **1.7.3** (kit de referência 1.7.2) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–21/10/2026 · Versão da skill: **1.7.5** (kit de referência 1.7.4) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
 
-> **1.7.3 (21/10/2026):** a CI pública da 1.7.2, a primeira a rodar as quatro verificações até o fim nas dez rodadas,
+> **1.7.5 (21/10/2026):** é a 1.7.4 com um arquivo corrigido. A liberação da 1.7.4 parou na montagem da
+> transferência: o texto para revisão não reproduzia `scripts/tests/test_regra_retomada_desatualizada.py`, gravado
+> com fim de linha CRLF (a conferência relê o texto em modo de texto). A 1.7.4 ficou só empacotada (pacote guardado
+> em `dist/anteriores/`; nada instalado nem publicado) e o número não se reutiliza. Na 1.7.5 o arquivo está em LF;
+> o resto, inclusive o kit 1.7.4, é idêntico, e os resultados da nota da 1.7.4 (abaixo) valem para ela, repetidos na
+> liberação.
+
+> **1.7.4 (21/10/2026; só empacotada — o número não se reutiliza):** corrige os cinco achados da avaliação E11 no kit e a lacuna da E10 na skill, com um teste
+> que falha antes e passa depois para cada um. (F-01, médio) O comando que o kit entrega para o titular colar no
+> PowerShell dobrava só o apóstrofo ASCII; as aspas tipográficas U+2018 a U+201B também fecham a cadeia, e um caminho
+> com uma delas virava comando no terminal dele (o analisador do PowerShell via 3 e 5 instruções). Agora as quatro se
+> dobram, as aspas duplas tipográficas são recusadas, o arquivo de decisão precisa ter nome de identificador, o
+> assinante não aceita quebra de linha e a sondagem do dono da âncora recebe o caminho por variável de ambiente.
+> (F-02, médio) Valia a última decisão registrada: um aceite antigo registrado depois de uma rejeição concluía a
+> tarefa. Agora cada decisão cita, no conteúdo que o titular assina, a decisão vigente da tarefa quando foi preparada
+> e o evento que a registrou (`anterior_sha256`, `anterior_evento`), e só entra na trilha se ela ainda for a vigente,
+> conferido e gravado numa só transação.
+> (F-03) Na restauração, o id de componente do registro protegido virava caminho sem validação (`../` desligava um
+> JSON fora do destino): agora o registro com id fora do formato não libera. (F-04) "401" ou "login" em qualquer
+> ponto do erro tiravam a chamada do teto; agora toda chamada com processo iniciado conta. (F-05) O desvio da rota
+> sigilosa valia por existir um arquivo qualquer; agora só com o aceite assinado, registrado e vigente na sua tarefa,
+> sobre a política exata, conferido sobre os mesmos bytes que valem; sem ele o desvio fica sem efeito ao carregar a
+> política (vale a distribuída) e o `checar` da atualização avisa. (E10) A skill passa a dizer que "fechar" ou
+> "concluir" um trabalho cobre terminar as etapas pendentes do mesmo trabalho quando a RETOMADA mente, que identidade
+> usar em laboratório sem declaração e que a habilitação de componente ancora o código conferido, sem aprovar
+> conteúdo; a nova execução da E10 deu 5/5. A revisão de segurança (outro contexto do mesmo provedor) achou seis
+> problemas nas primeiras correções (E11R-01 a E11R-06: a ordem das decisões seguia uma data, e depois um encadeamento,
+> que quem prepara escreve; o desvio sigiloso valia com aceite superado, sem registro em laboratório ou numa troca do
+> arquivo entre duas leituras), corrigidos antes da liberação. As correções levaram `decisoes.py` e `backup.py` acima do teto de tamanho, que não sobe: o
+> comando do titular e a leitura do registro protegido foram para módulos próprios. Kit 1.7.4. Resultados: Windows
+> deste PC — kit 355 OK (5 pulados), scripts 188 OK (2 pulados), entrega 96 OK (2 pulados), cenários 16/16
+> (112/112); Ubuntu do WSL — kit 355 OK (9 pulados), scripts 188 OK (19 pulados), entrega 96 OK (4 pulados),
+> cenários no modo da CI com CEN-10 e CEN-15 bloqueados e os demais aprovados; 351 referências e 0 ausentes. A nova
+> execução da E10 está na seção 4 de `avaliacoes/AVALIACOES.md`.
+
+> **1.7.3 (21/10/2026; liberada: GitHub, perfil e fundação, CI pública verde):** a CI pública da 1.7.2, a primeira a rodar as quatro verificações até o fim nas dez rodadas,
 > falhou em três pontos de ambiente que este computador não reproduz; a 1.7.2 foi publicada, instalada e aplicada à
 > fundação, mas não declarada liberada. (1) O instalador recusava o `atualizar` depois de uma troca interrompida com a
 > marca ilegível quando o perfil tem nome curto (`RUNNER~1` no Windows do GitHub): a ligação pendurada devolvia o alvo

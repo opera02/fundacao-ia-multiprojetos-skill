@@ -1,0 +1,987 @@
+{
+  "meta": {
+    "executado_em": "2026-10-21T11:18:47-0300",
+    "python": "3.12.10",
+    "plataforma": "win32",
+    "pasta_temporaria": "C:\\Users\\<usuario>\\AppData\\Local\\Temp\\fundacao-cen-isntoqo0",
+    "mantida": false
+  },
+  "cenarios": [
+    {
+      "id": "CEN-01",
+      "nome": "Fundação nova com dois projetos (Fluxo A)",
+      "tipo": "real-local; identidades de ensaio",
+      "requisitos": "R01 R02 R03 R04 R16 R44 R50 R54",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "instalação do kit copia arquivos e registra hashes",
+          "esperado": "copiados > 0 com sha256",
+          "observado": "79",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "reinstalação é idempotente",
+          "esperado": "0 copiados, 0 conflitos",
+          "observado": "0 copiados, 0 conflitos",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "init cria o primeiro administrador",
+          "esperado": "admin_criado=titular",
+          "observado": "{\n  \"raiz\": \"C:\\\\Users\\\\<usuario>\\\\AppData\\\\Local\\\\Temp\\\\fundacao-cen-isntoqo0\\\\CEN-01\\\\f1\",\n  \"kit_version\":",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "projeto juridico-lab criado pelo modelo",
+          "esperado": "código 0",
+          "observado": "0",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "projeto reversa-lab criado pelo modelo",
+          "esperado": "código 0",
+          "observado": "0",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "recriação informa existência sem sobrescrever",
+          "esperado": "código 2 e E_EXISTS",
+          "observado": "{\"error\": {\"code\": \"E_EXISTS\", \"message\": \"projeto já existe; nada foi alterado\", \"project_id\": \"juridico-lab\", \"detecte",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "tarefa persiste e é lida por processo novo",
+          "esperado": "task_01a15ed1-990b-7799-a144-a25d457529b6",
+          "observado": "{\n  \"task_id\": \"task_01a15ed1-990b-7799-a144-a25d457529b6\",\n  \"project_id\": \"juridico-lab\",\n  \"objective\": \"listar documentos do caso Aurora (fictício)\",\n  \"sta",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "outro projeto recebe negativa sem conteúdo",
+          "esperado": "código 2, E_ACCESS_DENIED, sem 'Aurora'",
+          "observado": "{\"error\": {\"code\": \"E_ACCESS_DENIED\", \"message\": \"acesso negado\", \"action\": \"read\", \"resource\": \"project:juridico-lab\"}}",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "status: cadeia de eventos íntegra e projetos visíveis ao titular",
+          "esperado": "True; 2 projetos",
+          "observado": "True; ['juridico-lab', 'reversa-lab']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "status do operador de engenharia lista só o projeto dele",
+          "esperado": "['reversa-lab']",
+          "observado": "['reversa-lab']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "registro de instalação com versão do kit",
+          "esperado": "kit_version presente",
+          "observado": "1.7.4",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 3.58
+    },
+    {
+      "id": "CEN-02",
+      "nome": "Projeto existente adaptado à fundação (Fluxo B)",
+      "tipo": "real-local",
+      "requisitos": "R02 R04 R32 R44 R53 + procedimento B1–B10",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "manifesto da origem exclui o arquivo de segredo sem lê-lo",
+          "esperado": ".env em excluidos",
+          "observado": "['.env']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "classificação sugerida para o legado",
+          "esperado": "adaptação por interfaces",
+          "observado": "adaptação por interfaces",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "etapas da adaptação executadas",
+          "esperado": "todas 'feito'",
+          "observado": "[('cópia de trabalho', 'feito'), ('caracterização (golden)', 'feito'), ('fundação de destino', 'feito'), ('registro do projeto', 'feito'), ('dados do legado no projeto (lista positiva)', 'feito'), ('código do legado na fonte da fundação (manifesto)', 'feito'), ('adaptador do manifesto', 'feito'), ('componente legado_peticoes', 'feito'), ('registro do componente', 'feito'), ('invólucro de execução ",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "defeito de contrato reproduzido na cópia (painel × manifesto)",
+          "esperado": "código ≠ 0 (TypeError)",
+          "observado": "1",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "painel funciona com o adaptador, sem alterar a origem",
+          "esperado": "Agentes: triagem, redator",
+          "observado": "Agentes: triagem, redator",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "comportamento antes × depois idêntico (golden master)",
+          "esperado": "0 divergências em 3 casos",
+          "observado": "0 divergências; casos=3",
+          "passou": true,
+          "evidencia": "inclui caso inválido (código 2) e fato sem fonte virando pendência"
+        },
+        {
+          "verificacao": "origem inalterada (manifesto)",
+          "esperado": "sem alterados/ausentes/novos",
+          "observado": "{\n  \"alterados\": [],\n  \"ausentes\": [],\n  \"novos\": []\n}",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "segredo não copiado para o projeto",
+          "esperado": "sem .env no projeto",
+          "observado": "['agents', 'casos', 'painel', 'saida', 'squad.canonico.json', 'squad.json', 'squads']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "RETOMADA com campos mínimos preenchidos",
+          "esperado": "ok",
+          "observado": "{\n  \"ok\": true,\n  \"campos_ausentes\": [],\n  \"avisos\": [\n    \"origem das autorizações não registrada: permissões e próxima ação valem só se confirmadas na convers",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 3.37
+    },
+    {
+      "id": "CEN-03",
+      "nome": "Reexecução sobre projeto parcialmente adaptado",
+      "tipo": "real-local",
+      "requisitos": "R02 R08 R46 + B9",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "reexecução refaz só o que faltava",
+          "esperado": "apenas 'registro do componente'",
+          "observado": "['registro do componente']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "terceira passagem não altera nada",
+          "esperado": "todas as etapas 'ja-existia'",
+          "observado": "todas ja-existia",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "sem duplicação de projeto ou evento de criação",
+          "esperado": "1 e 1",
+          "observado": "1 e 1",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "comportamento preservado após reexecuções",
+          "esperado": "código 0",
+          "observado": "0",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "atualização do modelo ≠ migração da instância",
+          "esperado": "migration_needed=False",
+          "observado": "False",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 4.68
+    },
+    {
+      "id": "CEN-04",
+      "nome": "Projeto incompatível nas condições atuais",
+      "tipo": "real-local (análise estática)",
+      "requisitos": "B3; R04 R53",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "classe sugerida não é integração direta",
+          "esperado": "bloqueio nas condições atuais",
+          "observado": "bloqueio nas condições atuais",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "sinais objetivos detectados",
+          "esperado": "caminho absoluto, escape, credencial, rede",
+          "observado": "{'caminho_absoluto': 1, 'escape_da_raiz': 1, 'credencial_embutida': 1, 'arquivo_de_segredo': 0, 'rede_ou_servico_externo': 3, 'dependencia_sem_versao': 0}",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "valor da credencial não aparece no relatório",
+          "esperado": "ausente",
+          "observado": "False",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 0.08
+    },
+    {
+      "id": "CEN-05",
+      "nome": "Dependência indisponível: bloquear e avançar no independente",
+      "tipo": "real-local; simulado (rotas)",
+      "requisitos": "R12 R14 R27 R32",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "inventário mostra dependência ausente",
+          "esperado": "dependencia_ausente",
+          "observado": "dependencia_ausente",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "despacho recusado antes de executar",
+          "esperado": "DependencyUnavailable",
+          "observado": "True",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "trabalho independente continua",
+          "esperado": "manifesto com 1 arquivo",
+          "observado": "1",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "sem rota autorizada a tarefa fica bloqueada com motivos",
+          "esperado": "blocked + motivos por rota",
+          "observado": "[{'route': 'cli_assinatura', 'skipped': 'rota desabilitada na política'}, {'route': 'api_creditos', 'skipped': 'rota desabilitada na política'}, {'route': 'local', 'skipped': 'rota desabilitada na política'}, {'route': 'simulado', 'skipped': 'rota desabilitada na política'}]",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "CAG sem modelo autorizado: bloqueio explícito, sem download",
+          "esperado": "código 3; estado=bloqueado",
+          "observado": "3; bloqueado",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 5.87
+    },
+    {
+      "id": "CEN-06",
+      "nome": "Falha no meio da execução e retomada em outro processo",
+      "tipo": "real-local",
+      "requisitos": "R06 R07 R08 R39 R41 R48",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "primeiro processo interrompido após gravar a saída e antes de confirmar",
+          "esperado": "código ≠ 0 (SimulatedInterrupt)",
+          "observado": "1",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "retomada em processo novo conclui",
+          "esperado": "succeeded",
+          "observado": "succeeded",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "efeito confirmado não repetido (extrair executou 1 vez)",
+          "esperado": "extrair=1; conferir=1; redigir=1",
+          "observado": "{'extrair': 1, 'redigir': 1, 'conferir': 1}",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "reconciliação pelo recibo registrada",
+          "esperado": "1",
+          "observado": "1",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "execução reconstruível: cadeia de eventos íntegra",
+          "esperado": "True",
+          "observado": "True",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "RETOMADA incompleta é recusada",
+          "esperado": "código 1 com campos ausentes",
+          "observado": "1; 11 campos",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 0.62
+    },
+    {
+      "id": "CEN-07",
+      "nome": "Tentativa de acesso entre projetos (memória, RAG, cache, componente)",
+      "tipo": "simulado (identidades de ensaio); lógica da política",
+      "requisitos": "R04 R18 R22 R28",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "negativas aplicadas pelo serviço (busca, coordenação, escrita)",
+          "esperado": "3",
+          "observado": "3",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "cache negado para identidade sem acesso",
+          "esperado": "denied",
+          "observado": "denied",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "escape de caminho com '..' recusado",
+          "esperado": "PathEscape",
+          "observado": "True",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "marcador ausente de saídas e de eventos",
+          "esperado": "ausente",
+          "observado": "False",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "negativas registradas como evidência",
+          "esperado": ">= 3",
+          "observado": "3",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 0.11
+    },
+    {
+      "id": "CEN-08",
+      "nome": "Referência obrigatória ausente; pacote instalável sem evals/",
+      "tipo": "estrutural",
+      "requisitos": "integridade da skill",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "skill íntegra: todas as referências existem",
+          "esperado": "código 0",
+          "observado": "_do_pacote_instalavel\": [],\n  \"comandos_conferidos\": 66,\n  \"comandos_com_problema\": [],\n  \"scripts_nao_conferidos\": []\n}",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "remoção de referência detectada com o caminho",
+          "esperado": "código 1 citando references/fluxo-b-adaptar.md",
+          "observado": "1; 5 citações",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "pacote instalável (sem evals/) passa na verificação de referências",
+          "esperado": "código 0; citações a evals/ à parte",
+          "observado": "0; ausentes=0; fora do pacote=1",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "cada arquivo citado como `<skill>/…`, inclusive dentro de comandos, é conferido",
+          "esperado": "todas as remoções acusadas",
+          "observado": "16 de 16; não acusados: []",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "erros plantados em cada ocorrência de `<skill>/…` (arquivo, primeira pasta e caixa) são acusados",
+          "esperado": "todas as ocorrências",
+          "observado": "105 de 105; escapam: []",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 38.67
+    },
+    {
+      "id": "CEN-09",
+      "nome": "Backup, restauração isolada, retiradas e origem danificada",
+      "tipo": "real-local",
+      "requisitos": "R31 R44 R45 R56",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "init cria o registro protegido com identidade",
+          "esperado": "código 0; identidade reg_…",
+          "observado": "0; reg_01a15ed2-6e0e-784e-8383-ca941597145b",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "backup por identidade sem administração é negado",
+          "esperado": "código 2, E_ACCESS_DENIED, nada criado",
+          "observado": "{\"error\": {\"code\": \"E_ACCESS_DENIED\", \"message\": \"acesso negado\", \"action\": \"admin\", \"resource\": \"foundation\"}}",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "backup consistente criado e com a identidade do registro anotada",
+          "esperado": "código 0, integrity ok, mesma identidade",
+          "observado": "0; reg_01a15ed2-6e0e-784e-8383-ca941597145b",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "revogação de acesso depois da cópia vai para o registro protegido",
+          "esperado": "código 0; linha acl_revoke",
+          "observado": "0; True",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "registro com outra identidade NÃO libera e nada é copiado",
+          "esperado": "código 3; motivo 'identidade'; destino ausente",
+          "observado": "3; registro de retiradas com identidade diferente da anotada na",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "registro malformado NÃO libera e não povoa o destino",
+          "esperado": "código 3; 'ilegível'; destino ausente",
+          "observado": "3; registro de retiradas ilegível (linha 5: JSON inválido): não",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "sem registro de retiradas a restauração NÃO é liberada",
+          "esperado": "released=false e código 3",
+          "observado": "False; código 3",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "caminho errado do registro de retiradas NÃO libera",
+          "esperado": "released=false, código 3, motivo 'inexistente'",
+          "observado": "False; código 3",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "restauração reaplica retiradas (fonte e memória) e a revogação antes de liberar",
+          "esperado": "released=true; fonte, memória e acl reaplicadas",
+          "observado": "True; ['juridico-lab/GUIA-002@1', 'mem_01a15ed2-6d37-7448-abc0-d1be7efcee3d', 'acl:ex-colaborador:read:project:juridico-lab']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "no ambiente restaurado, a identidade revogada não volta a ver o projeto",
+          "esperado": "código 0; lista vazia",
+          "observado": "0; []",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "a reaplicação fica na trilha restaurada, com a cadeia íntegra",
+          "esperado": "3 eventos restore_reapplied; cadeia ok",
+          "observado": "3; True",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "fonte e memória retiradas não ressuscitam no ambiente restaurado",
+          "esperado": "0 trechos; memória ausente",
+          "observado": "0 trechos; memória presente=False",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "restaurar sobre a origem é recusado dentro do contrato",
+          "esperado": "código 2 e erro JSON E_ARQUIVO",
+          "observado": "2; E_ARQUIVO",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "alteração provocada na cópia é detectada e sai com código 3",
+          "esperado": "changed contém INSTRUCOES.md; código 3",
+          "observado": "['projects/juridico-lab/INSTRUCOES.md']; código 3",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "banco da cópia trocado por outro íntegro não confere nem libera",
+          "esperado": "verificar 3; restaurar 3; nada copiado",
+          "observado": "3; ['hash do banco diferente do manifesto', 'contagens diferentes do manifesto: acl, chunk, event, protected_outbox, tombstone']; 3",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "com o banco de origem corrompido, a CLI restaura autorizada pela cópia sem tocar na origem",
+          "esperado": "código 0, released=true, origem intacta",
+          "observado": "0; origem intacta=True",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "com o banco de origem ausente, a CLI restaura e não cria banco na origem",
+          "esperado": "código 0; origem sem banco",
+          "observado": "0; banco criado=False",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "backup_sqlite com origem inexistente falha sem criar arquivos",
+          "esperado": "código 1; nada criado",
+          "observado": "1; origem criada=False",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "backup_sqlite com '#' no caminho copia os dados de verdade",
+          "esperado": "código 0; cópia com t=5; nenhum arquivo solto",
+          "observado": "0; {'t': 5}; solto=False",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "cópia em pasta com '#' é criada, verificada e restaurada pela CLI",
+          "esperado": "códigos 0, 0, 0; released=true",
+          "observado": "0, 0, 0",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 5.85
+    },
+    {
+      "id": "CEN-10",
+      "nome": "CAG: preparo e reutilização do estado KV (modelo sintético)",
+      "tipo": "real-local com modelo sintético (mecanismo; qualidade não avaliada)",
+      "requisitos": "R26 R27 R28",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "prefill único com tamanho de KV = fórmula do livro",
+          "esperado": "176640",
+          "observado": "176640",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "prefixo não recalculado: ramo KV = cache-base + pergunta + gerados − 1",
+          "esperado": "True em todas",
+          "observado": "[(385, 345, True), (373, 345, True), (380, 345, True)]",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "ramo KV usado e cache-base restaurado a cada pergunta",
+          "esperado": "True em todas",
+          "observado": "[(True, True), (True, True), (True, True)]",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "saídas quente × frio idênticas (decodificação gulosa)",
+          "esperado": "True em todas",
+          "observado": "[True, True, True]",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "cache antigo recusado após mudança do corpus",
+          "esperado": "True",
+          "observado": "True",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "rótulo honesto: qualidade não avaliada",
+          "esperado": "False",
+          "observado": "False",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 9.61
+    },
+    {
+      "id": "CEN-11",
+      "nome": "Estrutura, metadados e limites da skill",
+      "tipo": "estrutural",
+      "requisitos": "R35 (formato) + auditoria",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "cabeçalho entre --- no início do SKILL.md",
+          "esperado": "presente",
+          "observado": "presente",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "nome kebab-case igual ao canônico fundacao-ia-multiprojetos",
+          "esperado": "fundacao-ia-multiprojetos",
+          "observado": "fundacao-ia-multiprojetos",
+          "passou": true,
+          "evidencia": "pasta: fundacao-ia-multiprojetos"
+        },
+        {
+          "verificacao": "descrição ≤ 1024 caracteres e sem < >",
+          "esperado": "≤1024",
+          "observado": "852",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "chaves de cabeçalho aceitas pelo padrão e pelo validador do Chat/Work",
+          "esperado": "name, description, license, metadata (compatibility dentro de metadata, até 500 caracteres)",
+          "observado": "['description', 'license', 'metadata', 'name']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "metadata como mapa de textos",
+          "esperado": "todos str",
+          "observado": "{'version': 'str', 'owner': 'str', 'compatibility': 'str', 'source': 'str', 'last_verified': 'str', 'freshness_window': 'str', 'freshness_category': 'str', 'verified_against': 'str'}",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "SKILL.md enxuto (< 500 linhas)",
+          "esperado": "< 500",
+          "observado": "252",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "um único SKILL.md no pacote",
+          "esperado": "0",
+          "observado": "[]",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "sem artefatos de compilação na skill",
+          "esperado": "0",
+          "observado": "[]",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "quick_validate do skill-creator",
+          "esperado": "Skill is valid!",
+          "observado": "Skill is valid!",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "varredura de injeção do book-to-skill sobre todos os Markdown; achados revisados em contexto",
+          "esperado": "54 arquivos; nenhum SKIP; 0 achados não revisados",
+          "observado": "achados=[('references/capacidades/08-ferramentas-hooks-mcp-skills-plugins.md', '68', 'tool.exfiltration_shape')]; não revisados=[]",
+          "passou": true,
+          "evidencia": "arquivos: 54; revisados: ['exemplos de regras deny para .env/segredos e limite de Bash(curl): conteúdo defensivo']"
+        }
+      ],
+      "duracao_s": 0.68
+    },
+    {
+      "id": "CEN-12",
+      "nome": "Conformidade do kit em instalação limpa",
+      "tipo": "real-local",
+      "requisitos": "R03 R42 R58 R59",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "suíte de conformidade passa",
+          "esperado": "OK",
+          "observado": "OK (skipped=7)",
+          "passou": true,
+          "evidencia": "testes: 355"
+        }
+      ],
+      "duracao_s": 92.18
+    },
+    {
+      "id": "CEN-13",
+      "nome": "Hooks preventivos: escrita fora do projeto e troca de identidade negadas",
+      "tipo": "real-local (eventos simulados do host)",
+      "requisitos": "R33 R52 + identidade",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "escrita dentro do projeto autenticado segue o fluxo normal",
+          "esperado": "sem_decisao",
+          "observado": "sem_decisao",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "0 em 10 tentativas indevidas passam (Write, Edit, '..', MCP, NotebookEdit)",
+          "esperado": "10 negadas",
+          "observado": "10",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "o matcher documentado encaminha ao hook todas as ferramentas testadas (inclusive MCP)",
+          "esperado": "5 de 5",
+          "observado": "matcher='Edit|Write|MultiEdit|NotebookEdit|mcp__.*'; 5 de 5",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "sem projeto autenticado: falha fechada",
+          "esperado": "deny",
+          "observado": "deny",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "evento malformado: falha fechada",
+          "esperado": "deny",
+          "observado": "deny",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "leitura de arquivo não é bloqueada por este hook",
+          "esperado": "sem_decisao",
+          "observado": "sem_decisao",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "troca de identidade pela sessão é negada (bash, cmd, PowerShell)",
+          "esperado": "5 negadas",
+          "observado": "5",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "comando comum segue; laboratório pode liberar a troca explicitamente",
+          "esperado": "sem_decisao; sem_decisao",
+          "observado": "sem_decisao; sem_decisao",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "sem PYTHONUTF8 (página de código legada), a saída segue válida e a negativa vale",
+          "esperado": "códigos 0; deny, deny",
+          "observado": "0, 0; ['deny', 'deny']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "limite declarado confirmado: nome montado em tempo de execução passa pelo hook de identidade",
+          "esperado": "sem_decisao (guarda-corpo, não barreira)",
+          "observado": "sem_decisao",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "ler FUNDACAO_PRINCIPAL segue; Set-Item, ${env:...}= e Remove-Item são negados (AF-07)",
+          "esperado": "sem_decisao; 4 negadas",
+          "observado": "sem_decisao; 4 negadas",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "aspas, -Path:/-Path=, Env:\\, Remove-Item entre aspas, += e New-Item -Name são negados; Get-ChildItem e -eq seguem (CF-01)",
+          "esperado": "8 negadas; 2 livres",
+          "observado": "8 negadas; 2 livres",
+          "passou": true,
+          "evidencia": "passaram: []"
+        },
+        {
+          "verificacao": "padrão mcp__ccd_* libera as ferramentas do host; nome exato libera; outra MCP continua negada (AF-08)",
+          "esperado": "sem_decisao; sem_decisao; deny",
+          "observado": "sem_decisao; sem_decisao; deny",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 3.14
+    },
+    {
+      "id": "CEN-14",
+      "nome": "Matriz de requisitos: estados honestos aplicados",
+      "tipo": "estrutural",
+      "requisitos": "R43 R50 + Ap. B",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "matriz inicial válida (60 linhas em desenvolvimento)",
+          "esperado": "ok",
+          "observado": " que a evidência demonstra o requisito: isso continua exigindo revisão humana\"\n}",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "violações detectadas (simulação, inativo sem demonstração, bloqueio sem impacto, estado inventado, id do livro e id da 3.0 removidos)",
+          "esperado": "todas",
+          "observado": "{'R12': True, 'R33': True, 'R34': True, 'R01': True, 'R05': True, 'R57': True}",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "relatório começa pelos bloqueados (ordem da A36)",
+          "esperado": "R34 primeiro",
+          "observado": "R34",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 0.41
+    },
+    {
+      "id": "CEN-15",
+      "nome": "MCP local: descoberta, chamada autorizada, negativa entre projetos e encerramento",
+      "tipo": "real-local (SDK mcp, processo separado por stdio; sem rede)",
+      "requisitos": "R34",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "descoberta das ferramentas do servidor da fundação",
+          "esperado": "listar_projetos, listar_documentos, buscar",
+          "observado": "['buscar', 'listar_documentos', 'listar_projetos']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "chamada autorizada devolve só o próprio projeto",
+          "esperado": "['doc-aurora-01']",
+          "observado": "['doc-aurora-01']",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "negativa entre projetos sem conteúdo alheio",
+          "esperado": "erro com 'acesso negado'; sem 'doc-eng-segredo-fic'",
+          "observado": "Error executing tool listar_documentos: acesso negado",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "negativa registrada na trilha da fundação",
+          "esperado": ">= 1",
+          "observado": "1",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "sessão encerrada e ensaio concluído",
+          "esperado": "código 0; encerrado",
+          "observado": "0; True",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "versão de protocolo negociada e servidor identificados",
+          "esperado": "protocolo presente; servidor da fundação",
+          "observado": "2026-07-28; {'nome': 'fundacao-ia-multiprojetos', 'versao': '1.7.4'}",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 2.5
+    },
+    {
+      "id": "CEN-16",
+      "nome": "Atualização do kit numa fundação existente (conflito, substituição com retorno)",
+      "tipo": "real-local",
+      "requisitos": "R46 R47 + C6",
+      "passou": true,
+      "bloqueado": null,
+      "erro": null,
+      "verificacoes": [
+        {
+          "verificacao": "sem --atualizar: nada é escrito, a diferença fica preservada e a saída não é sucesso (F15)",
+          "esperado": "código 3; conflito em fundacao/__init__.py; nada escrito; versão declarada nula; no destino 0.9.0",
+          "observado": "3; ['fundacao/__init__.py']; True; None; 0.9.0",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "com --atualizar: substitui, guarda a versão anterior e registra a versão instalada",
+          "esperado": "substituído; cópia anterior guardada; versão = a do kit",
+          "observado": "['fundacao/__init__.py']; guardado=True; 1.7.4",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "reexecução depois da atualização não muda nada",
+          "esperado": "0 copiados, 0 conflitos, 0 substituídos",
+          "observado": "0, 0, 0",
+          "passou": true,
+          "evidencia": ""
+        },
+        {
+          "verificacao": "depois de atualizar, o backup pede `init`; com ele, o registro ganha identidade e o backup volta",
+          "esperado": "código 2 'rode `init`'; init 0; backup 0 com a identidade anotada",
+          "observado": "2; 0; 0",
+          "passou": true,
+          "evidencia": ""
+        }
+      ],
+      "duracao_s": 1.93
+    }
+  ]
+}

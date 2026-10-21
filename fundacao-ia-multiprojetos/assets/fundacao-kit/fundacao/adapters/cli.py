@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -73,7 +74,8 @@ import time
 from ..core import usage as usage_mod
 from .base import ProviderRequest, ProviderResult, Timer, build_prompt
 
-_AUTH_HINTS = ("not logged in", "login", "authenticate", "unauthorized", "401", "credentials")
+# Falta de login só pelo aviso da própria CLI, em frase inteira: "401" ou "login" soltos não bastam (E11, F-04).
+_AVISO_LOGIN = re.compile("(?<![a-z0-9])(?:not logged in|/login|claude login|codex login|invalid api key)(?![a-z0-9])")
 LIMITE_ENTRADA = 9_500_000  # bytes de prompt; o Claude Code documenta 10 MB na entrada padrão
 INSTRUCAO_CLAUDE = "Siga a tarefa recebida pela entrada padrao; os dados vem no mesmo texto."  # ASCII
 _ESPECIAIS_CMD = set('&|<>^%"()!\r\n')
@@ -86,8 +88,7 @@ _AMBIENTE_BASE = (
 
 
 def _classify_failure(stderr: str) -> str:
-    low = stderr.lower()
-    return "auth_missing" if any(h in low for h in _AUTH_HINTS) else "failed"
+    return "auth_missing" if _AVISO_LOGIN.search(" ".join(stderr.lower().split())) else "failed"
 
 
 def ambiente_do_provedor(extras: tuple[str, ...] | list[str] = ()) -> dict:
@@ -265,9 +266,8 @@ def _rodar(provider_id: str, route: str, args: list[str], prompt: str, max_secon
 
 
 def _falha(provider_id: str, route: str, proc: subprocess.CompletedProcess, ms: int) -> ProviderResult:
-    estado = _classify_failure(proc.stderr)
-    # Sem login a CLI não chega ao provedor; outras falhas podem ter consumido (conservador).
-    return ProviderResult(provider_id, route, estado, duration_ms=ms, dispatched=estado != "auth_missing",
+    # Processo iniciado: nada prova que a chamada não chegou ao provedor; conta no teto, também sem login (E11, F-04).
+    return ProviderResult(provider_id, route, _classify_failure(proc.stderr), duration_ms=ms, dispatched=True,
                           diagnostic=proc.stderr.strip()[-300:])
 
 

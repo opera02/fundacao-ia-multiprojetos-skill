@@ -230,7 +230,8 @@ comparação impossível (ambiente diferente) → registre a lacuna e não decla
 **Critério:** reexecutar não cria duplicatas (registro, eventos, arquivos) e uma terceira
 passagem não muda nada.
 **Falhas:** estado registrado diverge dos arquivos → reconcilie antes de agir; RETOMADA
-desatualizada → confie no estado conferido e registre a divergência.
+desatualizada → confie no estado conferido e registre a divergência; com pedido de fechar ou concluir,
+termine as etapas pendentes do mesmo escopo (SKILL.md §1.2; `references/autonomia-e-escalonamento.md` §6).
 
 ---
 

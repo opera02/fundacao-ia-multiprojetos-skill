@@ -57,7 +57,11 @@ recusa educada do modelo não prova proteção: ele pode já ter recebido o dado
   (JSON canônico com o SHA-256 da entrega exata) e devolve em `para_o_titular` os comandos de assinar e de
   conferir no shell dele (`--shell powershell|bash`; `decisao comando` reimprime); o titular assina no
   PRÓPRIO terminal; `decisao verificar` confere sem gravar; `decisao registrar` grava a trilha de eventos e
-  `decisoes/registro.jsonl` (repetir responde "já registrada"); `tarefa concluir --decisao <aceite>` conclui
+  `decisoes/registro.jsonl` (repetir responde "já registrada"); a decisão cita no conteúdo assinado a vigente da
+  tarefa quando foi preparada (`anterior_sha256`) e o evento que a registrou (`anterior_evento`, que ninguém prevê
+  antes do registro) e só entra na trilha se ela ainda for a vigente, conferido e gravado numa só transação — um
+  aceite antigo não volta a valer depois de uma rejeição registrada [avaliação E11, F-02; revisão de segurança da
+  1.7.4, E11R-04 a E11R-06]; `tarefa concluir --decisao <aceite>` conclui
   a tarefa só com o aceite válido, registrado e mais recente da tarefa no registro e na trilha. Recusa
   (código 3): sem assinatura, outra chave, outro namespace, assinante que não é o dono da chave, decisão ou
   entrega alterada, decisão fora de `decisoes/` ou de outro projeto. A política
@@ -69,7 +73,11 @@ recusa educada do modelo não prova proteção: ele pode já ter recebido o dado
   âncora no mesmo caminho) ou se há ligação no caminho; código 3 se desprotegida. **Limites:** protege as decisões, não isola projetos;
   quem confere é o executor, então a prova independente é o titular repetir o `conferir` no próprio
   terminal; sem a âncora padrão (laboratório), tipo dispensado pela política vale pela identidade de quem o
-  registra com `approve` no projeto — lógica da política, declare assim.
+  registra com `approve` no projeto — lógica da política, declare assim. Quem registra escolhe quando registra:
+  um aceite assinado pode ser registrado e concluir a tarefa antes de uma rejeição assinada depois, que então
+  não entra (ela cita a decisão vigente quando foi preparada); a decisão assinada e não registrada fica em
+  `decisoes/` para a auditoria. Pares gravados fora de ordem por um kit até a 1.7.3 e ainda não concluídos
+  continuam concluíveis com o aceite antigo: confira-os antes de concluir.
 - **Processo do provedor (rotas por CLI):** pasta temporária vazia, prompt pela entrada
   padrão (nunca na linha de comando) e ambiente mínimo — lista fixa de variáveis do
   sistema e a pasta de configuração da própria CLI; nunca `FUNDACAO_*` nem chaves de API

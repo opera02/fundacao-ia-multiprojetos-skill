@@ -30,15 +30,18 @@ import subprocess
 import tempfile
 import time
 import uuid
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 from . import events
 from .auth import Policy, Principal, resource_project
 from .canon import sha256_bytes
 from .contracts import AccessDenied, AlreadyExists, NotFound, ValidationError
+from .db import transaction
 from .paths import contained
 from .projects import project_root, projects_dir
 from .tasks import Budget, Coordinator, PermanentError, StepDef
+from .comando_titular import (  # noqa: F401 — reexportados: __main__, ferramentas da fundação e testes
+    SHELLS, caminho_windows, caminho_wsl, comando_para_o_titular, em_wsl, no_windows, shell_padrao)
 
 NAMESPACE = "fundacao-decisao"
 SCHEMA = "fundacao.decisao_assinada/1"
@@ -48,7 +51,6 @@ CAMPOS = ("schema_version", "decisao_id", "project_id", "task_id", "tipo", "moti
 ANCORA_WINDOWS = r"C:\ProgramData\FundacaoIA\confianca\allowed_signers"
 SSH_KEYGEN_WINDOWS = r"C:\Windows\System32\OpenSSH\ssh-keygen.exe"  # o do sistema, visto do WSL
 CHAVE_DO_TITULAR = "fundacao_titular"  # em ~/.ssh: gerada pelo titular, com senha
-SHELLS = ("powershell", "bash")
 ANCORA_WSL = "/mnt/c/ProgramData/FundacaoIA/confianca/allowed_signers"  # a do Windows, vista do WSL
 ANCORA_POSIX = "/etc/fundacao-ia/confianca/allowed_signers"  # Linux fora do WSL: dono root
 # Lugar fixo da âncora (só o administrador altera); a primeira que existir vale nesta máquina.
@@ -61,6 +63,7 @@ FLUXO_ACEITE = "aceite-assinado"  # mesmo fluxo e etapa da ferramenta da fundaç
 ETAPA_ACEITE = "conferir-aceite"
 EVENTO_SEM_ASSINATURA = "decisao_registrada_sem_assinatura"
 DECISAO_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CHAVE_RE = re.compile(r"(ssh-ed25519|ssh-rsa|ecdsa-sha2-[a-z0-9]+|sk-ssh-ed25519@openssh\.com"
                        r"|sk-ecdsa-sha2-nistp256@openssh\.com)\s+([A-Za-z0-9+/=]+)")
 
@@ -80,17 +83,22 @@ def sha256_arquivo(caminho) -> str:
 
 
 def montar_decisao(*, projeto: str, tarefa: str, entrega_rel: str, entrega_sha256: str, tipo: str, motivo: str,
-                   assinante: str, decisao_id: str, agora: str) -> dict:
+                   assinante: str, decisao_id: str, agora: str, anterior: str = "", anterior_evento: str = "") -> dict:
+    """`anterior` e `anterior_evento`: SHA-256 da decisão vigente da tarefa na trilha quando esta foi preparada e o
+    hash do evento que a registrou, que ninguém prevê antes do registro (revisão de segurança da 1.7.4, E11R-06). Vão
+    no conteúdo que o titular assina e ordenam as decisões (`fora_de_ordem`); sem decisão vigente, os campos não entram
+    e a forma fica a da ferramenta da fundação."""
     if tipo not in TIPOS:
         raise DecisaoInvalida("tipo deve ser um de " + ", ".join(TIPOS), tipo=tipo)
     if not str(motivo).strip():
         raise DecisaoInvalida("motivo vazio: a decisão precisa das palavras do titular")
-    if not DECISAO_ID_RE.match(str(decisao_id)):
+    if not DECISAO_ID_RE.fullmatch(str(decisao_id)):
         raise DecisaoInvalida("identificador da decisão inválido: use letras, números, ponto, hífen e sublinhado",
                               decisao_id=decisao_id)
-    return {"schema_version": SCHEMA, "decisao_id": decisao_id, "project_id": projeto, "task_id": tarefa,
-            "tipo": tipo, "motivo": motivo.strip(), "assinante": assinante, "namespace": NAMESPACE,
-            "entrega": {"caminho": entrega_rel, "sha256": entrega_sha256}, "preparado_em": agora}
+    d = {"schema_version": SCHEMA, "decisao_id": decisao_id, "project_id": projeto, "task_id": tarefa,
+         "tipo": tipo, "motivo": motivo.strip(), "assinante": assinante, "namespace": NAMESPACE,
+         "entrega": {"caminho": entrega_rel, "sha256": entrega_sha256}, "preparado_em": agora}
+    return {**d, "anterior_sha256": anterior, "anterior_evento": anterior_evento} if anterior else d
 
 
 # ------------------------------------------------------------------ chaves, âncora e assinatura
@@ -251,7 +259,14 @@ def verificar_decisao(arquivo, pasta_projeto, ancora, politica: dict | None = No
             or not all(isinstance(d.get(k), str) for k in textos)
             or not isinstance(entrega, dict) or not all(isinstance(entrega.get(k), str) for k in ("caminho", "sha256"))):
         return {**res, "motivo": "decisão fora do esquema", "faltam": faltam}
+    if any(k in d and not SHA256_RE.fullmatch(str(d[k])) for k in ("anterior_sha256", "anterior_evento")) or (
+            ("anterior_sha256" in d) != ("anterior_evento" in d)):
+        return {**res, "motivo": "decisão fora do esquema: anterior_sha256 e anterior_evento vêm juntos, cada um um "
+                                 "SHA-256"}
     res.update({k: d[k] for k in ("tipo", "decisao_id", "task_id", "assinante", "entrega")})
+    # `anterior_sha256` ausente: decisão que não cita outra (a primeira da tarefa); `preparado_em` é só informativo.
+    res.update(preparado_em=d.get("preparado_em"), anterior_sha256=d.get("anterior_sha256"),
+               anterior_evento=d.get("anterior_evento"))
     if canonico(d) != bruto:
         return {**res, "motivo": "decisão fora da forma canônica"}
     if d["project_id"] != pasta.name:
@@ -296,9 +311,10 @@ def _direitos_windows(caminho: Path, direitos) -> dict:
 
 
 def _dono_windows(caminho: Path) -> str | None:
-    literal = str(caminho).replace("'", "''")
-    r = subprocess.run(["powershell.exe", "-NoProfile", "-Command", f"(Get-Acl -LiteralPath '{literal}').Owner"],
-                       capture_output=True, text=True, errors="replace", timeout=60)
+    # O caminho vai por variável de ambiente, nunca montado dentro do comando (avaliação E11, F-01).
+    ambiente = {**os.environ, "FUNDACAO_SONDA_CAMINHO": str(caminho)}
+    r = subprocess.run(["powershell.exe", "-NoProfile", "-Command", "(Get-Acl -LiteralPath $env:FUNDACAO_SONDA_CAMINHO).Owner"],
+                       capture_output=True, text=True, errors="replace", timeout=60, env=ambiente)
     return r.stdout.strip() or None
 
 
@@ -377,108 +393,6 @@ def conferir_ancora(ancora) -> dict:
     out["protegida"] = not problemas
     out["motivo"] = "âncora protegida" if not problemas else "este processo consegue: " + "; ".join(problemas[:6])
     return out
-
-
-# ------------------------------------------------------------------ comando para o titular
-def no_windows() -> bool:
-    return os.name == "nt"
-
-
-def em_wsl() -> bool:
-    """Linux do WSL (variável da distribuição ou kernel que se identifica como Microsoft)."""
-    if no_windows():
-        return False
-    if os.environ.get("WSL_DISTRO_NAME"):
-        return True
-    try:
-        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8", errors="replace").lower()
-    except OSError:
-        return False
-
-
-def shell_padrao() -> str:
-    """A chave do titular e a âncora ficam no Windows: ele assina no PowerShell também quando a sessão roda no WSL."""
-    return "powershell" if no_windows() or em_wsl() else "bash"
-
-
-def _barras(caminho) -> str:
-    return str(caminho).replace(chr(92), "/")
-
-
-def caminho_windows(caminho) -> str:
-    """Caminho para o PowerShell: `/mnt/e/x` vira `E:` + `x` com barras invertidas; caminho do Windows fica igual;
-    outro caminho do WSL vira o caminho de rede `wsl.localhost/<distribuição>/...` (sem a distribuição, recusa)."""
-    s = _barras(caminho)
-    m = re.match(r"^/mnt/([a-zA-Z])(/.*)?$", s)
-    if m:
-        return str(PureWindowsPath(m.group(1).upper() + ":" + (m.group(2) or "/")))
-    if re.match(r"^[a-zA-Z]:/", s) or s.startswith("//"):
-        return str(PureWindowsPath(s))
-    distro = os.environ.get("WSL_DISTRO_NAME", "").strip()
-    if s.startswith("/") and distro:
-        return str(PureWindowsPath("//wsl.localhost/" + distro + s))
-    raise DecisaoInvalida("caminho sem equivalente no Windows: gere o comando para o bash (--shell bash)",
-                          caminho=str(caminho))
-
-
-def caminho_wsl(caminho) -> str:
-    """Caminho para o bash do WSL: `E:` + `x` vira `/mnt/e/x`; o caminho de rede do WSL volta a ser o do Linux;
-    caminho POSIX fica igual."""
-    s = _barras(caminho)
-    m = re.match(r"^([a-zA-Z]):(/.*)?$", s)
-    if m:
-        return "/mnt/" + m.group(1).lower() + (m.group(2) or "/")
-    m = re.match(r"^//wsl(?:\.localhost|\$)/[^/]+(/.*)?$", s, re.IGNORECASE)
-    if m:
-        return m.group(1) or "/"
-    if s.startswith("/"):
-        return s
-    raise DecisaoInvalida("caminho sem equivalente no bash do WSL", caminho=str(caminho))
-
-
-def _aspas_powershell(texto: str) -> str:
-    return "'" + texto.replace("'", "''") + "'"
-
-
-def _aspas_bash(texto: str) -> str:
-    return "'" + texto.replace("'", "'" + chr(92) + "''") + "'"
-
-
-def comando_para_o_titular(decisao, *, assinante: str, ancora, shell: str | None = None, chave=None) -> dict:
-    """Comandos prontos para copiar, no shell em que o titular vai rodar (references/comunicacao-leigo.md §3):
-    `assinar` pede a senha da chave e grava `<decisão>.sig`; `conferir` repete `ssh-keygen -Y verify` contra a
-    âncora, sem depender do kit. O ssh-keygen vai pelo caminho do sistema. `chave` só para ensaio: o padrão é a chave
-    do titular em ~/.ssh/fundacao_titular."""
-    shell = shell or shell_padrao()
-    if shell not in SHELLS:
-        raise DecisaoInvalida("shell deve ser um de " + ", ".join(SHELLS), shell=shell)
-    if not re.match(r"^[A-Za-z0-9._@-]+$", str(assinante)):
-        raise DecisaoInvalida("assinante com caractere fora de [A-Za-z0-9._@-]", assinante=assinante)
-    proibidos = ("\n", "\r", "\0") + (('"', "%") if shell == "powershell" else ())
-    if any(c in str(t) for t in (decisao, ancora, chave or "") for c in proibidos):
-        raise DecisaoInvalida(f"caminho com caractere que quebraria o comando no {shell}: use uma pasta sem ele")
-    if shell == "powershell":
-        dec, anc = caminho_windows(decisao), caminho_windows(ancora)
-        exe = (ssh_keygen_do_sistema() if no_windows() else None) or SSH_KEYGEN_WINDOWS
-        barra = chr(92)
-        f_chave = (_aspas_powershell(caminho_windows(chave)) if chave
-                   else '"$env:USERPROFILE' + barra + ".ssh" + barra + CHAVE_DO_TITULAR + '"')
-        assinar = f"& {_aspas_powershell(exe)} -Y sign -f {f_chave} -n {NAMESPACE} {_aspas_powershell(dec)}"
-        # O PowerShell não tem redirecionamento de entrada (`<`): a conferência passa pelo cmd.
-        interno = f'"{exe}" -Y verify -f "{anc}" -I {assinante} -n {NAMESPACE} -s "{dec}.sig" < "{dec}"'
-        return {"shell": shell, "onde_abrir": "PowerShell comum do Windows (não precisa ser administrador)",
-                "assinar": assinar, "esperado_ao_assinar": f"pede a senha da chave e termina com: Write signature to {dec}.sig",
-                "conferir": "cmd /c " + _aspas_powershell(interno),
-                "esperado_ao_conferir": f'Good "{NAMESPACE}" signature for {assinante}'}
-    dec, anc = caminho_wsl(decisao), caminho_wsl(ancora)
-    exe = "/usr/bin/ssh-keygen"
-    f_chave = _aspas_bash(caminho_wsl(chave)) if chave else '"$HOME/.ssh/' + CHAVE_DO_TITULAR + '"'
-    return {"shell": shell, "onde_abrir": "terminal do Linux (no WSL: o terminal do Ubuntu)",
-            "assinar": f"{exe} -Y sign -f {f_chave} -n {NAMESPACE} {_aspas_bash(dec)}",
-            "esperado_ao_assinar": f"pede a senha da chave e termina com: Write signature to {dec}.sig",
-            "conferir": (f"{exe} -Y verify -f {_aspas_bash(anc)} -I {assinante} -n {NAMESPACE} "
-                         f"-s {_aspas_bash(dec + '.sig')} < {_aspas_bash(dec)}"),
-            "esperado_ao_conferir": f'Good "{NAMESPACE}" signature for {assinante}'}
 
 
 # ------------------------------------------------------------------ âncora desta máquina e política
@@ -573,15 +487,18 @@ def resumo_politica(politica: dict) -> dict:
 
 # ------------------------------------------------------------------ preparar e registrar
 def pasta_da_decisao(raiz, arquivo) -> tuple[str, Path]:
-    """Projeto e caminho resolvido de uma decisão, que precisa estar em `projects/<projeto>/decisoes/` desta raiz."""
+    """Projeto e caminho resolvido de uma decisão, que precisa ser `projects/<projeto>/decisoes/<identificador>.json`
+    desta raiz. O nome vai ao comando do titular: fora do formato de identificador, recusa (avaliação E11, F-01)."""
     alvo = Path(arquivo)
     alvo = (alvo if alvo.is_absolute() else Path.cwd() / alvo).resolve()
     try:
         partes = alvo.relative_to(projects_dir(raiz).resolve()).parts
     except ValueError:
         partes = ()
-    if len(partes) < 3 or partes[1] != "decisoes":
-        raise ValidationError("a decisão precisa estar em projects/<projeto>/decisoes/ desta raiz", arquivo=str(arquivo))
+    if (len(partes) != 3 or partes[1] != "decisoes" or alvo.suffix != ".json"
+            or not DECISAO_ID_RE.fullmatch(alvo.stem)):
+        raise ValidationError("a decisão precisa ser projects/<projeto>/decisoes/<identificador>.json desta raiz "
+                              "(identificador: letras, números, ponto, hífen e sublinhado)", arquivo=str(arquivo))
     return partes[0], alvo
 
 
@@ -602,9 +519,11 @@ def preparar_decisao(raiz, con, principal: Principal, *, projeto: str, tarefa: s
         while (pasta / "decisoes" / f"{decisao_id}.json").exists():
             n += 1
             decisao_id = f"{base}-{n}"
+    anterior, anterior_evento = vigente_na_trilha(con, projeto, tarefa)
     d = montar_decisao(projeto=projeto, tarefa=tarefa, entrega_rel=alvo.relative_to(pasta).as_posix(),
                        entrega_sha256=sha256_arquivo(alvo), tipo=tipo, motivo=motivo, assinante=principal.principal_id,
-                       decisao_id=decisao_id, agora=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+                       decisao_id=decisao_id, agora=time.strftime("%Y-%m-%dT%H:%M:%S%z"), anterior=anterior,
+                       anterior_evento=anterior_evento)
     destino = contained(pasta / "decisoes", pasta / "decisoes" / f"{decisao_id}.json", within=pasta)
     if destino.exists():
         raise AlreadyExists("decisão já existe; nada foi alterado (não sobrescrevo)", decisao_id=decisao_id)
@@ -679,11 +598,39 @@ def registros_na_trilha(con, project_id: str, task_id: str | None = None) -> lis
     return [json.loads(row["payload_json"]) for row in con.execute(sql + " ORDER BY seq", params)]
 
 
+def vigente_na_trilha(con, project_id: str, task_id: str) -> tuple[str, str]:
+    """(SHA-256 da decisão vigente da tarefa na trilha, hash do evento que a registrou), ou ("", "") sem decisão."""
+    row = con.execute("SELECT hash, payload_json FROM event WHERE kind IN (?, ?) AND project_id = ? AND task_id = ?"
+                      " ORDER BY seq DESC LIMIT 1", (EVENTO_ASSINADA, EVENTO_SEM_ASSINATURA, project_id,
+                                                     task_id)).fetchone()
+    return (json.loads(row["payload_json"]).get("sha256_decisao", ""), row["hash"]) if row else ("", "")
+
+
+def fora_de_ordem(con, project_id: str, verificacao: dict) -> str | None:
+    """Motivo para NÃO pôr a decisão na trilha, ou None (avaliação E11, F-02; revisão de segurança da 1.7.4, E11R-04 e
+    E11R-05). Cada decisão nova cita, no conteúdo que o titular assina, a decisão vigente da tarefa quando foi
+    preparada (`anterior_sha256`) e o evento que a registrou (`anterior_evento`, imprevisível antes do registro: um
+    aceite não se encadeia de antemão numa rejeição que ainda não entrou, E11R-06), e só entra na trilha se ela ainda
+    for a vigente: um aceite antigo não volta a valer depois de uma rejeição registrada, qualquer que seja a ordem de
+    registro ou a data escrita no arquivo (quem prepara escreve a data). Decisão sem os campos (a primeira da tarefa, ou
+    do formato anterior) só entra numa tarefa sem decisão registrada. Quem chama confere e grava na mesma transação
+    (`registrar_decisao`)."""
+    vigente, evento = vigente_na_trilha(con, project_id, verificacao["task_id"])
+    anterior = verificacao.get("anterior_sha256") or ""
+    if (anterior, verificacao.get("anterior_evento") or "") != (vigente, evento):
+        return ("a decisão foi preparada sobre outra decisão vigente da tarefa (" + (anterior[:12] or "nenhuma")
+                + "), não a atual (" + (vigente[:12] or "nenhuma") + "): vale a mais recente registrada; para mudar, "
+                "prepare e assine uma decisão nova")
+    return None
+
+
 def registrar_decisao(con, principal: Principal, pasta_projeto, verificacao: dict, *, agora: str | None = None) -> dict:
     """Grava a decisão VÁLIDA (resultado de `verificar_decisao`) na trilha de eventos e em `decisoes/registro.jsonl`,
-    com os campos da ferramenta da fundação. Idempotente pelo SHA-256 da decisão: com as duas cópias, "já
-    registrada"; faltando uma (queda no meio), completa só a que falta. Tipo que a política dispensa de assinatura
-    vale só registrado por quem pode aprovar no projeto e é o próprio assinante."""
+    com os campos da ferramenta da fundação e o encadeamento assinado. Idempotente pelo SHA-256 da decisão: com as
+    duas cópias, "já registrada"; faltando uma (queda no meio), completa só a que falta. Entrar na trilha exige que a
+    decisão citada em `anterior_sha256` ainda seja a vigente (`fora_de_ordem`), conferido e gravado na mesma
+    transação. Tipo que a política dispensa de assinatura vale só registrado por quem pode aprovar no projeto e é o
+    próprio assinante."""
     if not verificacao.get("valida"):
         raise DecisaoInvalida("decisão inválida não se registra: " + str(verificacao.get("motivo")))
     pasta = Path(pasta_projeto)
@@ -707,13 +654,21 @@ def registrar_decisao(con, principal: Principal, pasta_projeto, verificacao: dic
     linha.update(impressao_digital=assinatura.get("impressao_digital"),
                  sha256_assinatura=assinatura.get("sha256_assinatura"),
                  registrado_em=agora or time.strftime("%Y-%m-%dT%H:%M:%S%z"), registrado_por=principal.principal_id)
+    linha.update({k: verificacao[k] for k in ("preparado_em", "anterior_sha256", "anterior_evento")
+                  if verificacao.get(k) is not None})
     if sem_assinatura:
         linha["forca"] = "sem-assinatura"
     if not na_trilha:
-        events.emit(con, EVENTO_SEM_ASSINATURA if sem_assinatura else EVENTO_ASSINADA, project_id=projeto,
-                    subject=principal.principal_id, task_id=verificacao["task_id"],
-                    payload={k: linha[k] for k in ("decisao_id", "tipo", "sha256_decisao", "sha256_assinatura",
-                                                   "impressao_digital")})
+        with transaction(con):  # conferir e gravar juntos: outra decisão não entra no meio (E11R-05)
+            motivo = fora_de_ordem(con, projeto, verificacao)
+            if motivo:
+                raise DecisaoInvalida(motivo, decisao_id=verificacao.get("decisao_id"))
+            events.emit(con, EVENTO_SEM_ASSINATURA if sem_assinatura else EVENTO_ASSINADA, project_id=projeto,
+                        subject=principal.principal_id, task_id=verificacao["task_id"],
+                        payload={k: linha[k] for k in ("decisao_id", "tipo", "sha256_decisao", "sha256_assinatura",
+                                                       "impressao_digital", "preparado_em", "anterior_sha256",
+                                                       "anterior_evento")
+                                 if k in linha})
     if not no_registro:
         reg.parent.mkdir(parents=True, exist_ok=True)
         with open(reg, "a", encoding="utf-8", newline="\n") as arq:

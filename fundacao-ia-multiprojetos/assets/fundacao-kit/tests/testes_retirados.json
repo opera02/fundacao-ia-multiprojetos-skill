@@ -1,0 +1,6 @@
+{
+  "test_adaptadores_rotas.TestAdaptadoresIsolados.test_sem_login_nao_conta_como_chamada": {
+    "versao": "1.7.4",
+    "motivo": "avaliação E11, F-04: a falha da CLI cujo processo começou passa a contar no teto, também sem login (antes, um 401 no texto do erro tirava a chamada da conta); substituído por test_avaliacao_e11_falha_cli"
+  }
+}

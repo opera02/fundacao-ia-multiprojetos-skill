@@ -2,8 +2,11 @@
 (1.5.0; implantação real de 2026-10-20: `test_politica_distribuida_mantem_sigiloso_so_local` falhava em toda
 execução depois da DECISAO-003, que mudou `task_routes.sigiloso` da raiz). A política distribuída continua
 conferida no kit da skill; na raiz implantada, o `instalar_kit.py` lista a configuração preservada. Desde a 1.7.0
-(proposta 5), a rota sigilosa alterada só passa com o hash da política ligado à decisão em
-registry/configuracao-decidida.json; antes, a conferência era pulada e um desvio sem decisão passava em silêncio."""
+(proposta 5), a rota sigilosa alterada só vale com o hash da política ligado à decisão em
+registry/configuracao-decidida.json; antes, a conferência era pulada e um desvio sem decisão passava em silêncio. Desde
+a 1.7.4 (avaliação E11, F-05), a decisão é um aceite assinado sobre a política exata, e o desvio sem ele fica sem
+efeito ao carregar a política (vale a rota distribuída): a suíte da raiz confere a rota que vale de fato, e o `checar`
+da atualização avisa."""
 
 from __future__ import annotations
 
@@ -53,11 +56,21 @@ class TestConformidadeComConfiguracaoLocal(unittest.TestCase):
         r = self.suite_de_rotas()
         self.assertEqual(r.returncode, 0, r.stderr[-1500:])
 
-    def test_rota_sigilosa_alterada_sem_decisao_registrada_reprova(self):
+    def test_rota_sigilosa_alterada_sem_aceite_assinado_fica_sem_efeito_e_o_checar_avisa(self):
         self.alterar_rota_sigilosa()
         r = self.suite_de_rotas()
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("test_politica_distribuida_mantem_sigiloso_so_local", r.stderr)
+        self.assertEqual(r.returncode, 0, r.stderr[-1500:])
+        efetiva = subprocess.run([sys.executable, "-B", "-c", "import json; from fundacao.core.routing import load_policy; "
+                                  "print(json.dumps(load_policy('.')['task_routes']['sigiloso']))"], cwd=str(self.raiz),
+                                 env=ENV, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+        self.assertEqual(json.loads(efetiva.stdout), ["local"], efetiva.stderr[-800:])
+        init = subprocess.run([sys.executable, "-B", "-m", "fundacao", "init", "--admin", "titular-ensaio"],
+                              cwd=str(self.raiz), env=ENV, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=120)
+        self.assertEqual(init.returncode, 0, init.stderr[-800:])
+        res = json.loads(rodar_script("atualizar_fundacao.py", "checar", "--raiz", self.raiz).stdout)
+        self.assertTrue(res["rota_sigilosa"]["conferida"], res["rota_sigilosa"])
+        self.assertTrue(any(a.startswith("rota sigilosa:") for a in res["avisos"]), res["avisos"])
 
     def test_politica_de_backup_local_nao_reprova_a_suite_da_raiz(self):
         """1.5.1: o ensaio da atualização da fundação real recusou o kit 1.5.0 porque test_backup_completo lia o

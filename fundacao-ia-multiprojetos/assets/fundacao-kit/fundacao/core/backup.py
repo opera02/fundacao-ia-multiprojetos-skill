@@ -32,6 +32,8 @@ from .canon import canonical_json, sha256_file, sha256_text
 from .contracts import ValidationError
 from .db import connect, transaction, uri_somente_leitura, utcnow
 from .ids import new_id
+from .registro_protegido import (  # noqa: F401 — leitura do registro protegido (1.7.4)
+    REGISTRO, _analisar_registro, _id_de_componente_valido, _ilegivel, _ler_registro, _ler_texto)
 
 EXCLUDE_PARTS = {"__pycache__", ".venv", "node_modules", ".git"}
 EXCLUDE_NAMES = {".env", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm"}
@@ -41,7 +43,6 @@ FILE_DIRS = ("fundacao", "registry", "templates", "projects", "AGENTS.md", "CLAU
 # lista em registry/backup_policy.json ({"incluir": [...]}); `state/` (banco e registros) tem tratamento próprio.
 REGISTROS_PADRAO = ("docs", "evidence", "ferramentas", "tests", "RETOMADA.md")
 POLITICA_BACKUP = "backup_policy.json"
-REGISTRO = "registro"  # tipo da linha de identidade do registro protegido
 SCHEMA_REGISTRO = "fundacao.retiradas/1"
 MARCA_NAO_LIBERADA = "restauracao-nao-liberada.json"
 LIVRO_COPIAS = "copias.jsonl"  # âncoras das cópias (sha256 do manifest.json), ao lado do registro protegido
@@ -55,13 +56,6 @@ AVISO_SEM_ANCORA = ("ATENÇÃO: nada fora da pasta da cópia confirma que ela é
                     "nessa pasta pode trocar arquivos, banco e permissões e recalcular o manifesto. Confira com o "
                     "sha256_manifesto devolvido pelo `backup criar` (--sha256-manifesto) ou com o livro de cópias "
                     "(state/copias.jsonl) ao lado do registro protegido.")
-# Campos exigidos por tipo de linha (sem `entity_type` = fonte, formato gravado pela 1.1.0).
-_CAMPOS = {
-    "source": ("entity_id", "decided_by", "decided_at"),
-    "memory": ("entity_id", "decided_by", "decided_at"),
-    "acl_revoke": ("entity_id", "principal", "resource", "action", "decided_by", "decided_at"),
-    "component_disable": ("entity_id", "component_id", "decided_by", "decided_at"),
-}
 # Arquivos que o sistema operacional cria sozinho numa pasta (Explorer em pasta de rede, Finder):
 # não contam como "extras" na verificação e não são restaurados.
 METADADOS_DO_SO = ("Thumbs.db", "ehthumbs.db", "desktop.ini", ".DS_Store")
@@ -169,67 +163,6 @@ def logical_summary(db_path: Path, *, copia: bool = False) -> dict:
 
 
 # ------------------------------------------------------------------ registro protegido
-def _ilegivel(linha: int, motivo: str) -> ValidationError:
-    return ValidationError("registro de retiradas ilegível", linha=linha, motivo=motivo)
-
-
-def _ler_texto(log_path: Path) -> str | None:
-    path = Path(log_path)
-    if not path.exists():
-        return None
-    try:
-        return path.read_bytes().decode("utf-8")
-    except UnicodeDecodeError:
-        raise _ilegivel(0, "não é texto UTF-8") from None
-
-
-def _ler_registro(log_path: Path, *, estrito: bool = False) -> tuple[str | None, list[tuple[str, dict]]]:
-    """Lê e valida o registro inteiro antes de qualquer uso. Devolve a identidade e as linhas de
-    retirada/revogação (texto e objeto), sem a linha de identidade. Tipo de linha desconhecido
-    (gravado por um kit mais novo) só é recusado com `estrito=True` — a restauração, que precisa
-    reaplicar tudo; contar linhas (backup) e preencher retiradas (init) o aceitam."""
-    texto = _ler_texto(log_path)
-    if texto is None:
-        return None, []
-    return _analisar_registro(texto, estrito=estrito)
-
-
-def _analisar_registro(texto: str, *, estrito: bool = False) -> tuple[str | None, list[tuple[str, dict]]]:
-    log_id, linhas = None, []
-    for n, line in enumerate(texto.splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            raise _ilegivel(n, "JSON inválido") from None
-        if not isinstance(rec, dict):
-            raise _ilegivel(n, "linha não é objeto")
-        tipo = rec.get("entity_type", "source")
-        if tipo == REGISTRO:
-            if log_id is not None or not isinstance(rec.get("log_id"), str) or not rec["log_id"]:
-                raise _ilegivel(n, "identidade repetida ou vazia")
-            log_id = rec["log_id"]
-            continue
-        campos = _CAMPOS.get(tipo)
-        if campos is None:
-            if estrito or not isinstance(tipo, str) or not isinstance(rec.get("entity_id"), str):
-                raise _ilegivel(n, "tipo de linha desconhecido (registro de kit mais novo? atualize o kit)")
-            linhas.append((line, rec))
-            continue
-        if any(not isinstance(rec.get(c), str) or not rec[c] for c in campos):
-            raise _ilegivel(n, "campo obrigatório ausente")
-        if tipo in ("source", "memory") and not isinstance(rec.get("reason"), str):
-            raise _ilegivel(n, "motivo ausente")
-        if tipo == "source" and not re.fullmatch(r".+@\d+", rec["entity_id"]):
-            raise _ilegivel(n, "fonte sem versão (esperado id@versão)")
-        afetadas = rec.get("affected", [])
-        if tipo == "memory" and not (isinstance(afetadas, list) and all(isinstance(a, str) for a in afetadas)):
-            raise _ilegivel(n, "derivados da memória em formato inválido")
-        linhas.append((line, rec))
-    return log_id, linhas
-
-
 def default_tombstone_log(con: sqlite3.Connection) -> Path | None:
     """Registro protegido padrão: `<raiz>/state/retiradas.jsonl`, ao lado do banco."""
     for row in con.execute("PRAGMA database_list"):
@@ -381,7 +314,7 @@ def _recompor_pela_trilha(con: sqlite3.Connection, log_path: Path) -> list[str]:
     for ts, subject, payload in con.execute("SELECT ts, subject, payload_json FROM event WHERE kind = 'component_disabled'"
                                             " ORDER BY seq"):
         cid = json.loads(payload).get("component_id")
-        if isinstance(cid, str) and cid:
+        if isinstance(cid, str) and _id_de_componente_valido(cid):
             desativacoes[cid] = (ts, subject)
     for cid, (ts, admin) in desativacoes.items():
         ent = f"componente:{cid}"
@@ -747,7 +680,8 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
             if tipo == "component_disable":
                 if idx < posicao:
                     return  # anterior à cópia: o arquivo copiado já está desligado
-                comp = target_root / "registry" / "components" / f"{rec['component_id']}.json"
+                from .components import entry_path  # contido em registry/components/ (avaliação E11, F-03)
+                comp = entry_path(target_root, rec["component_id"])
                 if comp.is_file():
                     entrada = json.loads(comp.read_text(encoding="utf-8"))
                     if entrada.get("enabled"):

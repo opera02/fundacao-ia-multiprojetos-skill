@@ -43,8 +43,9 @@ com "fundação": escreva sempre "o projeto <nome>" × "a fundação".
   `para_o_titular` (saída do `decisao preparar`), cada um num bloco, no shell dele — no Windows e no WSL, o
   PowerShell comum, porque a chave e a âncora ficam no Windows. `assinar` pede a senha da chave e termina
   com `Write signature to …sig`; `conferir` (opcional: é a prova independente) termina com
-  `Good "fundacao-decisao" signature for <titular>`. Diga em uma linha o que ele assina (tipo, entrega e o
-  início do hash) e peça só a resposta "assinado". Nunca peça a senha, a chave nem a saída; depois do
+  `Good "fundacao-decisao" signature for <titular>`. Diga em uma linha o que ele assina (tipo, entrega, o
+  início do hash e, se houver, a decisão que ela substitui: `anterior_sha256`, a vigente da tarefa quando foi
+  preparada) e peça só a resposta "assinado". Nunca peça a senha, a chave nem a saída; depois do
   "assinado", registre e conclua sozinho (`decisao registrar`, `tarefa concluir`) e relate o resultado.
 
 ## 4. Linguagem

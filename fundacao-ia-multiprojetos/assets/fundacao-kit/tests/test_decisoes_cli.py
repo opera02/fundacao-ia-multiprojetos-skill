@@ -24,8 +24,10 @@ from fundacao.core import decisoes, events
 from fundacao.core.auth import ENV_PRINCIPAL
 from fundacao.core.tasks import Coordinator
 
-CAMPOS_DO_REGISTRO = {"decisao_id", "entrega", "impressao_digital", "registrado_em", "registrado_por",
-                      "sha256_assinatura", "sha256_decisao", "task_id", "tipo"}  # os da ferramenta da fundação
+# Os da ferramenta da fundação e, desde a 1.7.4, a data de preparo (avaliação E11, F-02); a decisão que cita outra
+# leva também `anterior_sha256` (test_avaliacao_e11_ordem_decisoes).
+CAMPOS_DO_REGISTRO = {"decisao_id", "entrega", "impressao_digital", "preparado_em", "registrado_em", "registrado_por",
+                      "sha256_assinatura", "sha256_decisao", "task_id", "tipo"}
 
 
 class DecisoesCliCase(FoundationTestCase):

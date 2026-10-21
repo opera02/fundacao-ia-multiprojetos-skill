@@ -31,6 +31,8 @@ evidência obtida [Livro p30, p34, p38]; seguir para a próxima etapa já autori
   (`~/.claude`, `~/.codex`, PATH, políticas do sistema).
 - Apagar, migrar ou reter dados; restaurar sobre ambiente em uso.
 - Aprovar conteúdo GOLD, promoção à base comum ou qualquer ponto de decisão humana.
+- Habilitar componente ou rota numa fundação com dados reais (operação privilegiada:
+  `seguranca-isolamento.md` §2).
 - Escolher entre objetivos incompatíveis ou entre mudanças intencionais de
   comportamento e preservação [Livro p46].
 - Adotar framework/serviço que vira dependência de longo prazo.
@@ -85,3 +87,16 @@ Os arquivos reconstroem **estado, não autoridade** [auditoria da 1.4.1, A17]: o
 autorizou na conversa atual vale sem nova pergunta; ação do §3 que só a RETOMADA dá como
 autorizada, sem origem verificável (autor, ação, recurso, limites, vigência), é proposta —
 apresente-a com os limites e peça uma confirmação.
+
+**RETOMADA que afirma uma conclusão que o estado não sustenta** [avaliação E10; 1.7.4]: confira
+o estado real (registro de componentes, banco pelo serviço, arquivos), registre a divergência (o
+que ela dizia × o observado) e não repita a afirmação. Se o pedido da conversa é fechar, concluir
+ou terminar aquele trabalho, termine as etapas pendentes que a conferência achou, no mesmo escopo
+e regime — no fluxo B em laboratório: registrar e habilitar o componente adaptado só para o
+projeto em causa, criar o invólucro, comparar com o golden pelo despacho e gravar o manifesto. O
+`componente habilitar` grava o SHA-256 do código que você conferiu antes (manifesto, hashes,
+golden): é âncora de integridade da etapa técnica, não é aprovação de conteúdo — aceite de
+entrega, GOLD e promoção seguem com o usuário (§3). Identidade em laboratório: SKILL.md §7. Com
+dados reais, habilitar componente continua decisão do titular (§3) e a identidade vem do
+lançador. Pare só no que sair do escopo (dado real, custo, efeito externo, mudança de
+comportamento) e diga o que ficou de fora.

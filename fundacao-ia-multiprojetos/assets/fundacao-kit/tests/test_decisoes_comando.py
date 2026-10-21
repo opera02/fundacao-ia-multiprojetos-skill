@@ -19,7 +19,7 @@ from unittest import mock
 import helpers  # noqa: F401  (põe o kit no sys.path)
 from apoio_decisoes import Chaves
 
-from fundacao.core import decisoes
+from fundacao.core import comando_titular, decisoes
 
 BARRA = chr(92)
 DEC_WSL = "/mnt/f/Pasta Ficticia/projects/p/decisoes/dec-aceite-1.json"
@@ -52,12 +52,13 @@ class TestComandoDoTitular(unittest.TestCase):
 
     def test_shell_padrao_e_o_powershell_no_windows_e_no_wsl(self):
         # A chave do titular e a âncora ficam no Windows: também numa sessão do WSL ele assina no PowerShell.
-        with mock.patch.object(decisoes, "em_wsl", return_value=True):
+        # Desde a 1.7.4 o comando do titular mora em core/comando_titular.py (decisoes.py reexporta os nomes).
+        with mock.patch.object(comando_titular, "em_wsl", return_value=True):
             self.assertEqual(decisoes.shell_padrao(), "powershell")
-        with mock.patch.object(decisoes, "em_wsl", return_value=False), \
-                mock.patch.object(decisoes, "no_windows", return_value=False):
+        with mock.patch.object(comando_titular, "em_wsl", return_value=False), \
+                mock.patch.object(comando_titular, "no_windows", return_value=False):
             self.assertEqual(decisoes.shell_padrao(), "bash")
-        with mock.patch.object(decisoes, "no_windows", return_value=True):
+        with mock.patch.object(comando_titular, "no_windows", return_value=True):
             self.assertEqual(decisoes.shell_padrao(), "powershell")
 
     def test_caminho_do_wsl_fora_de_mnt_vira_caminho_de_rede_do_wsl(self):

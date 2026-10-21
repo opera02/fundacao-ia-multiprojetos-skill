@@ -26,8 +26,12 @@ TERCEIROS = {"fundacao/mcp_servidor.py": {"mcp"}}
 # Dívida conhecida: components.py usa adapters.cli._processo (contenção do processo no Windows). Não cresce.
 DIVIDA_NUCLEO_ADAPTADOR = {"fundacao/core/components.py"}
 LIMITE, FOLGA = 350, 30
-TETO = {"fundacao/__main__.py": 384, "fundacao/adapters/cli.py": 405, "fundacao/core/backup.py": 882,
-        "fundacao/core/decisoes.py": 786, "fundacao/core/knowledge.py": 442, "fundacao/core/memory.py": 560,
+# 1.7.4: a leitura do registro protegido saiu de backup.py (registro_protegido.py) e o comando do titular saiu de
+# decisoes.py (comando_titular.py) quando as correções da avaliação E11 entraram; com o encadeamento das decisões no
+# lugar da ordem por data (revisão de segurança da 1.7.4), decisoes.py encolheu. Os dois tetos desceram em relação à
+# 1.7.3 (backup.py 882 -> 816, decisoes.py 786 -> 741).
+TETO = {"fundacao/__main__.py": 384, "fundacao/adapters/cli.py": 405, "fundacao/core/backup.py": 816,
+        "fundacao/core/decisoes.py": 741, "fundacao/core/knowledge.py": 442, "fundacao/core/memory.py": 560,
         "fundacao/core/tasks.py": 803}
 
 

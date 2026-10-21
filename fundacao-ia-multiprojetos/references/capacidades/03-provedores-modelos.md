@@ -45,16 +45,26 @@ titular) → `api_creditos` (teto) → `api_paga` (teto) → `local` → `simula
 **Se outra pessoa usa a fundação, a rota de assinatura fica desligada.** Tipo de tarefa
 sem rota declarada **falha fechado** (não herda a padrão); tarefas `sigiloso` só em
 rota local ou comercial sem treino por padrão (ver `references/privacidade-sigilo.md`).
-Desvio local da rota `sigiloso` (decisão do titular) só vale registrado [Decisão; 1.7.0]: o SHA-256 de
-`registry/route_policy.json` em `registry/configuracao-decidida.json`
+Desvio local da rota `sigiloso` (decisão do titular) só vale registrado e assinado [Decisão; 1.7.0; avaliação E11,
+F-05, 1.7.4]: o SHA-256 de `registry/route_policy.json` em `registry/configuracao-decidida.json`
 (`{"schema_version": "fundacao.configuracao_decidida/1", "itens": [{"arquivo": "registry/route_policy.json",
-"sha256": "<hash>", "decisao": "<documento da decisão, relativo à raiz>"}]}`); a suíte de conformidade da raiz
-implantada falha se a política mudar sem registro novo (antes, o teste era pulado).
+"sha256": "<hash>", "decisao": "projects/<projeto>/decisoes/<id>.json"}]}`), e a decisão citada é um **aceite** do
+módulo de decisões, assinado pelo titular (§2 de `references/seguranca-isolamento.md`), cuja entrega é uma cópia exata
+da política em `outputs/` do projeto (`decisao preparar --tipo aceite --entrega outputs/<cópia>`; o titular assina; a
+IA roda `decisao registrar` e grava o item), e que continua a decisão **vigente** da sua tarefa na trilha (uma rejeição
+ou correção registrada depois revoga o desvio). Documento qualquer (um `.md` da decisão) não aprova. Sem esse aceite,
+ou com a política mudada depois dele, `load_policy` deixa o desvio **sem efeito** (vale a rota distribuída, só
+`local`; o roteador mostra cada rota ignorada) e o `checar` da atualização (C6) avisa; a suíte da raiz confere a rota
+que vale. A conferência usa o hash dos mesmos bytes que valem (revisão de segurança da 1.7.4).
 Alternativa: só para destino **autorizado**; cada tentativa registrada; sem repetição
 infinita; erro permanente não se repete na mesma rota [Livro p170–172].
-Tetos por rota (`max_calls`, `max_usd`) valem **antes** da chamada e contam só as
-tentativas que saíram para o provedor (executável ausente, sem login ou entrada recusada
-não contam: `dispatched=false`). Custo de chamada anterior não medido bloqueia rota com
+Tetos por rota (`max_calls`, `max_usd`) valem **antes** da chamada e contam toda tentativa
+cuja CLI chegou a iniciar, também a que falhou por falta de login: nada prova que ela não
+chegou ao provedor [avaliação E11, F-04 — antes, "401" ou "login" no texto do erro tiravam a
+chamada da conta]. Só não contam as que não saíram (executável ausente, entrada recusada antes
+de iniciar: `dispatched=false`). Resíduo conhecido: um erro do sistema depois de a CLI iniciar (por
+exemplo, ao encerrar a árvore de processos sem Job Object) ainda sai como não iniciada — raro, sem
+alcance demonstrado [revisão de segurança da 1.7.4]. Custo de chamada anterior não medido bloqueia rota com
 teto de custo (falha fechada) até a administração conferir o custo numa fonte externa e
 reconciliá-lo: `python -m fundacao rota gasto --rota <r>` lista as tentativas sem custo;
 `python -m fundacao rota custo --rota <r> --tentativa <event_id> --custo-usd <valor>

@@ -211,8 +211,19 @@ def com_ligacao(raiz: Path, rel: str) -> bool:
     return False
 
 
+def rota_sigilosa(raiz: Path) -> dict:
+    """Desvio da rota sigilosa da raiz julgado pelo kit NOVO (avaliação E11, F-05): sem aceite assinado do titular sobre
+    a política exata, o kit o deixa sem efeito ao carregar (vale a rota distribuída). Não bloqueia: vai aos avisos."""
+    codigo = ("import json, sys\nfrom fundacao.core.politica_rotas import desvio_sem_decisao\n"
+              "print(json.dumps({'desvio_sem_decisao': desvio_sem_decisao(sys.argv[1])}, ensure_ascii=False))")
+    code, dados, erro = rodar([sys.executable, "-B", "-c", codigo, str(raiz)], cwd=KIT)
+    if code != 0 or not isinstance(dados, dict):
+        return {"conferida": False, "erro": erro[-300:]}
+    return {"conferida": True, **dados}
+
+
 def checar(raiz: Path) -> dict:
-    """Só lê. `pode_aplicar` e os `motivos` de recusa, com o que muda arquivo a arquivo."""
+    """Só lê. `pode_aplicar` e os `motivos` de recusa, com o que muda arquivo a arquivo; `avisos` não bloqueiam."""
     raiz = Path(raiz).resolve()
     res = {"raiz": str(raiz), "kit_na_raiz": versao_do_kit(raiz), "kit_da_skill": versao_do_kit(KIT), "motivos": []}
     if res["kit_na_raiz"] is None or not (raiz / "state" / "state.sqlite").is_file():
@@ -271,6 +282,9 @@ def checar(raiz: Path) -> dict:
         res["motivos"].append("a cadeia de eventos da raiz não confere: investigue antes de atualizar")
     res["user_version"] = user_version(raiz)
     res["instrucoes_raiz"] = _plano_instrucoes(raiz)
+    res["rota_sigilosa"] = rota_sigilosa(raiz)
+    res["avisos"] = (["rota sigilosa: " + res["rota_sigilosa"]["desvio_sem_decisao"]]
+                     if res["rota_sigilosa"].get("desvio_sem_decisao") else [])
     res["nada_a_fazer"] = not (mudancas["copiar"] or mudancas["atualizar"] or mudancas["alterados_localmente"]
                                or mudancas["retirar"])
     res["pode_aplicar"] = not res["motivos"]

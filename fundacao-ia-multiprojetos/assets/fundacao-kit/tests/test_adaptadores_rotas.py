@@ -153,13 +153,6 @@ class TestAdaptadoresIsolados(FoundationTestCase):
             grande = cli.ClaudeCLIProvider().call(req("x" * (cli.LIMITE_ENTRADA + 1)))
         self.assertEqual((grande.state, grande.dispatched, cap.chamadas), ("failed", False, []))
 
-    def test_sem_login_nao_conta_como_chamada(self):
-        falho = Captura("", returncode=1, stderr="Error: not logged in. Run claude login.")
-        with mock.patch.object(cli.shutil, "which", return_value="claude-fic"), \
-                mock.patch.object(cli, "_processo", falho):
-            res = cli.ClaudeCLIProvider().call(req())
-        self.assertEqual((res.state, res.dispatched), ("auth_missing", False))
-
 
 class TestProcessoReal(unittest.TestCase):
     """Provas reais (sem provedor): "CLIs" de ensaio em Python rodam pelo `_rodar` de verdade."""
@@ -272,7 +265,8 @@ class TestTetosPorRota(FoundationTestCase):
         self.assertEqual(pago.calls, 2)
 
     def test_tentativa_que_nao_saiu_nao_bloqueia_a_rota(self):
-        """NV-9: executável ausente ou sem login não gasta nem deixa custo pendente."""
+        """NV-9: tentativa que não saiu (executável ausente) não gasta nem deixa custo pendente. Sem login, a CLI já
+        começou e a chamada conta (avaliação E11, F-04: test_avaliacao_e11_falha_cli)."""
         nao_saiu = PagoDeEnsaio(None, saiu=False, estado="failed")
         router = Router(self.con, self.jur, self.politica(max_usd=1.0, max_calls=1), {"api_creditos": nao_saiu})
         self.assertEqual(router.call("default", req())["state"], "blocked")

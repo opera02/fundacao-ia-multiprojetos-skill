@@ -189,6 +189,13 @@ def connect(path: Path, *, wal: bool = True) -> sqlite3.Connection:
     return con
 
 
+def conectar_somente_leitura(path: Path) -> sqlite3.Connection:
+    """Conexão só de leitura ao banco de uma raiz (não migra nem cria arquivo), com linhas por nome."""
+    con = sqlite3.connect(uri_somente_leitura(Path(path)), uri=True, timeout=5.0)
+    con.row_factory = sqlite3.Row
+    return con
+
+
 def migrate(con: sqlite3.Connection) -> int:
     current = con.execute("PRAGMA user_version").fetchone()[0]
     for number, script in enumerate(MIGRATIONS, start=1):

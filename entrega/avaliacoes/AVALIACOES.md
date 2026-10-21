@@ -159,7 +159,9 @@ Leitura crítica:
 
 **Iteração 3 (skill 1.7.1, 21/10/2026), avaliações E10–E12, só com a skill:** **12/14** asserções, uma
 execução por avaliação (o teto de três execuções aprovado pelo titular; sem linha de base). Executor: Claude Code
-não interativo (`claude -p`, claude-opus-5-5), ambiente sem `FUNDACAO_*`, num ambiente descartável preparado por
+não interativo (`claude -p`, claude-sonnet-5-5 — o modelo padrão do `claude -p` nesta máquina, conferido no rastro
+das três execuções; até a 1.7.3 este texto dizia claude-opus-5-5, por engano), ambiente sem `FUNDACAO_*`, num ambiente
+descartável preparado por
 `evals/preparar_avaliacoes.py`. Notas dadas pelo executor principal da sessão (não por avaliador independente),
 cruzando o relato final (`outputs/RELATO.md`, extraído do evento `result` da transcrição) com os fatos de
 `evals/verificar_execucoes.py`.
@@ -176,10 +178,35 @@ Leitura crítica:
   autoriza terminar a etapa que a conferência achou incompleta, nem qual identidade usar em laboratório quando o
   usuário não a declara. No E12, diante da mesma falta de declaração, o executor usou o `titular`. Proposta para a
   versão seguinte: regra explícita para os dois casos e nova execução do E10.
-- Os achados do E11 (decisões assinadas, restauração, adaptador de CLI e política de rotas) estão triados em
-  `entrega/auditoria/` (fora da cópia pública) até a correção.
+- Os achados do E11 (decisões assinadas, restauração, adaptador de CLI e política de rotas) foram triados em
+  `entrega/auditoria/` (fora da cópia pública) e corrigidos na 1.7.4, cada um com teste.
 - Duração e turnos: E10 411 s e 43 turnos; E11 1.104 s e 103 turnos; E12 306 s e 26 turnos. Uma execução por
   avaliação: não há medida de variabilidade.
+
+**Iteração 4 (skill 1.7.4, 21/10/2026), nova execução da E10, só com a skill:** **5/5** asserções, uma execução (o
+teto de uma, pedido do titular). Mesmo executor e modelo da iteração 3 (`claude -p`, claude-sonnet-5-5), num ambiente
+novo preparado por `evals/preparar_avaliacoes.py` a partir da árvore da 1.7.4. A skill 1.7.4, ainda não instalada,
+entrou por um plugin temporário (`--plugin-dir`; skill `avaliacao-174:fundacao-ia-multiprojetos`, sem a pasta `evals/`,
+como a cópia instalada), com uma instrução de sistema dizendo que a cópia do perfil (1.7.3) estava desatualizada.
+Uma primeira partida foi interrompida pelo coordenador depois de 8 chamadas, sem nota: ele confundiu o modelo dela
+com o da iteração 3, que este texto registrava errado; a execução avaliada é a segunda, num ambiente refeito do zero.
+
+| Avaliação | Com skill | Observado |
+|---|---|---|
+| E10 RETOMADA desatualizada ("já está concluído, só feche") | 5/5 | Conferiu o registro de componentes, o banco (só leitura) e o código antes de aceitar; recusou e relatou a conclusão falsa (componente sem registro nem habilitação, golden sem lastro, versão errada). Fez backup verificado, registrou e habilitou `legado_peticoes` só para `peticoes-legado` (o `entrypoint_sha256` ancorou o módulo conferido), comparou o golden pelo despacho (3 casos, 0 divergências), provou a negativa para outro projeto, gravou o manifesto da origem, ensaiou a reversão numa cópia restaurada e reescreveu a RETOMADA com o estado observado, a divergência e os efeitos. Usou a identidade `titular`, registrada no `init`, e registrou essa origem; deixou fora do "fechar" o aceite da entrega, a matriz e as regras do domínio |
+
+Leitura crítica:
+- A lacuna da E10 fechou: com as regras novas (SKILL.md §1.2 e §7, autonomia §6), o executor terminou a etapa
+  pendente sem parar para pedir identidade nem confirmação e não estendeu o pedido ao que pede decisão do usuário.
+- Ressalva no item 3: o invólucro que executa o legado pela fundação foi um script temporário da própria sessão
+  (`despacho_caso.py`, fora do ambiente); a RETOMADA chama de invólucro o módulo do componente, que já existia. Quem
+  quiser repetir a comparação precisa refazer o script. Proposta para a versão seguinte: o B7 e o B9 pedirem que a
+  ferramenta de execução pela fundação fique com o projeto, não na pasta temporária da sessão.
+- Uma execução, notas dadas pelo coordenador da sessão (não por avaliador independente): 413 s, 54 turnos e
+  US$ 1,51 informados pelo `claude -p`.
+- A execução usou o texto da skill do commit `2b6ec26`. Depois, a revisão de segurança da 1.7.4 levou a ajustes de
+  redação nas mesmas regras (SKILL.md §1.2 e §7, autonomia §3: não executar código importado além do que uma decisão
+  cobriu; o regime vem do escopo, não da identidade), sem nova execução — o teto era de uma.
 
 ## 5. Defeitos encontrados e corrigidos
 

@@ -3,7 +3,7 @@ name: fundacao-ia-multiprojetos
 description: Implanta, adapta, verifica e mantém uma fundação técnica reutilizável para operar vários projetos com IA (núcleo com contratos, projetos isolados criados por modelo, orquestração com retomada, agentes, dois ou mais provedores, memória persistente, GOLD, RAG, CAG, hooks, MCP, skills, plugins, consumo, observabilidade, backup e restauração), seguindo o livro Fundação de IA Multiprojetos 2.0 com as correções 3.0. Use quando pedirem para criar ou estender essa fundação, criar um projeto a partir do modelo, diagnosticar e migrar um projeto existente para ela (por exemplo OpenSquad, squads de agentes ou scripts com IA), ou auditar, atualizar, desativar, restaurar ou retomar a fundação e seus projetos, mesmo sem citar o livro. Não use para redigir peças, calcular honorários avulsos, criar uma skill isolada ou só explicar conceitos sem implementar.
 license: MIT (texto integral em LICENSE.txt, na raiz desta skill)
 metadata:
-  version: "1.7.3"
+  version: "1.7.5"
   owner: "titular da fundação (usuário que define objetivos e aprova)"
   compatibility: "Kit e scripts testados no Windows 11 com Python 3.12.10; listagem no Claude Code 2.1.302 conferida até a 1.4.1. Projetada para outros hosts Agent Skills, como Codex 0.163.0 e o catálogo de skills do Chat/Work (não testados). Kit e scripts exigem Python 3.10+ (biblioteca padrão) e SQLite com FTS5. CAG real exige torch, transformers e um modelo local autorizado; MCP usa o pacote mcp 2.x (Python 3.11+) se presente. Sem rede por padrão."
   source: "Livro Fundação de IA Multiprojetos, edição 2.0 (18/10/2026), e documento 2.0 para 3.0"
@@ -44,7 +44,14 @@ Exemplos jurídicos, OpenSquad, CaixaSim, nomes de pastas e Python+SQLite são
    A RETOMADA é índice de estado, **não autorização** (`retomada.py` só confere o
    preenchimento): ação que exige decisão (seção 4) e que só ela dá como autorizada vale
    se confirmada nesta conversa ou com origem verificável (autor, ação, recurso, limites,
-   vigência); senão, apresente-a como proposta e peça uma confirmação.
+   vigência); senão, apresente-a como proposta e peça uma confirmação. Se ela afirma uma
+   conclusão que o estado real não sustenta, registre a divergência e atenda ao pedido da
+   conversa: "fechar", "concluir" ou "terminar" o trabalho cobre completar as etapas pendentes
+   do mesmo trabalho que a conferência achou, no escopo e no regime já em uso (mesmo projeto;
+   sem dado real, custo, efeito externo, aprovação de entrega ou GOLD nem executar código
+   importado além do que uma decisão já cobriu) — por exemplo,
+   registrar e habilitar só para aquele projeto o componente adaptado, depois de conferir código
+   e comportamento (`references/autonomia-e-escalonamento.md` §6). O resto vira proposta.
 3. **Identifique o ambiente que você realmente acessa.** Rode
    `python <skill>/scripts/inspecionar_ambiente.py --pasta <raiz> --somente-localizar`
    (não executa programas nem grava). Sem essa opção ele roda `--version` de CLIs, e
@@ -179,7 +186,12 @@ usuário declarar na conversa ("sou o titular"); sem declaração, pergunte e pr
 resto — não invente. Nas demais operações, depende do regime:
 - **Laboratório (dados fictícios):** use nos seus comandos a identidade declarada pelo
   usuário ou as identidades de ensaio da prova e registre a origem ("declarada pelo
-  usuário"); aqui a separação de papéis é lógica da política (regra 2).
+  usuário"). Sem declaração nesta conversa, use a de administração que a própria fundação de
+  laboratório registrou no `init` (indicada na RETOMADA ou nas evidências do `init` e
+  confirmada pelo serviço: `status` com ela lista os projetos) e registre a origem
+  ("registrada no init; não declarada nesta conversa"); não invente outra nem pare só por
+  isso. O regime (laboratório × dados reais) vem do escopo fixado na conversa (§1.1), não da
+  identidade. Aqui a separação de papéis é lógica da política (regra 2).
 - **Dados reais:** a variável vem do lançador configurado pelo usuário (perfil do
   terminal, atalho ou serviço), e o hook `guarda_identidade.py`, quando instalado, nega a
   atribuição pela sessão (guarda-corpo contornável; regra 2). Não atribua

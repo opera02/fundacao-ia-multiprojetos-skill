@@ -757,6 +757,22 @@ ANALISE_VCT_170 = {
     "R59": "entrega/testes/test_ligacao_por_caminho_alternativo.py (perfil aberto por um caminho que não é o final, como o nome curto da CI: a ligação pendurada é reconhecida)",
 }
 
+# Avaliações E10 e E11 (21/10/2026; skill 1.7.1, kit 1.7.0), corrigidas na 1.7.4.
+AVALIACAO_E10_E11_174 = {
+    "R07": K + "test_avaliacao_e11_aspas.py (F-01: comando do titular no PowerShell não fecha a cadeia com aspa "
+           "tipográfica nem aceita assinante com quebra de linha); " + K + "test_avaliacao_e11_ordem_decisoes.py "
+           "(F-02 e revisão da 1.7.4, E11R-04 a E11R-06: decisão encadeada à vigente e ao evento que a registrou, no "
+           "conteúdo assinado, conferida e gravada numa só transação)",
+    "R08": "scripts/tests/test_regra_retomada_desatualizada.py (E10: RETOMADA que afirma conclusão falsa; fechar "
+           "cobre terminar o mesmo trabalho; identidade de laboratório sem declaração)",
+    "R13": K + "test_avaliacao_e11_rota_sigilosa.py (F-05 e revisão da 1.7.4, E11R-01 a E11R-03: desvio da rota "
+           "sigilosa só com aceite assinado, vigente na tarefa e sobre os mesmos bytes que valem; sem ele, sem efeito "
+           "ao carregar); scripts/tests/test_conformidade_configuracao_local.py (o checar da atualização avisa)",
+    "R39": K + "test_avaliacao_e11_falha_cli.py (F-04: falha da CLI com processo iniciado conta no teto)",
+    "R45": K + "test_avaliacao_e11_restauracao.py (F-03: id de componente fora do formato não libera nem escreve fora "
+           "do destino)",
+}
+
 
 def main() -> int:
     entrega, skill = Path(sys.argv[1]), Path(sys.argv[2])
@@ -779,6 +795,8 @@ def main() -> int:
             row[5] = f"{row[5]}; regressão da revisão de segurança da 1.4.5: {REVISAO_SEGURANCA_145[rid]}"
         if rid in ANALISE_VCT_170:
             row[5] = f"{row[5]}; 1.7.0 (análise do vibe-coding-toolkit): {ANALISE_VCT_170[rid]}"
+        if rid in AVALIACAO_E10_E11_174:
+            row[5] = f"{row[5]}; 1.7.4 (avaliações E10 e E11): {AVALIACAO_E10_E11_174[rid]}"
         R[rid] = tuple(row)
     out_dir = entrega / "rastreabilidade"
     out_dir.mkdir(parents=True, exist_ok=True)

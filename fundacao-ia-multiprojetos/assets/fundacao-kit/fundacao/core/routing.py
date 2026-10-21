@@ -17,6 +17,8 @@ ordem de preferência. Regras:
   proposta 4): tipo errado nunca vale como outro valor — `"enabled": "false"` em texto, teto em
   texto, booleano, negativo ou NaN, rota citada que não existe e chave desconhecida recusam a
   política inteira; o roteador só liga uma rota com `true` de verdade.
+- a rota `sigiloso` que se afasta da distribuída só vale com aceite assinado do titular sobre a política exata
+  (avaliação E11, F-05); sem ele, ao carregar vale a distribuída e o roteador mostra cada rota ignorada.
 - com teto, a capacidade é RESERVADA numa transação curta antes do despacho e a reserva é
   finalizada por ID junto com o registro da tentativa; chamadas simultâneas não passam do
   teto, e chamada interrompida continua contando até a administração reconciliar (F10).
@@ -31,10 +33,11 @@ from pathlib import Path
 
 from . import events
 from .auth import Policy, Principal
+from .canon import sha256_bytes
 from .contracts import ValidationError
 from .db import transaction, utcnow
 from .ids import new_id
-from .politica_rotas import validar_politica
+from .politica_rotas import desvio_sem_decisao, validar_politica
 from .usage import custo_decimal
 
 DEFAULT_POLICY = {
@@ -52,17 +55,32 @@ DEFAULT_POLICY = {
         "sigiloso": ["local"],
     },
 }
+DESVIO_IGNORADO = "_desvio_sigiloso_ignorado"  # chave que load_policy acrescenta quando a ordem local não vale
 
 
-def load_policy(root: Path) -> dict:
+def ler_politica(root: Path) -> tuple[dict, str | None]:
+    """Política validada e o SHA-256 dos MESMOS bytes lidos (None: sem arquivo, vale a distribuída)."""
     path = Path(root) / "registry" / "route_policy.json"
     if not path.exists():
-        return json.loads(json.dumps(DEFAULT_POLICY))
-    policy = json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(json.dumps(DEFAULT_POLICY)), None
+    bruto = path.read_bytes()
+    policy = json.loads(bruto.decode("utf-8"))
     problemas = validar_politica(policy)
     if problemas:
         # Falha fechada: política com problema não vale de jeito nenhum (nenhuma rota é usada).
         raise ValidationError("route_policy inválida: " + "; ".join(problemas), problemas=problemas)
+    return policy, sha256_bytes(bruto)
+
+
+def load_policy(root: Path, *, conferir_desvio: bool = True) -> dict:
+    policy, sha = ler_politica(root)
+    if sha is None:
+        return policy
+    motivo = desvio_sem_decisao(root, policy, sha) if conferir_desvio else None
+    if motivo:
+        # Falha fechada para o sigilo (avaliação E11, F-05): sem aceite assinado, a ordem local não vale.
+        policy[DESVIO_IGNORADO] = {"ordem_local": policy["task_routes"]["sigiloso"], "motivo": motivo}
+        policy["task_routes"]["sigiloso"] = list(DEFAULT_POLICY["task_routes"]["sigiloso"])
     return policy
 
 
@@ -95,6 +113,10 @@ class Router:
             else:
                 motivo = self._teto(route, cfg)
                 out.append((route, motivo or "ok"))
+        ignorado = self.policy.get(DESVIO_IGNORADO) if task_kind == "sigiloso" else None
+        for route in (ignorado or {}).get("ordem_local", []):
+            if route not in order:
+                out.append((route, "desvio da rota sigilosa sem decisão assinada: ignorado"))
         return out
 
     def _teto(self, route: str, cfg: dict) -> str | None:
