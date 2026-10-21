@@ -26,5 +26,7 @@ Contadores ausentes = null (não medido), nunca zero.
 |---|---|---|---|
 
 ## 5. Achados por impacto
-| # | Achado | Impacto | Correção verificável | Critério de encerramento |
-|---|---|---|---|---|
+Achado sem cenário de falha concreto é palpite: vai para hipóteses a validar, não para esta tabela. Nenhum
+achado não quer dizer "seguro".
+| # | Achado | Local | Cenário de falha concreto | Impacto | Confiança | Origem (introduzido · regressão · preexistente) | Correção verificável | Critério de encerramento |
+|---|---|---|---|---|---|---|---|---|

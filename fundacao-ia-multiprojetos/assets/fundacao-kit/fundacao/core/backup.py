@@ -35,7 +35,7 @@ from .ids import new_id
 
 EXCLUDE_PARTS = {"__pycache__", ".venv", "node_modules", ".git"}
 EXCLUDE_NAMES = {".env", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm"}
-FILE_DIRS = ("fundacao", "registry", "templates", "projects")
+FILE_DIRS = ("fundacao", "registry", "templates", "projects", "AGENTS.md", "CLAUDE.md")  # + instruções da raiz
 # Registros da fundação fora do kit: entram na cópia por padrão, para o backup não precisar de um
 # "complemento" (auditoria da implantação real de 2026-10-19/20: dez complementos num só dia). A raiz troca a
 # lista em registry/backup_policy.json ({"incluir": [...]}); `state/` (banco e registros) tem tratamento próprio.

@@ -9,6 +9,7 @@ Janela de atualidade declarada: 3 meses (metadados da skill).
 ## Sumário
 1 Anthropic / Claude Code · 2 OpenAI / Codex · 3 MCP · 4 Agent Skills · 5 CAG e KV cache
 · 6 SQLite e Python · 7 Segurança · 8 Itens do livro/3.0 não verificados · 9 Windows e WSL (host)
+· 10 GitHub (CI pública)
 
 ## 1. Anthropic / Claude Code
 | Fato | Situação | Fonte |
@@ -39,6 +40,9 @@ Janela de atualidade declarada: 3 meses (metadados da skill).
 | CLI: `claude "consulta"` abre a sessão interativa com essa primeira mensagem; `--settings <arquivo>` sobrepõe as chaves dos settings; `--setting-sources user,project,local` escolhe as fontes | confirma | code.claude.com/docs/en/cli-reference (conferido em 2026-10-21) |
 | Instalação nativa no Linux: `~/.local/bin/claude` é ligação para `~/.local/share/claude/versions/<versão>`; o instalador guarda a versão do lançador, as que estão rodando e as duas mais novas e apaga as outras; `DISABLE_AUTOUPDATER=1` só para a verificação em segundo plano (`DISABLE_UPDATES` bloqueia todas) | novo (por isso o `preparar-wsl.sh` copia a versão fixada para fora de `versions/`) | code.claude.com/docs/en/setup (conferido em 2026-10-21) |
 | Integridade: `https://downloads.claude.ai/claude-code-releases/<versão>/manifest.json` traz o SHA-256 de cada binário em `platforms.<plataforma>.checksum` e é assinado em `manifest.json.sig` pela chave de lançamento `31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE` (desde a 2.1.89); no Linux o binário não tem assinatura própria. Na implantação de referência, a 2.1.302 linux-x64 = `60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5`, conferido com a assinatura | confirma | code.claude.com/docs/en/setup; manifest.json da 2.1.302 (conferido em 2026-10-21) |
+| Instruções [conferido em 21/10/2026]: o `CLAUDE.md` da pasta da sessão e das pastas acima carrega ao iniciar; os de subpastas, quando a sessão lê arquivos nelas; `@AGENTS.md` dentro do `CLAUDE.md` importa sem duplicar; o `AGENTS.md` sozinho só é lido direto quando não há `CLAUDE.md` (2.1.277 ou posterior); recomendação: menos de 200 linhas por arquivo; `claudeMdExcludes` (globs de caminho absoluto, em qualquer camada de configuração) impede que instruções de pastas carreguem | novo | code.claude.com/docs/en/memory |
+| Skills em `.claude/skills/` de subpastas passam a valer na primeira leitura ou edição de arquivo ali, e nenhuma configuração desliga essa descoberta; `Skill(<nome>)` em `permissions.deny` nega a skill [21/10/2026] | novo | code.claude.com/docs/en/skills; code.claude.com/docs/en/permissions |
+| `WebFetch` e `WebSearch` sem padrão em `permissions.deny` retiram a ferramenta da sessão; o sandbox cobre só os comandos de shell (Bash, PowerShell, Monitor), não ferramentas de arquivo, web nem MCP [21/10/2026] | novo | code.claude.com/docs/en/permissions; code.claude.com/docs/en/sandboxing |
 
 ## 2. OpenAI / Codex (páginas `developers.openai.com/codex/*` redirecionam para `learn.chatgpt.com/docs/*`)
 | Fato | Situação | Fonte |
@@ -52,6 +56,7 @@ Janela de atualidade declarada: 3 meses (metadados da skill).
 | Login ChatGPT (assinatura) ou chave de API (faturado); chave recomendada para automação/CI; `codex login status`; `CODEX_API_KEY` por invocação | confirma 3.0 | learn.chatgpt.com/docs/auth |
 | Skills: `.agents/skills` (do diretório atual à raiz do repo), `~/.agents/skills`, `/etc/codex/skills`; `~/.codex/skills` só compatibilidade | confirma livro (E24) | learn.chatgpt.com/docs/build-skills |
 | Hooks oficiais: `hooks.json` ou `[hooks]` no `config.toml` (`~/.codex/` ou `.codex/` confiável); PreToolUse/PostToolUse e outros; negação por `permissionDecision`; confiança por hash; proteção, não fronteira completa | **corrige 3.0** ("só fontes secundárias") | learn.chatgpt.com/docs/hooks |
+| `AGENTS.md`: lido da raiz do Git até a pasta atual (sem Git, só a pasta atual), até 32 KiB somados [21/10/2026] | novo | learn.chatgpt.com/docs (AGENTS.md) |
 | MCP no Codex: `[mcp_servers.<nome>]` (`command`, `args`, `env`, `cwd` / `url`), `codex mcp add\|list\|login` | confirma 3.0 | learn.chatgpt.com/docs/extend/mcp |
 
 ## 3. Model Context Protocol
@@ -108,3 +113,10 @@ segregar conteúdo externo) — genai.owasp.org.
 |---|---|---|
 | `/etc/wsl.conf`, seção `[interop]`: `enabled` (abrir programas do Windows) e `appendWindowsPath` (o PATH do Windows), ambos `true` por padrão; a mudança vale depois que a distribuição para (regra dos 8 segundos; `wsl --terminate <distribuição>` ou `wsl --shutdown`); `[automount] root` padrão `/mnt/` | confirma (base do `preparar-wsl.sh`) | learn.microsoft.com/en-us/windows/wsl/wsl-config (conferido em 2026-10-21) |
 | Observado no Windows 11 26200 (2026-10-20 e 2026-10-21): arquivo criado por administrador elevado nasce com o próprio usuário como dono, e o dono tem `WRITE_DAC` implícito; `(OI)(CI)` aplicado a um arquivo o deixa sem permissões efetivas; na pasta ProgramData, Usuários criam pastas e arquivos (`(CI)(WD,AD)`) e o CREATOR OWNER ganha controle total no que criar, por isso a herança é cortada na pasta da âncora e na de cima | executado | `assets/host/windows/preparar-maquina.ps1`; implantação de referência |
+
+## 10. GitHub (CI pública)
+| Fato | Situação | Fonte |
+|---|---|---|
+| GitHub Actions é gratuito em repositório público com runners padrão [21/10/2026] | novo | docs.github.com/en/billing/concepts/product-billing/github-actions |
+| `actions/checkout` v7.0.1 = commit `3d3c42e5aac5ba805825da76410c181273ba90b1` e `actions/setup-python` v7.0.0 = commit `5fda3b95a4ea91299a34e894583c3862153e4b97`, ambas publicadas em 20/07/2026; tags leves (o SHA da tag é o do commit) | executado (`git ls-remote` e API de releases, 21/10/2026) | github.com/actions/checkout; github.com/actions/setup-python |
+| `GET https://api.github.com/repos/<dono>/<repo>/actions/runs?head_sha=<commit>` responde sem credencial em repositório público, com `status`, `conclusion`, `path` e `html_url` de cada execução; limite de 60 pedidos por hora por IP (`X-RateLimit-Limit: 60`) | executado (21/10/2026) | docs.github.com/en/rest/actions/workflow-runs |

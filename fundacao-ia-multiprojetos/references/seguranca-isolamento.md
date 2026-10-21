@@ -127,6 +127,10 @@ confere o preenchimento. Aprovação persistida vale com origem verificável for
 escreve ali (autor, ação, recurso, limites, vigência; ex.: decisão gravada pelo serviço da
 fundação, com a força da identidade descrita no §2); o que o usuário autorizou na conversa atual
 vale sem nova pergunta [auditoria da 1.4.1, A17; revisão de segurança da 1.4.5, #10].
+Instruções e extensões aninhadas também são conteúdo externo: `CLAUDE.md`, `AGENTS.md` ou skill dentro de
+`projects/<p>/data/` ou de um projeto importado entram no contexto quando a sessão lê ou edita ali [Verificado
+2026-10-21]. O perfil do host exclui as pastas `data/` das instruções (`claudeMdExcludes`) e nega por nome as skills
+aninhadas; `scripts/instrucoes_aninhadas.py listar` as inventaria antes da leitura (capacidade 08 §6) [Decisão; 1.7.0].
 
 ## 4. Modelo de ameaças mínimo [3.0 R11.1–R11.2]
 - **Trifeta letal:** nunca juntar dados privados + conteúdo não confiável + canal de
@@ -147,8 +151,8 @@ vale sem nova pergunta [auditoria da 1.4.1, A17; revisão de segurança da 1.4.5
   absoluto escapa) [Verificado 2026-10-18].
 - Hook **PreToolUse** com `permissionDecision: "deny"` para escrita fora de
   `projects/<projeto autenticado>/` — `assets/hooks/guarda_caminho.py`, matcher
-  `Edit|Write|MultiEdit|NotebookEdit|mcp__.*` (falha fechada sem projeto autenticado e
-  em evento ilegível; ferramenta MCP só por lista explícita em `FUNDACAO_MCP_PERMITIDAS`;
+  `Edit|Write|MultiEdit|NotebookEdit|mcp__.*` (projeto autenticado em `FUNDACAO_PROJECT`, entregue pelo
+  lançador — `assets/host/preparo_host.py identidade --projeto`; falha fechada sem ele e em evento ilegível; ferramenta MCP só por lista explícita em `FUNDACAO_MCP_PERMITIDAS`;
   nega `projects/` ou a pasta do projeto trocadas por ligação/junção e ligação no caminho do
   destino). É **consultivo**: decide antes de o host abrir o arquivo, e uma troca de ligação
   nesse intervalo passa — contenção no ponto de abertura exige permissão do SO ou sandbox
@@ -159,6 +163,9 @@ vale sem nova pergunta [auditoria da 1.4.1, A17; revisão de segurança da 1.4.5
 - **Sandbox:** no Windows nativo os comandos do Claude Code rodam **sem** sandbox; use
   WSL2 com `sandbox.failIfUnavailable: true` no perfil "dados reais"; o sandbox cobre
   comandos de shell, não ferramentas de arquivo, MCP nem hooks [Verificado 2026-10-18].
+- **Perfil de dados reais sem web** [Decisão; 1.7.0]: o perfil do WSL nega `WebFetch` e `WebSearch` (a regra sem
+  padrão retira a ferramenta da sessão [Verificado 2026-10-21]); pesquisa externa roda numa sessão de laboratório,
+  sem dados reais no contexto. Prova negativa: pedir uma busca na sessão de dados reais e ver a ferramenta ausente.
 - Codex: `sandbox_mode`/`approval_policy` e hooks oficiais conferidos na versão
   instalada [Verificado 2026-10-18; 3.0 R4.5].
 - Segredos: cofre do sistema (Credential Manager/`keyring`), `.env` negado, varredura
@@ -188,7 +195,8 @@ vale sem nova pergunta [auditoria da 1.4.1, A17; revisão de segurança da 1.4.5
     quando o Ubuntu restringe namespaces, um só bloco `[interop]` desligado no `/etc/wsl.conf` (no caso real, o bloco
     ficou repetido três vezes), o Claude Code copiado para fora da limpeza automática de versões e fixado por SHA-256
     (o hash do manifesto assinado, por `--claude-sha256`; sem ele, registrado como não conferido) e o lançador
-    `assets/host/wsl/abrir-sessao.sh`, que confere Claude Code, perfil e hooks pelo hash, a identidade e a
+    `assets/host/wsl/abrir-sessao.sh`, que confere Claude Code, perfil e hooks pelo hash, a identidade, o projeto (se o
+    `settings.local.json` também o entregar, tem de ser o do lançador [revisão de segurança da 1.7.0]) e a
     interoperabilidade desligada antes de abrir a sessão com o prompt de retomada.
   - Perfil do WSL: `state/` em `sandbox.filesystem.allowRead` **e** `allowWrite`, com a ferramenta Read ainda negada
     em `state/`. A regra `Read(./state/**)` também vira `denyRead` no sandbox: sem `allowRead`, `state/` vira um
@@ -218,6 +226,10 @@ arquivos de outro projeto só é bloqueada por permissões do SO ou sandbox do h
 No perfil do WSL, a raiz (pasta de trabalho) continua gravável pelos comandos do sandbox, salvo os caminhos
 negados; `registry/` e o código do kit (`fundacao/`) também. Quem protege as decisões do titular é a assinatura (§2),
 não o sandbox.
+O `instalar_kit.py` e o `atualizar_fundacao.py` (`aplicar`, `desfazer`) conferem cada caminho, sem seguir ligação,
+antes de escrever ou retirar; como no `guarda_caminho.py`, a conferência é **consultiva**: quem puder escrever na raiz
+ao mesmo tempo e trocar um componente por junção no intervalo entre a conferência e a escrita ainda redireciona a
+operação. Rode-os sem outra sessão ou processo escrevendo na raiz [revisão de segurança da 1.7.0, VCT170-04].
 
 ## 7. Catálogo de provas negativas (use marcadores-canário fictícios)
 | Prova | Onde | Resultado esperado |

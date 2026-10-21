@@ -1,0 +1,45 @@
+# CI pública da skill fundacao-ia-multiprojetos (proposta 6 da análise do vibe-coding-toolkit, 21/10/2026).
+# A fonte fica na árvore de desenvolvimento; a sincronização da cópia pública gerencia só este arquivo em .github/.
+# As cinco verificações rodam nas duas plataformas, cinco rodadas em cada (R58, R59): suíte do kit, testes dos
+# scripts, testes da entrega, referências e comandos citados, e os cenários (sem rede, sem modelo, sem skill-creator).
+# Ações fixadas por SHA de commit (tags conferidas em 21/10/2026); permissão só de leitura; nenhum segredo.
+name: validar
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validar:
+    name: ${{ matrix.os }} rodada ${{ matrix.rodada }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        rodada: [1, 2, 3, 4, 5]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: suíte do kit
+        working-directory: fundacao-ia-multiprojetos/assets/fundacao-kit
+        run: python -B -m unittest discover -s tests
+      - name: testes dos scripts da skill
+        working-directory: fundacao-ia-multiprojetos
+        run: python -B -m unittest discover -s scripts/tests
+      - name: testes da entrega
+        run: python -B -m unittest discover -s entrega/testes
+      - name: referências e comandos citados
+        run: python -B fundacao-ia-multiprojetos/scripts/verificar_referencias.py --raiz fundacao-ia-multiprojetos
+      - name: cenários
+        shell: bash
+        run: python -B fundacao-ia-multiprojetos/evals/cenarios/run_cenarios.py --saida "$RUNNER_TEMP/cenarios"

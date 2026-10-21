@@ -42,6 +42,13 @@ confere "$RAIZ/.claude/hooks/guarda_identidade.py" "$HOOK_IDENTIDADE_SHA256" "o 
 if [ ! -f "$RAIZ/.claude/settings.local.json" ]; then
   nao_abre "a identidade do titular (.claude/settings.local.json) não existe: rode antes o preparar-maquina.ps1 no Windows."
 fi
+# O projeto vem deste lançador; se o settings.local.json também o entregar, tem de ser o mesmo (com os dois diferentes,
+# qual vale dependeria da precedência do host: revisão de segurança da 1.7.0).
+PROJETO_LOCAL=$(grep -o '"FUNDACAO_PROJECT"[[:space:]]*:[[:space:]]*"[^"]*"' "$RAIZ/.claude/settings.local.json" |
+  sed 's/.*"\([^"]*\)"$/\1/' | head -n 1 || true)  # sem a chave, nada a conferir
+if [ -n "$PROJETO_LOCAL" ] && [ "$PROJETO_LOCAL" != "$PROJETO" ]; then
+  nao_abre "o .claude/settings.local.json entrega o projeto $PROJETO_LOCAL, mas este lançador é do projeto $PROJETO: rode de novo o preparar-maquina.ps1 com -Projeto $PROJETO."
+fi
 if /mnt/c/Windows/System32/cmd.exe /c exit 0 >/dev/null 2>&1; then
   nao_abre "a interoperabilidade com o Windows está ligada (o cmd.exe abriu). Rode o preparar-wsl.sh e reinicie o Ubuntu: no PowerShell do Windows, wsl --terminate ${WSL_DISTRO_NAME:-Ubuntu}."
 fi

@@ -23,7 +23,9 @@ quando só multiplica mensagens, tempo e consumo.
 ## Implementação
 1. **Pacote de delegação** por papel: objetivo, arquivos permitidos, papel, limites,
    prazo, orçamento, formato de entrega e **o que fazer quando faltar evidência**
-   (registrar ausência, nunca preencher com narrativa plausível) [Livro p48].
+   (registrar ausência, nunca preencher com narrativa plausível) [Livro p48]. Leva também a
+   lista de **armadilhas já conhecidas**, copiada na íntegra em cada instrução (cada subagente só
+   vê a sua) e acrescida ao longo do trabalho [análise do vibe-coding-toolkit, 21/10/2026].
 2. **Papéis didáticos:** extrator (fatos explícitos + referência) · conferente
    (entradas ausentes + motivo) · consolidador (achados compatíveis, mantendo origem) ·
    revisor (confere o relatório **nas fontes originais**, não só no resumo) [Livro p48].
@@ -35,11 +37,33 @@ quando só multiplica mensagens, tempo e consumo.
    especializado; rodada de correção limitada [Livro p49–50].
 6. Registre `run_id`, papel, provedor, entradas, saídas e vínculo das afirmações às fontes.
 
+## Paralelismo em ondas: quem escreve, quem lê
+[Decisão; análise do vibe-coding-toolkit, 21/10/2026 — regra de ondas do toolkit, adaptada.] Antes de rodar
+tarefas ao mesmo tempo, cada uma declara três coisas:
+- **Arquivos:** os caminhos exatos que cria ou altera (na dúvida, liste mais, nunca menos);
+- **Depende de:** as tarefas cuja saída usa, ou "nenhuma";
+- **Recursos:** o que é compartilhado e muda — na fundação, `state/state.sqlite` (nunca aberto pelo Windows e
+  pelo WSL ao mesmo tempo), a `RETOMADA.md`, `registry/requisitos.csv`, a pasta de backups, o índice do Git,
+  portas e pastas temporárias.
+
+Regras:
+1. Duas tarefas entram na mesma onda só se nenhuma depende da outra (nem por uma terceira), os arquivos não se
+   repetem e os recursos que mudam são independentes. Declaração faltando ou duvidosa = a tarefa depende de
+   todas as anteriores e roda em série. Arquivo em comum, mesmo em trechos diferentes, separa as tarefas.
+2. Um escritor por arquivo. RETOMADA, matriz, evidências e commits ficam com o coordenador: um commit por
+   tarefa, na ordem da onda, conferindo o HEAD na hora; executor não faz commit. Duas sessões na mesma árvore
+   Git dividem o índice — um `git add -A` de uma leva os arquivos da outra.
+3. Revisor só lê; a correção volta para quem escreveu. Verificação que grava (porta, banco de ensaio, pasta de
+   saída) precisa de recurso próprio ou roda em série.
+4. Agente que falhou: confirmar que parou antes de assumir os arquivos dele, inspecionar o que ficou pela metade
+   e retomar do ponto conferido; não repetir a mesma tentativa sem evidência nova.
+
 ## Verificação
 | Caso | Esperado |
 |---|---|
 | Defeitos plantados (afirmação sem fonte; data de emissão usada como data do evento) | revisor encontra ambos, com arquivo, trecho e correção [Livro p49] |
 | Paralelismo | horários/eventos de início e fim com sobreposição real (dois arquivos no fim não provam) [Livro p50] |
+| Duas tarefas que gravam no mesmo banco ou arquivo | rodam em série (ou com recurso isolado), e o registro mostra a ordem |
 | Saída incompleta / executor indisponível | consolidado não esconde a falta |
 | Fonte de outro projeto | negativa antes da leitura |
 | Gabarito do teste | fica fora do contexto do revisor |

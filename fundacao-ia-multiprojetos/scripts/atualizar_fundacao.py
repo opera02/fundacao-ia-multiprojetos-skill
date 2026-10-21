@@ -14,9 +14,11 @@
      `init`, `eventos verificar` e a suíte de conformidade NELA. Falha de teste que já acontecia na raiz antes da
      atualização é relatada, mas não bloqueia; falha nova (regressão) bloqueia;
   4. promoção na raiz: `instalar_kit.py --atualizar` (guarda os arquivos substituídos), `init` e `eventos verificar`;
+     depois, as instruções da raiz (AGENTS.md e CLAUDE.md, `instrucoes_raiz.py gerar`), sem bloquear;
   5. backup DEPOIS (código novo, com âncora) + `backup verificar`;
   6. registro em <raiz>/evidence/atualizacoes/ e resumo em linguagem simples.
-`desfazer` devolve os arquivos substituídos (registry/kit_backup/...) e apaga os criados pela atualização, só se o
+`desfazer` devolve os arquivos substituídos (registry/kit_backup/...) e apaga os criados pela atualização (as
+instruções da raiz também, salvo se editadas depois), só se o
 `user_version` do banco não mudou; se mudou, a volta é restaurar a cópia ANTES numa pasta nova (C9).
 
 Identidade: FUNDACAO_PRINCIPAL vem do lançador (administração da fundação); este script não a define.
@@ -31,6 +33,7 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -40,18 +43,29 @@ from pathlib import Path
 AQUI = Path(__file__).resolve().parent
 KIT = AQUI.parent / "assets" / "fundacao-kit"
 INSTALAR_KIT = AQUI / "instalar_kit.py"
+INVENTARIAR_HOST = AQUI / "inventariar_host.py"
+INVENTARIO_HOST = Path("registry") / "inventario-host.json"  # R54: skills, plugins, MCP e hooks do host
+INSTRUCOES_RAIZ = AQUI / "instrucoes_raiz.py"  # AGENTS.md e CLAUDE.md gerados na raiz (proposta 1)
 CONFIGURACAO = "registry"
 IGNORAR = {"__pycache__", ".pytest_cache"}
 VARIAVEL_IDENTIDADE = "FUNDACAO_" + "PRINCIPAL"
 TEMPO = 3600
+AREAS_DE_CODIGO = ("fundacao", "templates", "tests")
+RETIRADAS = "tests/testes_retirados.json"  # no kit novo: ID do teste retirado de propósito -> versão e motivo
 RUNNER = r"""
 import json, os, sys, unittest
 suite = unittest.defaultTestLoader.discover("tests", pattern=sys.argv[1])
+ids = []
+def coletar(s):
+    for t in s:
+        coletar(t) if isinstance(t, unittest.TestSuite) else ids.append(t.id())
+coletar(suite)
 with open(os.devnull, "w", encoding="utf-8") as nada:
     r = unittest.TextTestRunner(stream=nada, verbosity=0).run(suite)
 falhas = r.failures + r.errors
-print(json.dumps({"total": r.testsRun, "falhas": sorted(t.id() for t, _ in falhas),
-                  "detalhes": {t.id(): tb[-1200:] for t, tb in falhas}, "pulados": len(r.skipped)}))
+print(json.dumps({"total": r.testsRun, "ids": sorted(ids), "falhas": sorted(t.id() for t, _ in falhas),
+                  "detalhes": {t.id(): tb[-1200:] for t, tb in falhas}, "pulados": len(r.skipped),
+                  "pulados_ids": {t.id(): str(m)[:200] for t, m in r.skipped}}))
 """
 
 
@@ -103,13 +117,32 @@ def hashes_instalados(raiz: Path) -> dict[str, str]:
     except (OSError, ValueError):
         return conhecidos
     for reg in historico if isinstance(historico, list) else []:
-        for item in reg.get("copiados") or []:
-            if isinstance(item, dict) and item.get("path") and item.get("sha256"):
-                conhecidos[item["path"]] = item["sha256"]
-        for item in reg.get("substituidos") or []:
-            if isinstance(item, dict) and item.get("path") and item.get("sha256_novo"):
-                conhecidos[item["path"]] = item["sha256_novo"]
+        if not isinstance(reg, dict):
+            continue
+        for chave, campo in (("copiados", "sha256"), ("identicos_registrados", "sha256"),
+                             ("substituidos", "sha256_novo")):
+            for item in reg.get(chave) or []:
+                if isinstance(item, dict) and item.get("path") and item.get(campo):
+                    conhecidos[item["path"]] = item[campo]
+        for item in reg.get("orfaos_retirados") or []:  # já guardados no backup por uma atualização
+            if isinstance(item, dict):
+                conhecidos.pop(item.get("path"), None)
     return conhecidos
+
+
+def retiradas_declaradas(kit: Path = KIT) -> dict:
+    """Testes que o kit novo retirou de propósito (`tests/testes_retirados.json`): ID -> versão e motivo."""
+    arq = Path(kit) / RETIRADAS
+    try:
+        dados = json.loads(arq.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise Parada("checar", "a declaração de testes retirados do kit não é JSON válido", erro=str(exc))
+    if not isinstance(dados, dict) or not all(isinstance(v, dict) and str(v.get("motivo", "")).strip()
+                                              for v in dados.values()):
+        raise Parada("checar", "a declaração de testes retirados precisa de ID -> {versao, motivo}")
+    return dados
 
 
 def ambiente() -> dict:
@@ -155,6 +188,29 @@ def user_version(raiz: Path):
         con.close()
 
 
+def caminho_do_registro_valido(rel) -> bool:
+    """Como no instalar_kit.py: relativo, barras normais, sem `..`, `.`, raiz, unidade ou `:` (VCT170-01/02)."""
+    if not isinstance(rel, str) or not rel or chr(92) in rel or ":" in rel or rel.startswith("/"):
+        return False
+    return all(parte not in ("", ".", "..") for parte in rel.split("/"))
+
+
+def com_ligacao(raiz: Path, rel: str) -> bool:
+    """Algum componente do caminho, abaixo da raiz, é ligação simbólica ou junção? Conferido sem seguir (como o
+    guarda_caminho.py e o backup do kit): `dentro()` resolve a ligação e aceitaria `tests/elo -> .claude`
+    (revisão de segurança da 1.7.0, VCT170-04)."""
+    atual = Path(raiz)
+    for parte in rel.split("/"):
+        atual = atual / parte
+        try:
+            st = os.lstat(atual)
+        except OSError:
+            return False  # o resto do caminho ainda não existe
+        if stat.S_ISLNK(st.st_mode) or getattr(st, "st_reparse_tag", 0) & 0x20000000:  # substituto de nome
+            return True
+    return False
+
+
 def checar(raiz: Path) -> dict:
     """Só lê. `pode_aplicar` e os `motivos` de recusa, com o que muda arquivo a arquivo."""
     raiz = Path(raiz).resolve()
@@ -166,9 +222,14 @@ def checar(raiz: Path) -> dict:
     if tupla(res["kit_da_skill"]) < tupla(res["kit_na_raiz"]):
         res["motivos"].append("o kit desta skill é mais antigo que o da raiz: atualize a skill antes")
     conhecidos = hashes_instalados(raiz)
-    mudancas = {"copiar": [], "atualizar": [], "identicos": 0, "alterados_localmente": []}
-    for rel, novo in arquivos_do_kit().items():
+    mudancas = {"copiar": [], "atualizar": [], "identicos": 0, "alterados_localmente": [], "retirar": []}
+    do_kit = arquivos_do_kit()
+    mudancas["por_ligacao"] = []
+    for rel, novo in do_kit.items():
         alvo = raiz / rel
+        if com_ligacao(raiz, rel):
+            mudancas["por_ligacao"].append(rel)
+            continue
         if not alvo.exists():
             mudancas["copiar"].append(rel)
         elif not alvo.is_file():
@@ -183,7 +244,21 @@ def checar(raiz: Path) -> dict:
                 motivo = ("difere do kit novo e do hash registrado na instalação" if rel in conhecidos
                           else "sem hash de instalação registrado")
                 mudancas["alterados_localmente"].append({"path": rel, "motivo": motivo})
+    # Órfãos: o kit anterior instalou, o novo não tem mais (o instalar_kit.py os guarda no backup).
+    mudancas["entradas_invalidas"] = sorted(rel for rel in conhecidos if not caminho_do_registro_valido(rel))
+    candidatos = [rel for rel in conhecidos if rel not in do_kit and caminho_do_registro_valido(rel)
+                  and rel.split("/", 1)[0] in AREAS_DE_CODIGO and (raiz / rel).is_file()]
+    mudancas["por_ligacao"] += sorted(rel for rel in candidatos if com_ligacao(raiz, rel))
+    mudancas["retirar"] = sorted(rel for rel in candidatos if not com_ligacao(raiz, rel))
     res["mudancas"] = mudancas
+    if mudancas["por_ligacao"]:
+        res["motivos"].append("caminho do kit passa por ligação ou junção dentro da raiz ("
+                              + ", ".join(mudancas["por_ligacao"][:5]) + "): a atualização escreveria ou retiraria "
+                              "o arquivo do outro lado; investigue antes de atualizar")
+    if mudancas["entradas_invalidas"]:
+        res["motivos"].append("registry/kit_install.json tem caminho que o instalador nunca grava (com `..`, absoluto "
+                              "ou com barra invertida): o registro pode ter sido adulterado; investigue antes de "
+                              "atualizar")
     if mudancas["alterados_localmente"]:
         res["motivos"].append("há arquivo de código alterado localmente desde a instalação: a atualização o "
                               "substituiria; revise-o antes (fluxo C6)")
@@ -195,7 +270,9 @@ def checar(raiz: Path) -> dict:
     if code != 0:
         res["motivos"].append("a cadeia de eventos da raiz não confere: investigue antes de atualizar")
     res["user_version"] = user_version(raiz)
-    res["nada_a_fazer"] = not (mudancas["copiar"] or mudancas["atualizar"] or mudancas["alterados_localmente"])
+    res["instrucoes_raiz"] = _plano_instrucoes(raiz)
+    res["nada_a_fazer"] = not (mudancas["copiar"] or mudancas["atualizar"] or mudancas["alterados_localmente"]
+                               or mudancas["retirar"])
     res["pode_aplicar"] = not res["motivos"]
     return res
 
@@ -235,8 +312,10 @@ def _init_e_cadeia(raiz: Path, etapa: str) -> dict:
 
 def _ensaio(raiz: Path, antes: dict, padrao: str, manter: bool = False) -> dict:
     """Restaura a cópia ANTES numa pasta temporária e aplica nela o kit novo, com `init`, cadeia e suíte.
-    Regressão = teste que falha na cópia atualizada e não falhava na raiz antes. A cópia tem os dados da fundação:
-    é apagada no fim, também na falha (o registro guarda o motivo de cada teste), salvo com `manter`."""
+    Regressão = teste que falha na cópia atualizada e não falhava na raiz antes, ou que passava e na cópia
+    sumiu ou passou a ser pulado sem a retirada declarada pelo kit novo (catraca, proposta 5). A cópia tem os
+    dados da fundação: é apagada no fim, também na falha (o registro guarda o motivo de cada teste), salvo
+    com `manter`."""
     base = suite(raiz, padrao)
     tmp = Path(tempfile.mkdtemp(prefix="ensaio-atualizacao-"))
     try:
@@ -262,14 +341,88 @@ def _ensaio_na_copia(raiz: Path, antes: dict, padrao: str, base: dict, copia: Pa
     conferencia = _init_e_cadeia(copia, "ensaio")
     depois = suite(copia, padrao)
     regressoes = sorted(set(depois["falhas"]) - set(base["falhas"]))
+    declaradas = retiradas_declaradas()
+    passavam = set(base.get("ids", [])) - set(base["falhas"]) - set(base.get("pulados_ids", {}))
+    sumidos = sorted(set(base.get("ids", [])) - set(depois.get("ids", [])) - set(declaradas))
+    pulados_novos = sorted((passavam & set(depois.get("pulados_ids", {}))) - set(declaradas))
     ensaio = {"suite_antes_na_raiz": base, "suite_na_copia_atualizada": depois, "regressoes": regressoes,
+              "testes_sumidos": sumidos, "pulados_novos": pulados_novos,
+              "retiradas_declaradas": sorted(set(declaradas) & set(base.get("ids", []))),
               "falhas_que_ja_existiam": sorted(set(depois["falhas"]) & set(base["falhas"])),
-              "kit": {"substituidos": len(kit.get("substituidos", [])), "copiados": len(kit.get("copiados", []))},
+              "kit": {"substituidos": len(kit.get("substituidos", [])), "copiados": len(kit.get("copiados", [])),
+                      "orfaos_retirados": len(kit.get("orfaos_retirados", []))},
               "user_version_na_copia": (conferencia["init"] or {}).get("user_version")}
-    if regressoes:
-        raise Parada("ensaio", "a atualização quebra testes que passavam antes; a raiz NÃO foi alterada",
-                     regressoes=regressoes, ensaio=ensaio, copia_de_ensaio=str(copia))
+    if regressoes or sumidos or pulados_novos:
+        raise Parada("ensaio", "a atualização quebra, apaga ou passa a pular testes que passavam antes (sem a "
+                     "retirada declarada em " + RETIRADAS + " do kit novo); a raiz NÃO foi alterada",
+                     regressoes=regressoes, testes_sumidos=sumidos, pulados_novos=pulados_novos,
+                     ensaio=ensaio, copia_de_ensaio=str(copia))
     return ensaio
+
+
+def _inventario_host(raiz: Path) -> dict | None:
+    """Confere o inventário do ecossistema do host (proposta 15), se a fundação tiver um. Não bloqueia: mudança
+    no host é informação para o titular conferir e regravar, não falha da atualização do kit."""
+    arq = raiz / INVENTARIO_HOST
+    if not arq.is_file():
+        return None
+    _code, dados, erro = rodar([sys.executable, "-B", str(INVENTARIAR_HOST), "verificar", "--inventario", str(arq),
+                                "--raiz", str(raiz)], cwd=AQUI)
+    if not isinstance(dados, dict) or "diferencas" not in dados:
+        return {"conferido": False, "erro": (erro or "")[-300:]}
+    mudancas = {cat: {k: len(v) for k, v in d.items() if v} for cat, d in dados["diferencas"].items()}
+    return {"conferido": True, "sem_mudancas": bool(dados.get("ok")),
+            "mudancas": {cat: m for cat, m in mudancas.items() if m}}
+
+
+def _plano_instrucoes(raiz: Path) -> dict:
+    """Só lê (`instrucoes_raiz.py gerar --simular`): o que mudaria no AGENTS.md e no CLAUDE.md da raiz."""
+    _code, dados, erro = rodar([sys.executable, "-B", str(INSTRUCOES_RAIZ), "gerar", "--raiz", str(raiz), "--simular"],
+                               cwd=AQUI)
+    if not isinstance(dados, dict):
+        return {"erro": (erro or "")[-300:]}
+    if not dados.get("ok"):
+        return {"conflito": dados.get("conflito")}
+    return {"AGENTS.md": dados["agents"]["acao"], "CLAUDE.md": dados["claude"]["acao"]}
+
+
+def _instrucoes_raiz(raiz: Path, carimbo: str) -> dict:
+    """Regenera o AGENTS.md e o CLAUDE.md da raiz (proposta 1), guardando antes os que já existiam, para o
+    `desfazer`. Não bloqueia: AGENTS.md escrito à mão fica como está e o resumo pede a decisão do titular."""
+    plano = _plano_instrucoes(raiz)
+    if "erro" in plano or "conflito" in plano:
+        return {"gerado": False, **plano}
+    guarda = raiz / "registry" / "kit_backup" / ("instrucoes-" + carimbo)
+    guardados = []
+    try:
+        for nome, acao in plano.items():
+            if acao == "atualizar":
+                guarda.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(raiz / nome, guarda / nome)
+                guardados.append({"path": nome, "sha256_anterior": sha(guarda / nome)})
+    except OSError as exc:
+        return {"gerado": False, "erro": "a versão anterior não foi guardada: " + str(exc)}
+    code, dados, erro = rodar([sys.executable, "-B", str(INSTRUCOES_RAIZ), "gerar", "--raiz", str(raiz)], cwd=AQUI)
+    res = {"gerado": code == 0 and isinstance(dados, dict) and bool(dados.get("ok")), "acoes": plano,
+           "copia": str(guarda) if guardados else None, "guardados": guardados}
+    if res["gerado"]:
+        res["sha256"] = {"AGENTS.md": dados["agents"]["sha256"], "CLAUDE.md": dados["claude"]["sha256"]}
+    else:
+        res["erro"] = (erro or "")[-300:]
+    return res
+
+
+def _resumo_instrucoes(raiz: Path, instr: dict) -> list:
+    comando = "python " + INSTRUCOES_RAIZ.name + ' gerar --raiz "' + str(raiz) + '"'
+    if instr.get("gerado"):
+        mudou = [nome for nome, acao in instr["acoes"].items() if acao != "igual"]
+        return (["Instruções da raiz geradas pela skill (" + ", ".join(mudou) + "): as sessões abertas nesta pasta "
+                 "passam a lê-las ao iniciar."] if mudou else [])
+    if instr.get("conflito"):
+        return ["O AGENTS.md da raiz foi escrito à mão e não foi alterado. Revise-o e, para a skill passar a "
+                "mantê-lo (o seu texto fica no trecho do titular), rode: " + comando + " --adotar"]
+    return ["Atenção: as instruções da raiz não foram geradas (" + str(instr.get("erro"))[:200] + "); "
+            "rode depois: " + comando]
 
 
 def _gravar(raiz: Path, nome: str, dados: dict) -> Path:
@@ -288,8 +441,11 @@ def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False)
     if not pre["pode_aplicar"]:
         raise Parada("checar", "; ".join(pre["motivos"]), checar=pre)
     if pre["nada_a_fazer"]:
-        return {"ok": True, "nada_a_fazer": True, "checar": pre,
-                "resumo": ["A fundação já está no kit " + str(pre["kit_na_raiz"]) + ": nada a fazer."]}
+        resumo = ["A fundação já está no kit " + str(pre["kit_na_raiz"]) + ": nada a fazer."]
+        instr = pre["instrucoes_raiz"]
+        if "AGENTS.md" not in instr or {instr["AGENTS.md"], instr["CLAUDE.md"]} != {"igual"}:
+            resumo += _resumo_instrucoes(raiz, {"gerado": False, "erro": "desatualizadas ou ausentes", **instr})
+        return {"ok": True, "nada_a_fazer": True, "checar": pre, "resumo": resumo}
     nova, antiga = pre["kit_da_skill"], pre["kit_na_raiz"]
     registro = {"schema_version": "fundacao.atualizacao/1", "raiz": str(raiz), "iniciado_em": carimbo,
                 "kit_antes": antiga, "kit_da_skill": nova, "identidade": pre["identidade"],
@@ -301,6 +457,7 @@ def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False)
         registro["promocao"] = {"instalar_kit": _instalar_kit(raiz)}
         registro["promocao"].update(_init_e_cadeia(raiz, "promocao"))
         registro["user_version_depois"] = user_version(raiz)
+        registro["instrucoes_raiz"] = _instrucoes_raiz(raiz, carimbo)  # antes da cópia DEPOIS, que as leva
         rotulo = "depois-kit-" + nova + "-" + carimbo
         registro["depois"] = _backup(raiz, backups / rotulo, rotulo)
     except Parada as p:
@@ -309,6 +466,7 @@ def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False)
         p.detalhes["registro"] = str(_gravar(raiz, nome, registro))
         raise
     registro["kit_depois"] = versao_do_kit(raiz)
+    registro["inventario_host"] = _inventario_host(raiz)
     registro["concluido_em"] = agora()
     arq = _gravar(raiz, "atualizacao-kit-" + nova + "-" + carimbo + ".json", registro)
     ensaio = registro["ensaio"]
@@ -323,40 +481,118 @@ def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False)
     if ensaio["falhas_que_ja_existiam"]:
         resumo.append("Atenção: " + str(len(ensaio["falhas_que_ja_existiam"])) + " teste(s) já falhava(m) antes e "
                       "continua(m) falhando (não é regressão): " + ", ".join(ensaio["falhas_que_ja_existiam"][:3]))
+    resumo += _resumo_instrucoes(raiz, registro["instrucoes_raiz"])
+    host = registro["inventario_host"]
+    if host and host.get("conferido"):
+        resumo.append("Ecossistema do host (skills, plugins, MCP, hooks): " + (
+            "igual ao inventário." if host["sem_mudancas"] else "mudou desde o inventário — confira e regrave com "
+            "inventariar_host.py gravar --substituir: " + json.dumps(host["mudancas"], ensure_ascii=False)))
     resumo.append("Para voltar o código: python " + Path(__file__).name + " desfazer --registro " + str(arq))
     return {"ok": True, "registro": str(arq), "resumo": resumo}
+
+
+INSTRUCOES = ("AGENTS.md", "CLAUDE.md")  # os únicos arquivos que as instruções da raiz tocam
+
+
+def _dentro(caminho, base: Path) -> bool:
+    try:
+        Path(caminho).resolve().relative_to(Path(base).resolve())
+        return True
+    except (ValueError, OSError, RuntimeError):
+        return False
+
+
+def _conferir_registro(registro_arq: Path, reg: dict) -> Path:
+    """O registro é dado (fica em evidence/, gravável por shell): só vale o desta raiz, com caminhos relativos sem
+    `..`, cópias dentro de registry/kit_backup e instruções só AGENTS.md e CLAUDE.md (revisão de segurança da 1.7.0,
+    VCT170-02). Devolve a raiz; qualquer desvio para antes de alterar o que for."""
+    raiz = Path(registro_arq).resolve().parents[2]  # <raiz>/evidence/atualizacoes/<registro>.json
+    if Path(str(reg.get("raiz") or "")).resolve() != raiz:
+        raise Parada("desfazer", "o registro diz que a raiz é " + str(reg.get("raiz")) + ", mas ele está em " + str(raiz)
+                     + ": só se desfaz a atualização registrada dentro da própria raiz; nada foi alterado")
+    guarda = raiz / "registry" / "kit_backup"
+    kit = (reg.get("promocao") or {}).get("instalar_kit") or {}
+    instr = reg.get("instrucoes_raiz") or {}
+    problemas = [campo + " fora de registry/kit_backup" for campo, pasta in
+                 (("backup_dos_substituidos", kit.get("backup_dos_substituidos")), ("copia", instr.get("copia")))
+                 if pasta and not _dentro(pasta, guarda)]
+    for chave in ("substituidos", "copiados", "orfaos_retirados"):
+        for item in kit.get(chave) or []:
+            rel = item.get("path") if isinstance(item, dict) else None
+            if not caminho_do_registro_valido(rel) or com_ligacao(raiz, rel) or not _dentro(raiz / rel, raiz):
+                problemas.append(chave + ": caminho inválido ou atrás de ligação " + repr(rel)[:80])
+            elif chave == "orfaos_retirados" and rel.split("/", 1)[0] not in AREAS_DE_CODIGO:
+                problemas.append("orfaos_retirados: fora das áreas de código: " + rel)
+    nomes = set(instr.get("acoes") or {}) | {i.get("path") for i in instr.get("guardados") or [] if isinstance(i, dict)}
+    if not nomes <= set(INSTRUCOES):
+        problemas.append("instrucoes_raiz: só AGENTS.md e CLAUDE.md")
+    if problemas:
+        raise Parada("desfazer", "o registro tem caminho fora do que a atualização grava (" + "; ".join(problemas[:5])
+                     + "): pode ter sido adulterado; nada foi alterado")
+    return raiz
 
 
 def desfazer(registro_arq: Path, aceitar_banco_migrado: bool) -> dict:
     """Devolve o código anterior à atualização registrada, se o esquema do banco não mudou."""
     reg = json.loads(Path(registro_arq).read_text(encoding="utf-8"))
-    raiz = Path(reg["raiz"])
+    raiz = _conferir_registro(Path(registro_arq), reg)
     kit = reg["promocao"]["instalar_kit"]
     atual = user_version(raiz)
     if atual != reg.get("user_version_antes") and not aceitar_banco_migrado:
         raise Parada("desfazer", "o banco mudou de esquema desde a atualização (user_version "
                      + str(reg.get("user_version_antes")) + " -> " + str(atual) + "): voltar só o código deixaria "
                      "o kit antigo com um banco novo. Restaure a cópia ANTES numa pasta nova (fluxo C9)",
-                     copia_antes=reg["antes"]["pasta"])
+                     copia_antes=(reg.get("antes") or {}).get("pasta"))
     backup = Path(kit["backup_dos_substituidos"]) if kit.get("backup_dos_substituidos") else None
-    for item in kit.get("substituidos", []):  # confere tudo antes de alterar qualquer arquivo
-        origem = backup / item["path"] if backup else None
-        if origem is None or not origem.is_file() or sha(origem) != item["sha256_anterior"]:
-            raise Parada("desfazer", "a cópia anterior de " + item["path"] + " está ausente ou diferente em "
+    guardados = ([(i["path"], i["sha256_anterior"]) for i in kit.get("substituidos", [])]
+                 + [(i["path"], i["sha256"]) for i in kit.get("orfaos_retirados", [])])
+    for rel, esperado in guardados:  # confere tudo antes de alterar qualquer arquivo
+        origem = backup / rel if backup else None
+        if origem is None or not origem.is_file() or sha(origem) != esperado:
+            raise Parada("desfazer", "a cópia anterior de " + rel + " está ausente ou diferente em "
                          "registry/kit_backup; nada foi alterado")
-    devolvidos, apagados = [], []
+    instr = reg.get("instrucoes_raiz") or {}
+    for item in instr.get("guardados", []):
+        origem = Path(instr["copia"]) / item["path"]
+        if not origem.is_file() or sha(origem) != item["sha256_anterior"]:
+            raise Parada("desfazer", "a cópia anterior de " + item["path"] + " está ausente ou diferente em "
+                         + instr["copia"] + "; nada foi alterado")
+    devolvidos, apagados, orfaos = [], [], []
     for item in kit.get("substituidos", []):
         shutil.copy2(backup / item["path"], raiz / item["path"])
         devolvidos.append(item["path"])
+    for item in kit.get("orfaos_retirados", []):  # o que o kit novo tinha retirado volta ao lugar
+        (raiz / item["path"]).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(backup / item["path"], raiz / item["path"])
+        orfaos.append(item["path"])
     for item in kit.get("copiados", []):
         alvo = raiz / item["path"]
         if alvo.is_file() and sha(alvo) == item["sha256"]:
             alvo.unlink()
             apagados.append(item["path"])
+    instrucoes = {"devolvidas": [], "apagadas": [], "mantidas": []}
+    com_copia = {item["path"] for item in instr.get("guardados", [])}
+    for nome, acao in (instr.get("acoes") or {}).items() if instr.get("gerado") else ():
+        alvo = raiz / nome
+        if acao == "igual" or not alvo.is_file():
+            continue
+        if sha(alvo) != instr["sha256"][nome]:  # editado depois da atualização: fica como está
+            instrucoes["mantidas"].append(nome)
+        elif nome in com_copia:
+            shutil.copy2(Path(instr["copia"]) / nome, alvo)
+            instrucoes["devolvidas"].append(nome)
+        elif acao == "criar":
+            alvo.unlink()
+            instrucoes["apagadas"].append(nome)
     versao = versao_do_kit(raiz)
     res = {"ok": True, "kit_na_raiz": versao, "devolvidos": devolvidos, "apagados": apagados,
+           "orfaos_devolvidos": orfaos, "instrucoes": instrucoes,
            "resumo": ["Código devolvido ao kit " + str(versao) + ": " + str(len(devolvidos))
-                      + " arquivo(s) devolvido(s) e " + str(len(apagados)) + " apagado(s). O banco não foi tocado."]}
+                      + " arquivo(s) devolvido(s), " + str(len(orfaos)) + " retirado(s) recolocado(s) e "
+                      + str(len(apagados)) + " apagado(s). O banco não foi tocado."]}
+    if instrucoes["mantidas"]:
+        res["resumo"].append("Instruções da raiz editadas depois da atualização ficaram como estão: "
+                             + ", ".join(instrucoes["mantidas"]) + ".")
     nome = "desfeita-" + Path(registro_arq).stem + "-" + agora() + ".json"
     res["registro"] = str(_gravar(raiz, nome, {**res, "atualizacao": str(registro_arq)}))
     return res

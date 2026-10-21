@@ -68,6 +68,20 @@ class TestBackupCompleto(FoundationTestCase):
         self.assertNotIn("docs/GUIA.md", caminhos)
         self.assertEqual(m["registros_incluidos"], ["notas", "RETOMADA.md"])
 
+    def test_instrucoes_da_raiz_entram_mesmo_com_politica_local(self):
+        """AGENTS.md e CLAUDE.md da raiz (gerados pela skill, com o trecho do titular) vão sempre na cópia."""
+        for nome in ("AGENTS.md", "CLAUDE.md"):
+            (self.root / nome).write_text("instrução fictícia: " + nome, encoding="utf-8")
+        self.politica(["notas"])
+        snap = self.pasta("snap")
+        m = backup.create_backup(self.root, snap, "instrucoes")
+        self.assertLessEqual({"AGENTS.md", "CLAUDE.md"}, {f["path"] for f in m["files"]})
+        dest = self.pasta("dest")
+        rep = backup.restore(snap, dest, self.log)
+        self.assertTrue(rep["released"], rep)
+        for nome in ("AGENTS.md", "CLAUDE.md"):
+            self.assertEqual((dest / nome).read_text(encoding="utf-8"), "instrução fictícia: " + nome)
+
     def test_politica_invalida_e_destino_dentro_da_copia_recusam_antes_de_copiar(self):
         for incluir in (["../fora"], ["state"], [str(self.root.parent / "fora")], [".git"], "docs", [""]):
             with self.subTest(incluir=incluir):

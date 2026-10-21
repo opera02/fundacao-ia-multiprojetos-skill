@@ -126,7 +126,8 @@ class TestAtualizarFundacao(unittest.TestCase):
         self.assertIn("1.0.0", res["ensaio"]["suite_na_copia_atualizada"]["detalhes"][res["regressoes"][0]])
 
     def test_desfazer_recusa_banco_com_esquema_novo(self):
-        registro = self.tmp / "atualizacao.json"
+        registro = self.raiz / "evidence" / "atualizacoes" / "atualizacao.json"  # onde o aplicar grava (1.7.0)
+        registro.parent.mkdir(parents=True, exist_ok=True)
         registro.write_text(json.dumps({"raiz": str(self.raiz), "user_version_antes": -1,
                                         "antes": {"pasta": "copia-antes"},
                                         "promocao": {"instalar_kit": {"substituidos": [], "copiados": []}}}),

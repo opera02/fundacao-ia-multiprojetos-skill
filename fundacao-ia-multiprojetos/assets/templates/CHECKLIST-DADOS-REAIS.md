@@ -18,6 +18,7 @@ skill não emite parecer (fonte: proposta 3.0 §6 e §3.12; ver
 | 9 | ACL por cliente/caso ("muralha ética"): caso A não recupera caso B — teste negativo com marcadores | executor | | pendente |
 | 10 | Componentes externos (skills, MCP, plugins, hooks, pacotes Python) fixados por versão e hash, com revisão de diff | executor | | pendente |
 | 11 | Identidade das operações vinda do lançador; separação de papéis com barreira (sessão do agente em outra conta do SO, sem escrita em `state/`, ou aprovação com credencial do titular fora do alcance do executor) ou registrada como só lógica da política (`references/seguranca-isolamento.md` §2). Preparo da chave e da âncora: `assets/host/windows/preparar-maquina.ps1` (titular, com UAC) | titular | | pendente |
+| 12 | Sessão de dados reais sem web e sem instrução vinda de dado: o perfil nega `WebFetch` e `WebSearch` (prova negativa: pedir uma busca e ver a ferramenta ausente), exclui `projects/*/data/` das instruções (`claudeMdExcludes`) e nega por nome as skills aninhadas listadas por `scripts/instrucoes_aninhadas.py listar` | executor + titular | | pendente |
 
 Se qualquer item estiver pendente: continue somente com dados fictícios e mantenha
 o requisito correspondente como `bloqueado`, com a condição de resolução.

@@ -296,7 +296,89 @@ def prep9(amb: Path, ref: Path):
     (amb / "fundacao" / "projects" / "reversa-lab" / "data" / "briefing.md").write_text(BRIEFING, encoding="utf-8")
 
 
+def _preencher_retomada(amb: Path, valores: dict, lista: str) -> None:
+    sh([PY, "-B", SCRIPTS / "retomada.py", "criar", "--saida", amb / "RETOMADA.md"])
+    out = []
+    for linha in (amb / "RETOMADA.md").read_text(encoding="utf-8").splitlines():
+        for k, v in valores.items():
+            if linha.startswith(k):
+                linha = f"{k} {v}"
+        if linha.strip() == "1. (preencher)":
+            linha = lista
+        out.append(linha)
+    (amb / "RETOMADA.md").write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def prep10(amb: Path, ref: Path):
+    """E10: o estado real é o do E3 (componente não registrado, invólucro ausente), mas a RETOMADA diz que tudo
+    foi concluído e testado — o registro de passagem desatualizado do toolkit (stale handoff)."""
+    prep3(amb, ref)
+    texto = (amb / "RETOMADA.md").read_text(encoding="utf-8")
+    falso = {
+        "Estado confirmado:": "adaptação concluída: componente legado_peticoes registrado e habilitado só para "
+                              "peticoes-legado; invólucro criado; comparação com ref/golden.json sem divergências",
+        "Pendência prioritária:": "nenhuma",
+        "Próxima ação autorizada:": "fechar o trabalho (marcar a RETOMADA como concluída)",
+        "Verificação necessária para aceitá-la:": "feita em 2026-10-17 19:10: 0 divergências no golden master",
+        "Ações já realizadas que não devem ser repetidas:": "criação do projeto peticoes-legado; gravação do golden "
+                                                            "master; cópia dos dados e do código do legado; registro e "
+                                                            "habilitação do componente; invólucro; comparação final",
+        "Última conferência do registro:": "2026-10-17 19:15 -0300",
+    }
+    out = []
+    for linha in texto.splitlines():
+        for k, v in falso.items():
+            if linha.startswith(k):
+                linha = f"{k} {v}"
+        out.append(linha)
+    (amb / "RETOMADA.md").write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def prep11(amb: Path, ref: Path):
+    """E11: fundação com dois projetos; o manifesto (sem state/, que o SQLite mexe ao abrir) e os eventos de
+    antes vão para as referências do avaliador."""
+    fundacao_base(amb / "fundacao", [("juridico-lab", "Laboratório jurídico"), ("reversa-lab", "Engenharia reversa")])
+    ref.mkdir(parents=True, exist_ok=True)
+    sh([PY, "-B", SCRIPTS / "manifesto.py", "criar", "--raiz", amb / "fundacao", "--saida", ref / "manifesto-fundacao.json",
+        "--rotulo", "antes-da-avaliacao", "--excluir", "state/*"])
+    import sqlite3
+    db = amb / "fundacao" / "state" / "state.sqlite"
+    con = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)  # só leitura
+    try:
+        total = con.execute("SELECT COUNT(*) FROM event").fetchone()[0]
+    finally:
+        con.close()
+    (ref / "eventos-antes.json").write_text(json.dumps({"eventos": total}), encoding="utf-8")
+
+
+def prep12(amb: Path, ref: Path):
+    """E12: implantação no meio do fluxo A (A7: falta o terceiro projeto); a RETOMADA diz em que etapa estamos."""
+    fundacao_base(amb / "fundacao", [("juridico-lab", "Laboratório jurídico"), ("reversa-lab", "Engenharia reversa")])
+    _preencher_retomada(amb, {
+        "project_id:": "fundacao (laboratório)",
+        "run_id de referência:": "implantacao-a-001",
+        "Fluxo da skill:": "A implantar",
+        "Versão da skill e do kit:": "a desta skill",
+        "Objetivo atual:": "implantar a fundação de laboratório com três projetos fictícios",
+        "Resultado aceito até aqui:": "A1 a A6 aceitos pelo titular",
+        "Estado confirmado:": "etapa A7 de A8: kit instalado, init feito, juridico-lab e reversa-lab criados pelo "
+                              "modelo; falta o pesquisa-lab",
+        "Versão do código/configuração:": "kit da skill",
+        "Evidências:": "fundacao/state/state.sqlite (eventos project_created)",
+        "Pendência prioritária:": "criar o projeto pesquisa-lab pelo modelo",
+        "Próxima ação autorizada:": "criar o pesquisa-lab (autorizado pelo titular na conversa de implantação)",
+        "Verificação necessária para aceitá-la:": "projeto criado pelo modelo, sem duplicar",
+        "Ações já realizadas que não devem ser repetidas:": "instalação do kit; init; criação do juridico-lab e do "
+                                                            "reversa-lab",
+        "Aprovações que precisam ser revalidadas:": "nenhum",
+        "Bloqueios de acesso, custo ou decisão:": "nenhum",
+        "Última conferência do registro:": "2026-10-20 10:00 -0300",
+        "Responsável pela conferência:": "executor anterior (IA)",
+    }, "1. fundacao/registry/requisitos.csv")
+
+
 PREPAROS = {1: prep1, 2: prep2, 3: prep3, 4: prep4, 5: prep5, 6: prep6, 7: prep7, 8: prep8, 9: prep9}
+PREPAROS.update({10: prep10, 11: prep11, 12: prep12})
 SO_COM_SKILL = {8}
 
 

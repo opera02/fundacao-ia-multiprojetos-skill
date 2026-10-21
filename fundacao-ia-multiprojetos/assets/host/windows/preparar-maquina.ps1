@@ -15,7 +15,9 @@ O que faz, nesta ordem, conferindo antes o que já existe (rodar de novo não re
     altera a âncora (dono, direitos de escrita e de troca de permissões, herança) e que a linha é a da chave.
  3. Hooks guarda_caminho.py e guarda_identidade.py da skill em <raiz>\.claude\hooks.
  4. <raiz>\.claude\settings.json (sessões do Windows) e, com -Projeto, <raiz>\.claude\settings.wsl.json (sessão
-    de dados reais no WSL2), gerados pelos modelos da skill; <raiz>\.claude\settings.local.json com a identidade.
+    de dados reais no WSL2), gerados pelos modelos da skill; <raiz>\.claude\settings.local.json com a identidade e,
+    com -Projeto, o projeto autenticado das sessões (FUNDACAO_PROJECT). -NegarSkill nome1,nome2 nega por nome, nos
+    dois perfis, skills aninhadas em pastas de dados (scripts/instrucoes_aninhadas.py lista quais).
 Arquivo trocado vai antes para <raiz>\.claude\anteriores\<data>. Imprime a impressão digital da chave e os SHA-256
 e grava um relatório JSON (-Relatorio; no modo real, padrão em <raiz>\evidence\host).
 
@@ -34,6 +36,7 @@ param(
     [string] $Projeto,
     [string[]] $Backups = @(),
     [string[]] $SomenteLeitura = @(),
+    [string[]] $NegarSkill = @(),
     [string] $Chave = (Join-Path $HOME '.ssh\fundacao_titular'),
     [string] $Ancora = (Join-Path $env:ProgramData 'FundacaoIA\confianca\allowed_signers'),
     [string] $Python,
@@ -665,13 +668,15 @@ function Invoke-Preparo {
         [void]$rel.itens.Add((Set-ArquivoGerado -Id ('hook:' + $nome) -Destino (Join-Path $claude ('hooks' + $BARRA + $nome)) `
             -Bytes ([IO.File]::ReadAllBytes($origem)) -Anteriores $anteriores -Relativo ('hooks' + $BARRA + $nome) -Sim $sim))
     }
-    $perfis = @(@{ id = 'settings.json'; args = @('perfil-windows', '--raiz', $Raiz, '--python', $py) })
+    $negar = @()  # -File entrega "a,b" como um texto só: os nomes vão separados por vírgula
+    foreach ($s in @($NegarSkill)) { foreach ($n in ($s -split ',')) { if ($n.Trim()) { $negar += @('--negar-skill', $n.Trim()) } } }
+    $perfis = @(@{ id = 'settings.json'; args = (@('perfil-windows', '--raiz', $Raiz, '--python', $py) + $negar) })
     if ($Projeto) {
         $wsl = @('perfil-wsl', '--raiz', $Raiz, '--projeto', $Projeto, '--perfil-windows', $env:USERPROFILE,
                  '--ancora-base', (Split-Path -Parent (Split-Path -Parent $Ancora)))
         foreach ($b in @($Backups)) { if ($b) { $wsl += @('--backups', $b) } }
         foreach ($s in @($SomenteLeitura)) { if ($s) { $wsl += @('--somente-leitura', $s) } }
-        $perfis += @{ id = 'settings.wsl.json'; args = $wsl }
+        $perfis += @{ id = 'settings.wsl.json'; args = ($wsl + $negar) }
     }
     foreach ($perfil in $perfis) {
         $r = Invoke-Ajudante $py $perfil.args
@@ -687,6 +692,7 @@ function Invoke-Preparo {
     $local = Join-Path $claude 'settings.local.json'
     $argsLocal = @('identidade', '--titular', $Titular)
     if (Test-Path -LiteralPath $local -PathType Leaf) { $argsLocal += @('--atual', $local) }
+    if ($Projeto) { $argsLocal += @('--projeto', $Projeto) }  # FUNDACAO_PROJECT: o guarda_caminho.py exige
     $r = Invoke-Ajudante $py $argsLocal
     if ($r.Codigo -eq 0 -and (Test-Path -LiteralPath $local -PathType Leaf) -and
         ((ConvertTo-Json -Compress -Depth 20 -InputObject ([IO.File]::ReadAllText($local) | ConvertFrom-Json)) -eq

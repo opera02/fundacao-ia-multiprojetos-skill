@@ -78,6 +78,18 @@ class NeedsHuman(Exception):
         self.options = options
 
 
+def falha_registravel(erro: BaseException) -> str:
+    """O que vai para `step.error` quando a etapa falha (proposta 9 da análise do vibe-coding-toolkit): a mensagem
+    da exceção é escrita por quem implementa a etapa e pode conter trecho de caso — truncar não é redigir. Fica só
+    o tipo, o tamanho e o SHA-256 (para comparar com a mensagem que o operador vê ao reproduzir). A mensagem de
+    orçamento esgotado é do próprio kit e continua legível."""
+    if isinstance(erro, BudgetExhausted):
+        return str(erro)[:300]
+    texto = str(erro)
+    resumo = sha256_bytes(texto.encode("utf-8"))[:16]
+    return f"{type(erro).__name__} (mensagem da etapa com {len(texto)} caracteres; sha256 {resumo})"
+
+
 class TransientError(Exception):
     """Falha que pode passar com nova tentativa (ex.: timeout de rede)."""
 
@@ -573,9 +585,9 @@ class Coordinator:
                 self._set_step(run_id, step.step_id, "waiting_human",
                                decision_json=canonical_json({**payload, "hash": sha256_json(payload)}))
             elif kind == "permanent":
-                self._set_step(run_id, step.step_id, "failed", error=str(value)[:300])
+                self._set_step(run_id, step.step_id, "failed", error=falha_registravel(value))
             elif kind == "transient":
-                self._set_step(run_id, step.step_id, "failed", error=str(value)[:300])
+                self._set_step(run_id, step.step_id, "failed", error=falha_registravel(value))
                 if attempt < step.max_attempts:
                     self._set_step(run_id, step.step_id, "pending")
         return "ok"

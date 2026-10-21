@@ -82,15 +82,28 @@ Kit, em um comando [Decisão; 1.5.0]: `python <skill>/scripts/atualizar_fundacao
 (só lê: versões, o que muda, alteração local pelo hash registrado na instalação, identidade, cadeia) e
 `aplicar --raiz <raiz> --backups <outro disco>`: backup ANTES verificado → ensaio do kit novo numa cópia
 restaurada (`init`, cadeia, suíte; falha que já existia não bloqueia, regressão bloqueia sem tocar a raiz)
-→ promoção → backup DEPOIS → registro em `evidence/atualizacoes/`; `desfazer --registro <arq>` devolve o
-código se o `user_version` do banco não mudou. Etapa deixada em `running` pelo kit anterior é refeita
+→ promoção → instruções da raiz (`AGENTS.md` e `CLAUDE.md` regenerados, com os anteriores guardados em
+`registry/kit_backup/instrucoes-<data>/`; `AGENTS.md` escrito à mão não é tocado e o resumo traz o comando com
+`--adotar`) → backup DEPOIS (que as leva) → registro em `evidence/atualizacoes/`; `desfazer --registro <arq>`
+devolve o código, e as instruções não editadas depois, se o `user_version` do banco não mudou.
+Catraca [Decisão; 1.7.0]: no ensaio, teste que passava e some ou passa a ser pulado também é regressão, salvo
+retirada declarada pelo kit novo em `tests/testes_retirados.json` (ID → versão e motivo); o arquivo de código que
+o kit anterior instalou e o novo não tem mais (órfão) sai da raiz guardado no backup da promoção e volta no
+`desfazer`. O `registry/kit_install.json` e os registros em `evidence/atualizacoes/` são dados (graváveis por shell)
+[revisão de segurança da 1.7.0]: caminho que o instalador nunca grava (com `..`, absoluto ou com barra invertida) não
+vira órfão e faz o `checar` recusar; caminho que passa por ligação ou junção dentro da raiz (ex.: `tests/elo` →
+`.claude`) também recusa (instalação: código 4); o `desfazer` só aceita o registro da própria raiz, com cópias em
+`registry/kit_backup/`, caminhos sem ligação no meio e instruções só em `AGENTS.md` e `CLAUDE.md`, e confere tudo
+antes de alterar qualquer arquivo.
+Etapa deixada em `running` pelo kit anterior é refeita
 quando a posse vence (o recibo antigo não basta): reconcilie efeitos externos antes de retomar.
 Passo a passo: `python <skill>/scripts/instalar_kit.py --destino <raiz>` monta o plano antes de
 escrever. Com conflito (código alterado localmente), **nada é escrito**: a saída traz o plano
 (`conflitos_preservados`, `atualizacao_incompleta: true`, `kit_version: null`) e o código 3.
 Depois da decisão: `--atualizar` substitui os arquivos de código diferentes e guarda a versão
 anterior em `registry/kit_backup/<data>-<sufixo>/` (retorno = copiar de volta; código 5 com
-`desfeito: false` = o retorno também falhou); `--manter-conflitos`
+`desfeito: false` = o retorno também falhou) e retira os órfãos, guardando-os ali também (sem `--atualizar`,
+órfão também dá código 3, com nada escrito); `--manter-conflitos`
 aceita, por decisão explícita, um estado **misto** (copia o que falta, preserva os conflitos,
 anota `composicao: "mista"` em `registry/kit_install.json` e sai com código 3). A configuração
 local (`registry/`: rotas, componentes) nunca é sobrescrita, nem com `--atualizar`. Ligação ou
@@ -195,9 +208,18 @@ incluídas); confira citações RAG, correções de memória, revogações e neg
 confirme que componentes desativados não recebem tarefas por caminho algum; use
 exemplos de controle com erro conhecido para provar que o revisor detecta.
 Corrija o estado de requisitos declarados sem evidência. Modelo:
-`assets/templates/AUDITORIA.md`. Kit: `python -m fundacao eventos verificar`
+`assets/templates/AUDITORIA.md`. Revisão de segurança de uma versão (diff da anterior para a nova, somente
+leitura, relatório privado): `assets/templates/REVISAO-SEGURANCA.md`. Kit: `python -m fundacao eventos verificar`
 (cadeia de hashes). Auditor independente (outro agente/provedor ou humano) sempre
 que possível [3.0 R9.5].
+
+**Reavaliação do comportamento** [análise do vibe-coding-toolkit, 21/10/2026]: mudou a versão do host (Claude
+Code ou Codex — a atualização automática conta), os hooks, as instruções (AGENTS.md/CLAUDE.md) ou a skill →
+rode de novo as avaliações E3 (retomada), E10 (RETOMADA desatualizada) e E12 (pergunta de andamento) e o
+cenário CEN-13 (hooks), numa sessão aberta **fora** de uma fundação com os hooks do host (os guardas da raiz
+bloqueiam a escrita e a identidade de ensaio e distorcem o resultado). O avaliador fica fora do alcance de quem
+é avaliado; avaliação não rodada fica "não rodada", nunca "passou"; uma rodada que passa é teste de fumaça, não
+taxa de confiabilidade. Caso novo nasce de falha real observada, não para engordar a bateria.
 
 ## C11 — Avaliação final e fechamento da matriz [Livro A36 p178–181]
 Reconcile cada requisito com implementação, integração, teste, evidência, estado e

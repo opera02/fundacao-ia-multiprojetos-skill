@@ -104,9 +104,11 @@ class TestRotas(FoundationTestCase):
     def test_politica_distribuida_mantem_sigiloso_so_local(self):
         from fundacao.core.routing import load_policy
         if (KIT / "registry" / "kit_install.json").exists():
-            # Raiz implantada: registry/ é configuração local (pode mudar por decisão registrada, como a
-            # rota sigilosa); o instalar_kit.py a preserva e a lista em configuracao_local_preservada.
-            self.skipTest("raiz implantada: a política distribuída é conferida no kit da skill")
+            # Raiz implantada: registry/ é configuração local (o instalar_kit.py a preserva). A rota sigilosa pode
+            # mudar por decisão do titular, mas só com o hash da política ligado a ela (proposta 5; antes, pulado).
+            from fundacao.core.politica_rotas import desvio_sem_decisao
+            self.assertIsNone(desvio_sem_decisao(KIT))
+            return
         distribuida = load_policy(self.root)
         self.assertEqual(distribuida["task_routes"]["sigiloso"], DEFAULT_POLICY["task_routes"]["sigiloso"])
         self.assertEqual(distribuida["task_routes"]["sigiloso"], ["local"])

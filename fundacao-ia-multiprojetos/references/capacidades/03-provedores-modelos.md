@@ -45,6 +45,11 @@ titular) → `api_creditos` (teto) → `api_paga` (teto) → `local` → `simula
 **Se outra pessoa usa a fundação, a rota de assinatura fica desligada.** Tipo de tarefa
 sem rota declarada **falha fechado** (não herda a padrão); tarefas `sigiloso` só em
 rota local ou comercial sem treino por padrão (ver `references/privacidade-sigilo.md`).
+Desvio local da rota `sigiloso` (decisão do titular) só vale registrado [Decisão; 1.7.0]: o SHA-256 de
+`registry/route_policy.json` em `registry/configuracao-decidida.json`
+(`{"schema_version": "fundacao.configuracao_decidida/1", "itens": [{"arquivo": "registry/route_policy.json",
+"sha256": "<hash>", "decisao": "<documento da decisão, relativo à raiz>"}]}`); a suíte de conformidade da raiz
+implantada falha se a política mudar sem registro novo (antes, o teste era pulado).
 Alternativa: só para destino **autorizado**; cada tentativa registrada; sem repetição
 infinita; erro permanente não se repete na mesma rota [Livro p170–172].
 Tetos por rota (`max_calls`, `max_usd`) valem **antes** da chamada e contam só as
@@ -147,7 +152,7 @@ antes de repetir); modelo rejeitado (não invente substituto nem mude o orçamen
 ## Com o kit
 `fundacao/adapters/` (`assets/fundacao-kit/fundacao/adapters/simulado.py`, `assets/fundacao-kit/fundacao/adapters/cli.py` com `ClaudeCLIProvider`/`CodexCLIProvider`
 — código presente), `fundacao/core/routing.py`, `fundacao/core/usage.py`,
-`registry/route_policy.json`. Testes: `tests/test_eventos_rotas.py`,
+`registry/route_policy.json`. Testes: `tests/test_eventos_rotas.py`, `tests/test_configuracao_decidida.py`,
 `tests/test_adaptadores_rotas.py` (linha de comando, entrada padrão, ambiente e tetos, com
 `subprocess.run` substituído — nenhuma CLI de provedor é executada),
 `tests/test_auditoria_1_5_0_execucao.py` (#9, #17).

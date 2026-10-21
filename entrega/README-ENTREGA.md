@@ -8,8 +8,57 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–21/10/2026 · Versão da skill: **1.6.1** (kit de referência 1.6.1) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–21/10/2026 · Versão da skill: **1.7.1** (kit de referência 1.7.0) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
+
+> **1.7.1 (21/10/2026):** correção achada pelo próprio ciclo de liberação. A 1.7.0 foi empacotada (`593a7f01…`), mas a
+> montagem da transferência a recusou: a varredura de segredos leu como token atribuído o valor fictício de um exemplo
+> de configuração do Codex num teste do inventário do host (falso positivo, da mesma classe do que parou a 1.6.0). A
+> variável fictícia mudou de nome, e um teste novo aplica os padrões da varredura a todo o pacote (o da 1.6.1 cobria só
+> o preparo do host). A 1.7.0 não foi instalada nem publicada; a 1.7.1 é a 1.7.0 com essa correção (kit 1.7.0, sem
+> mudança) e com a revisão de segurança estendida até ela. Resultados: kit 326 OK (5 pulados); scripts 182 OK (1
+> pulado); entrega 89 OK (2 pulados); ferramentas de liberação 28 OK; cenários 16/16 (111/111); 342 referências e 0
+> ausentes; 66 comandos citados conferidos.
+
+> **1.7.0 (21/10/2026, empacotada e recusada na transferência; não instalada nem publicada):** as quinze melhorias da análise do vibe-coding-toolkit (MIT, 21/10/2026), aprovadas pelo
+> titular na conversa ("1.c / O resto adotar as recomendações"):
+> - **Instruções na raiz:** `scripts/instrucoes_raiz.py` gera o `AGENTS.md` (resumo da skill entre marcadores, sem
+>   nomes de projetos, com um trecho do titular que a skill preserva) e o `CLAUDE.md` com `@AGENTS.md`; as sessões
+>   abertas na raiz passam a ler as regras sem acionar a skill. O `atualizar_fundacao.py aplicar` as regenera (guarda as
+>   anteriores; o `desfazer` devolve), e o backup do kit sempre as leva. AGENTS.md escrito à mão não é sobrescrito.
+> - **Pastas de dados não viram instrução:** os perfis do host excluem `projects/*/data/` das instruções
+>   (`claudeMdExcludes`); `scripts/instrucoes_aninhadas.py` lista instruções e skills aninhadas, que o
+>   `preparar-maquina.ps1 -NegarSkill` nega por nome. **Sessão de dados reais sem web:** o perfil do WSL nega
+>   `WebFetch` e `WebSearch` (item 12 do checklist). **Projeto autenticado no lançador:** `-Projeto` grava
+>   `FUNDACAO_PROJECT`, que o `guarda_caminho.py` exige.
+> - **Rotas:** a política é validada ao carregar (tipo errado, rota inexistente e chave desconhecida recusam), e o
+>   desvio local da rota sigilosa só vale ligado a uma decisão registrada (`registry/configuracao-decidida.json`;
+>   antes, o teste era pulado na raiz implantada).
+> - **Catraca de testes:** na atualização da fundação, teste que some ou passa a ser pulado é regressão, salvo retirada
+>   declarada no kit novo; enfraquecer teste deixa de ser decisão de rotina (SKILL.md §4). **Órfãos:** arquivo que o kit
+>   anterior instalou e o novo não tem sai da raiz guardado no backup e volta no `desfazer`.
+> - **CI pública** no GitHub (workflow `validar`: as cinco verificações em Windows e Ubuntu, cinco rodadas, ações
+>   fixadas por SHA, só leitura). **Também:** RETOMADA enxuta, com histórico arquivado e conferido; comandos citados nas
+>   referências conferidos contra o código; canários nos caminhos de falha; fronteiras do código e teto de tamanho como
+>   teste; avaliações E10–E12; modelo de revisão de segurança por versão; regra de ondas para agentes em paralelo; e o
+>   inventário do ecossistema do host (`scripts/inventariar_host.py`), conferido na atualização.
+> - A simulação da CI numa cópia saneada achou dois testes com a identidade real e um e-mail escrito por extenso, que a
+>   cópia pública recusaria; corrigidos antes do pacote.
+> - **Revisão de segurança independente** (outro contexto, somente leitura) da diferença 1.6.1..1.7.0: três achados
+>   médios introduzidos nesta versão, corrigidos antes do pacote, cada um com o cenário de falha virado teste — caminho
+>   forjado no registro de instalação fazia a atualização retirar o `.claude/settings.json` como "órfão" (VCT170-01);
+>   registro forjado fazia o `desfazer` apagar fora da raiz ou sobrescrever `.claude/` (VCT170-02); o inventário do
+>   host gravava o caminho do projeto dos plugins e os argumentos de um `command` MCP em texto único (VCT170-03). A
+>   segunda passagem achou a variante com junção dentro da raiz (`tests/elo` → `.claude`), que passava pela conferência
+>   de texto (VCT170-04): agora cada componente do caminho é conferido sem seguir ligação. E uma trava nova: o lançador
+>   do WSL não abre se o `settings.local.json` entregar outro projeto.
+>
+> Resultados, em cópias, pastas e perfis descartáveis: kit 326 OK (5 pulados); scripts 181 OK (1 pulado); entrega 89
+> OK (2 pulados); ferramentas de liberação 28 OK; cenários 16/16 (111/111); 341 referências e 0 ausentes; 66 comandos
+> citados conferidos; revisão de segurança independente da diferença 1.6.1..1.7.0 em `entrega/auditoria/` (cópia
+> privada). Kit 1.7.0. Liberada pelo `liberar.py`, que nesta versão passa a exigir essa revisão, a varrer antes os
+> resíduos da cópia pública, a aplicar a catraca contra a versão anterior e a conferir a CI do commit publicado; o
+> resultado fica em `outputs/liberacao/1.7.0/LIBERACAO.json` do projeto fundacao-de-ia.
 
 > **1.6.1 (21/10/2026):** correção achada pelo próprio ciclo de liberação. Na 1.6.0, a montagem da transferência
 > recusou o pacote: a varredura de segredos leu como credencial atribuída o campo com o estado da senha da chave no

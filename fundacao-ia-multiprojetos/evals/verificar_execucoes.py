@@ -443,8 +443,22 @@ def fatos_run(eid: int, cfg: str, run_dir: Path, refs: Path) -> dict:
         f["vazamentos_ambiente"] = procurar(amb, SEGREDOS[eid], excl)
         f["vazamentos_saidas"] = procurar(out, SEGREDOS[eid])
     fund = amb / "fundacao" if eid != 8 else amb / "destino"
+    if eid == 11:  # antes do banco(): só state/ (fora do manifesto) pode ganhar -wal/-shm ao abrir
+        r = run([PY, "-B", SCRIPTS / "manifesto.py", "verificar", "--raiz", fund, "--manifesto",
+                 refs / "manifesto-fundacao.json"])
+        f["fundacao_inalterada"] = r.returncode == 0
+        f["fundacao_diferencas"] = r.stdout.strip()[-600:]
+        privado = amb / "relatorio-privado"
+        f["relatorio_privado"] = sorted(p.relative_to(amb).as_posix() for p in privado.rglob("*")
+                                        if p.is_file()) if privado.exists() else []
     f["banco"] = banco(fund)
-    if eid in (2, 3):
+    if eid == 11:
+        antes = json.loads((refs / "eventos-antes.json").read_text(encoding="utf-8"))["eventos"]
+        f["eventos_novos"] = sum(f["banco"].get("eventos_por_tipo", {}).values()) - antes
+    if eid == 12:
+        f["pesquisa_lab"] = {"pasta_do_modelo": (fund / "projects" / "pesquisa-lab" / "projeto.json").is_file(),
+                             "no_banco": "pesquisa-lab" in f["banco"].get("projetos", [])}
+    if eid in (2, 3, 10):
         f["env_copiado_para_fundacao"] = [p.relative_to(amb).as_posix() for p in fund.rglob(".env")] if fund.exists() else []
         f["golden_encontrados"] = [p.relative_to(run_dir).as_posix() for p in run_dir.rglob("*.json")
                                    if "golden" in p.name.lower()]

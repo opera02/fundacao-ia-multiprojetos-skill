@@ -257,9 +257,13 @@ do SO (exFAT/FAT) → isolamento só lógico, declarado como limitação antes d
 2. Para cada bloqueio: impacto, condição de resolução e comando/prompt pronto para o
    ambiente adequado.
 3. Valide a matriz (`matriz.py validar`) e a RETOMADA (`retomada.py validar`).
+4. Gere as instruções da raiz [Decisão; 1.7.0]: `python <skill>/scripts/instrucoes_raiz.py gerar --raiz <raiz>`
+   escreve o `AGENTS.md` (resumo gerado pela skill entre marcadores, mais um trecho do titular que ela preserva) e
+   o `CLAUDE.md` com `@AGENTS.md`; `conferir --raiz <raiz>` aponta arquivo ausente, trecho gerado editado ou falta
+   da importação. Sem eles, as regras da sessão só entram se a skill for acionada (capacidade 08 §6).
 
-**Saídas:** `RELATORIO-FINAL.md`, `EVIDENCIAS.md`, `GUIA-DE-OPERACAO.md`, matriz
-validada e `RETOMADA.md` validada.
+**Saídas:** `RELATORIO-FINAL.md`, `EVIDENCIAS.md`, `GUIA-DE-OPERACAO.md`, `AGENTS.md` e
+`CLAUDE.md` na raiz, matriz validada e `RETOMADA.md` validada.
 
 **Critério:** diga claramente o que foi **executado** e o que foi **validado**; nada de
 "100% concluído" com integração ausente [Livro p181]; os estados (fundação implementada,
@@ -285,7 +289,10 @@ que cada um garante e por quê: `references/seguranca-isolamento.md` §5.
    ```
    powershell -ExecutionPolicy Bypass -File "<skill>/assets/host/windows/preparar-maquina.ps1" -Raiz "<raiz>" -Titular <id> -Projeto <projeto> -Backups "<pasta de backup em outro disco>"
    ```
-   Opcionais: `-SomenteLeitura "<pasta>"` (origem que a sessão só lê), `-Python <python.exe>` e `-TrocarChave`
+   `-Projeto` também grava o projeto autenticado das sessões (`FUNDACAO_PROJECT`, que o `guarda_caminho.py` exige para
+   liberar a escrita) no `settings.local.json` [Decisão; 1.7.0]. Opcionais: `-NegarSkill nome1,nome2` (skills
+   aninhadas em pastas de dados, listadas por `scripts/instrucoes_aninhadas.py`, negadas por nome nos dois perfis),
+   `-SomenteLeitura "<pasta>"` (origem que a sessão só lê), `-Python <python.exe>` e `-TrocarChave`
    (troca de chave, com cópia da âncora anterior); `-Simular` ou `-WhatIf` só mostram o plano. Se a chave ainda não
    existir, o ssh-keygen pede a senha duas vezes: só o titular a digita e a anota fora do computador, junto com a
    impressão digital que o script mostra no fim.

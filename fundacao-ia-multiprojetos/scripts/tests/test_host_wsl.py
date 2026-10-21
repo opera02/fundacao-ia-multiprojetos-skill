@@ -161,6 +161,20 @@ class LancadorNoBash(unittest.TestCase):
         self.assertIn("identidade", r.stderr)
         self.assertFalse(self.saida.exists())
 
+    def test_projeto_do_settings_local_diferente_do_lancador_nao_abre(self):
+        """Revisão de segurança da 1.7.0 (pendência): o lançador exporta o projeto e o settings.local.json também o
+        entrega; com os dois diferentes, qual vale dependeria da precedência do host. A sessão não abre."""
+        local = self.raiz / ".claude" / "settings.local.json"
+        m = ajudante()
+        for projeto, abre in (("outro-projeto", False), ("caso-real", True)):
+            with self.subTest(projeto=projeto):
+                local.write_text(m.texto_json(m.identidade("titular", projeto=projeto)), encoding="utf-8", newline="\n")
+                r = self.abrir()
+                self.assertEqual(r.returncode == 0, abre, r.stdout + r.stderr)
+                if not abre:
+                    self.assertIn("projeto", r.stderr)
+                    self.assertFalse(self.saida.exists())
+
     def test_modelo_do_lancador_e_bash_valido_com_fim_de_linha_lf(self):
         self.assertNotIn(b"\r", LANCADOR.read_bytes())
         r = subprocess.run([BASH, "-n", posix(self.lancador)], capture_output=True, text=True, timeout=60)

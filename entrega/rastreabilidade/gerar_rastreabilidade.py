@@ -508,17 +508,17 @@ R = {
         "Suíte de regressão executada a cada mudança; avaliações com repetições.",
         "assets/fundacao-kit/tests/; evals/",
         "CI verde e repetições por caso.",
-        "CEN-12 (execução local)",
-        "CI não configurado; repetições de avaliações com IA dependem de orçamento.",
-        "—", "3.0", "Suíte local executada; CI pendente"),
+        "CEN-12 (execução local); CI pública da cópia no GitHub (workflow `validar`, 5 rodadas por plataforma, desde a 1.7.0)",
+        "O resultado da CI do commit publicado é conferido na liberação; repetições de avaliações com IA dependem de orçamento.",
+        "—", "3.0", "Suíte local executada; CI pública configurada (resultado do commit publicado conferido na liberação)"),
 "R59": ("Aceite em Windows e Ubuntu",
         "Proposta 3.0 §5.4 (100%)",
         "Mesma suíte em Windows e Ubuntu/WSL.",
         "assets/fundacao-kit/tests/",
         "100% nos dois sistemas.",
-        "CEN-12 (Windows)",
-        "Ubuntu/WSL não testado nesta entrega.",
-        "—", "3.0", "Windows executado; Ubuntu pendente"),
+        "CEN-12 (Windows); CI pública (Windows e Ubuntu, desde a 1.7.0)",
+        "Ubuntu pela CI pública, conferida na liberação; o WSL do titular continua fora dela.",
+        "—", "3.0", "Windows executado aqui; Ubuntu pela CI pública (conferida na liberação)"),
 "R60": ("Citações verificadas; número CNJ com dígito verificador válido",
         "Proposta 3.0 §5.4; R15.2",
         "Verificador determinístico de citações jurídicas (artigo na cópia oficial datada, trecho confere, DV do número CNJ módulo 97); jurisprudência sem fonte oficial = pendente.",
@@ -725,6 +725,36 @@ REVISAO_SEGURANCA_145 = {
     "R52": "scripts/tests/test_hooks.py (#13: ligação ou junção na pasta do projeto, em projects/ e no destino)",
 }
 
+# Análise do vibe-coding-toolkit (21/10/2026), adotada na 1.7.0: propostas 1 a 15.
+ANALISE_VCT_170 = {
+    "R01": K + "test_fronteiras_codigo.py (fronteiras do código e teto de tamanho, como teste)",
+    "R08": "scripts/tests/test_retomada_arquivar.py (RETOMADA enxuta, histórico arquivado e conferido); "
+           + K + "test_canarios_falhas.py (erro de etapa gravado só como tipo, tamanho e hash)",
+    "R10": "scripts/tests/test_referencias_propostas_vct.py (paralelismo em ondas: arquivos, dependências e recursos)",
+    "R13": K + "test_politica_rotas.py (política de rotas validada ao carregar); "
+           + K + "test_configuracao_decidida.py (rota sigilosa local só com decisão registrada)",
+    "R35": "scripts/tests/test_instrucoes_aninhadas.py (instruções e skills aninhadas inventariadas antes da leitura); "
+           "scripts/tests/test_host_vct.py (skill aninhada negada por nome)",
+    "R37": "scripts/tests/test_instrucoes_raiz.py e test_atualizar_fundacao_instrucoes.py (AGENTS.md gerado e "
+           "CLAUDE.md na raiz; as chamadas aos provedores não os carregam)",
+    "R42": "entrega/testes/test_avaliacoes_vct.py (E10–E12); scripts/tests/test_atualizar_fundacao_catraca.py "
+           "(teste sumido ou passado a pulado é regressão)",
+    "R45": K + "test_backup_completo.py (AGENTS.md e CLAUDE.md da raiz sempre na cópia)",
+    "R46": "scripts/tests/test_instalar_kit_orfaos.py e test_atualizar_fundacao_catraca.py (órfãos guardados e "
+           "devolvidos); scripts/tests/test_atualizar_fundacao_instrucoes.py; scripts/tests/test_revisao_seguranca_170.py "
+           "(VCT170-01, 02 e 04: caminho forjado ou atrás de junção no registro de instalação e no do desfazer)",
+    "R51": "scripts/tests/test_verificar_referencias_comandos.py (comandos citados conferidos contra o argparse)",
+    "R52": "scripts/tests/test_host_vct.py (projeto autenticado entregue pelo lançador; pastas data/ fora das instruções); "
+           "scripts/tests/test_host_wsl.py (lançador recusa projeto divergente do settings.local.json)",
+    "R53": "scripts/tests/test_pacote_sem_segredo_aparente.py (a varredura de segredos da transferência sobre o pacote "
+           "inteiro); scripts/tests/test_host_vct.py (web negada no perfil de dados reais); " + K
+           + "test_canarios_falhas.py (canários fora dos registros de falha)",
+    "R54": "scripts/tests/test_inventariar_host.py (inventário do ecossistema do host, conferido na atualização); "
+           "scripts/tests/test_revisao_seguranca_170.py (VCT170-03: sem caminho de projeto nem argumentos); "
+           "entrega/testes/test_ci_publica.py (ações da CI fixadas por SHA)",
+    "R58": "entrega/testes/test_ci_publica.py (cinco verificações, duas plataformas, cinco rodadas)",
+}
+
 
 def main() -> int:
     entrega, skill = Path(sys.argv[1]), Path(sys.argv[2])
@@ -745,6 +775,8 @@ def main() -> int:
             row[5] = f"{row[5]}; regressão da auditoria técnica sobre a 1.4.1: {AUDITORIA_TECNICA_141[rid]}"
         if rid in REVISAO_SEGURANCA_145:
             row[5] = f"{row[5]}; regressão da revisão de segurança da 1.4.5: {REVISAO_SEGURANCA_145[rid]}"
+        if rid in ANALISE_VCT_170:
+            row[5] = f"{row[5]}; 1.7.0 (análise do vibe-coding-toolkit): {ANALISE_VCT_170[rid]}"
         R[rid] = tuple(row)
     out_dir = entrega / "rastreabilidade"
     out_dir.mkdir(parents=True, exist_ok=True)

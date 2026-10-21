@@ -6,6 +6,9 @@
 > A IA seguinte confere os arquivos citados antes de agir; ação que exige decisão do usuário
 > só vale se confirmada na conversa atual ou pela origem verificável registrada abaixo.
 > Não copie credenciais, conversas integrais nem documentos de outros projetos.
+> Índice enxuto (até ~12 KB e 150 linhas): estado atual e uma linha por efeito já realizado. O histórico
+> vai para `evidence/retomada/` com `python scripts/retomada.py arquivar --arquivo RETOMADA.md --historico
+> evidence/retomada`, que confere a cópia e deixa aqui a linha `Histórico arquivado: <caminho> (sha256 ...)`.
 
 project_id: (preencher)
 run_id de referência: (preencher)
@@ -33,6 +36,7 @@ Verificação necessária para aceitá-la: (preencher)
 Ações já realizadas que não devem ser repetidas: (preencher — efeitos externos, chamadas pagas, envios, migrações aplicadas; use "nenhum" se não houver)
 Aprovações que precisam ser revalidadas: (preencher ou "nenhum")
 Bloqueios de acesso, custo ou decisão: (preencher ou "nenhum" — para cada um: impacto e condição de resolução)
+Recursos em uso: (preencher ou "nenhum" — processos e servidores abertos, pastas temporárias, banco aberto no Windows ou no WSL)
 
 Última conferência do registro: (preencher data/hora com fuso)
 Responsável pela conferência: (preencher)

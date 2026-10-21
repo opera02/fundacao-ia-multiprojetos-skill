@@ -23,11 +23,14 @@
       "Read(/{{PERFIL_WINDOWS}}/.claude/.credentials.json)",
       "Read(/{{PERFIL_WINDOWS}}/.codex/auth.json)",
       "Read(/{{PERFIL_WINDOWS}}/.ssh/**)",
+      "WebFetch",
+      "WebSearch",
       "Edit(./.claude/**)",
       "Edit(/{{ANCORA_BASE}}/**)",
       "Edit(/{{SOMENTE_LEITURA}}/**)"
     ]
   },
+  "claudeMdExcludes": ["**/projects/*/data/**"],
   "env": {
     "FUNDACAO_MCP_PERMITIDAS": "",
     "DISABLE_AUTOUPDATER": "1"

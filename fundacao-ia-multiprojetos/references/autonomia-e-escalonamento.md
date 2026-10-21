@@ -34,6 +34,10 @@ evidência obtida [Livro p30, p34, p38]; seguir para a próxima etapa já autori
 - Escolher entre objetivos incompatíveis ou entre mudanças intencionais de
   comportamento e preservação [Livro p46].
 - Adotar framework/serviço que vira dependência de longo prazo.
+- Enfraquecer um teste ou critério de aceite — apagar, pular, afrouxar a asserção, ampliar
+  exceção, subir limite ou trocar o avaliador para passar: é mudança de configuração, nunca
+  correção. A catraca da atualização (C6) e a da liberação param nesses casos; o motivo vai
+  registrado (retirada declarada no kit novo, texto e commit na liberação) [Decisão; 1.7.0].
 
 Formato: pergunta curta e concreta ("o contrato da proposta v2 ou o rascunho v1?")
 [Livro p159], acompanhada do que foi preparado; várias decisões do mesmo ponto vão juntas numa

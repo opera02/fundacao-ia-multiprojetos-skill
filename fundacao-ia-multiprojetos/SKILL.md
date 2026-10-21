@@ -3,7 +3,7 @@ name: fundacao-ia-multiprojetos
 description: Implanta, adapta, verifica e mantém uma fundação técnica reutilizável para operar vários projetos com IA (núcleo com contratos, projetos isolados criados por modelo, orquestração com retomada, agentes, dois ou mais provedores, memória persistente, GOLD, RAG, CAG, hooks, MCP, skills, plugins, consumo, observabilidade, backup e restauração), seguindo o livro Fundação de IA Multiprojetos 2.0 com as correções 3.0. Use quando pedirem para criar ou estender essa fundação, criar um projeto a partir do modelo, diagnosticar e migrar um projeto existente para ela (por exemplo OpenSquad, squads de agentes ou scripts com IA), ou auditar, atualizar, desativar, restaurar ou retomar a fundação e seus projetos, mesmo sem citar o livro. Não use para redigir peças, calcular honorários avulsos, criar uma skill isolada ou só explicar conceitos sem implementar.
 license: MIT (texto integral em LICENSE.txt, na raiz desta skill)
 metadata:
-  version: "1.6.1"
+  version: "1.7.1"
   owner: "titular da fundação (usuário que define objetivos e aprova)"
   compatibility: "Kit e scripts testados no Windows 11 com Python 3.12.10; listagem no Claude Code 2.1.302 conferida até a 1.4.1. Projetada para outros hosts Agent Skills, como Codex 0.163.0 e o catálogo de skills do Chat/Work (não testados). Kit e scripts exigem Python 3.10+ (biblioteca padrão) e SQLite com FTS5. CAG real exige torch, transformers e um modelo local autorizado; MCP usa o pacote mcp 2.x (Python 3.11+) se presente. Sem rede por padrão."
   source: "Livro Fundação de IA Multiprojetos, edição 2.0 (18/10/2026), e documento 2.0 para 3.0"
@@ -117,6 +117,8 @@ um projeto de origem; pergunte apenas se a escolha mudar o trabalho.
 - **Resolva sozinho (confiança alta):** escolhas técnicas rotineiras dentro do
   escopo — estrutura de arquivos, testes, nomes, correção do próprio código,
   reexecução de verificações somente leitura, adaptação de caminhos ao ambiente.
+  Enfraquecer teste (apagar, pular, afrouxar asserção, ampliar exceção ou limite) não é
+  rotina: é mudança de critério, da faixa média, com motivo registrado.
 - **Prepare e peça decisão (confiança média):** ampliar escopo, usar dados reais,
   habilitar provedor/rota/serviço com custo, instalar fora da raiz autorizada,
   apagar ou migrar dados, aprovar conteúdo GOLD/promoções, escolher entre
@@ -188,6 +190,8 @@ Fundação já existente, para o kit desta skill: `python <skill>/scripts/atuali
 --raiz <raiz>` e, se puder aplicar, `aplicar --raiz <raiz> --backups <pasta em outro disco>` (backup
 antes, ensaio do kit novo numa cópia restaurada, promoção, backup depois e registro;
 `desfazer --registro <arq>` devolve o código). Detalhes: `references/fluxo-c-operar.md` C6.
+Instruções da raiz (as sessões abertas na raiz as leem sem acionar a skill):
+`python <skill>/scripts/instrucoes_raiz.py gerar --raiz <raiz>`; o `aplicar` as regenera.
 Comandos e limites: `references/fluxo-a-implantar.md` §Kit. Com dados reais, aceite, correção e rejeição de
 entregas valem com a assinatura do titular: `decisao preparar` → ele assina → `decisao registrar` → `tarefa concluir`.
 

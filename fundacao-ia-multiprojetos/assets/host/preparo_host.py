@@ -8,14 +8,23 @@ mão. Aqui os perfis saem dos modelos `windows/settings.json` e `wsl/settings.ws
 Chamado por `windows/preparar-maquina.ps1` e `wsl/preparar-wsl.sh`. Só grava com `--saida`; de `projects/` lê só os
 nomes do primeiro nível (para negar, no sandbox, a escrita nos outros projetos). Biblioteca padrão.
 
-  python preparo_host.py perfil-windows --raiz <raiz> --python <python.exe> [--saida <arquivo>]
+  python preparo_host.py perfil-windows --raiz <raiz> --python <python.exe> [--negar-skill <nome>]...
+         [--saida <arquivo>]
   python preparo_host.py perfil-wsl --raiz <raiz> --projeto <id> --perfil-windows <C:\Users\nome>
-         [--backups <pasta>]... [--somente-leitura <pasta>]... [--ancora-base <pasta>] [--saida <arquivo>]
-  python preparo_host.py identidade --titular <id> [--atual <settings.local.json>] [--saida <arquivo>]
+         [--backups <pasta>]... [--somente-leitura <pasta>]... [--ancora-base <pasta>] [--negar-skill <nome>]...
+         [--saida <arquivo>]
+  python preparo_host.py identidade --titular <id> [--projeto <id>] [--atual <settings.local.json>]
+         [--saida <arquivo>]
   python preparo_host.py wsl-conf --arquivo <wsl.conf> [--saida <arquivo>]     (JSON com "mudou" e "texto")
   python preparo_host.py conferir-perfil-wsl --perfil <settings.wsl.json> --raiz <raiz>
   python preparo_host.py lancador --raiz <raiz> --projeto <id> --claude <binário> --claude-versao <v>
          --claude-sha256 <hash> --origem-hash <texto> --skill-md <SKILL.md> --saida <arquivo | ->
+Pastas de dados não viram instrução (análise do vibe-coding-toolkit, 21/10/2026, propostas 2 e 3): os dois perfis
+trazem `claudeMdExcludes` para `**/projects/*/data/**` (CLAUDE.md, AGENTS.md e rules de uma cópia importada não
+carregam); skill aninhada, que nenhuma configuração exclui, sai em `permissions.deny` como `Skill(<nome>)` com
+`--negar-skill` (nomes do `instrucoes_aninhadas.py` da skill); e o perfil de dados reais nega `WebFetch` e
+`WebSearch`, a saída que o sandbox de rede não cobre. `identidade --projeto` entrega também o projeto
+autenticado das sessões (`FUNDACAO_PROJECT`), que o guarda de escrita exige.
 Códigos: 0 ok · 1 conferência com problemas ou conflito (nada gravado) · 2 uso incorreto ou entrada
 inválida (nada gravado).
 """
@@ -42,6 +51,9 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 MARCADOR = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
 BARRA_INVERTIDA = chr(92)
 CHAVE_IDENTIDADE = "FUNDACAO_" + "PRINCIPAL"  # a variável que o lançador entrega às sessões
+CHAVE_PROJETO = "FUNDACAO_PROJECT"  # projeto autenticado das sessões (guarda_caminho: escrita só nele)
+NOME_DE_SKILL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+EXCLUSAO_DE_DADOS = "**/projects/*/data/**"
 CHAVES_DO_LANCADOR = ("RAIZ", "PROJETO", "CLAUDE_BIN", "CLAUDE_VERSAO", "CLAUDE_SHA256", "CLAUDE_ORIGEM_HASH",
                       "PERFIL_SHA256", "HOOK_CAMINHO_SHA256", "HOOK_IDENTIDADE_SHA256", "SKILL_MD")
 
@@ -129,7 +141,18 @@ def ler_modelo(caminho: Path) -> dict:
     return json.loads(Path(caminho).read_text(encoding="utf-8"))
 
 
-def perfil_windows(*, raiz: str, python: str, modelo: dict | None = None) -> dict:
+def negar_skills(perfil: dict, nomes=()) -> dict:
+    """Acrescenta `Skill(<nome>)` às negações (skill aninhada em pasta de dados: nenhuma configuração a exclui)."""
+    negacoes = perfil.setdefault("permissions", {}).setdefault("deny", [])
+    for nome in nomes:
+        if not NOME_DE_SKILL.match(str(nome)):
+            raise EntradaInvalida(f"nome de skill inválido: {nome!r}")
+        if f"Skill({nome})" not in negacoes:
+            negacoes.append(f"Skill({nome})")
+    return perfil
+
+
+def perfil_windows(*, raiz: str, python: str, modelo: dict | None = None, negar=()) -> dict:
     """`.claude/settings.json` da raiz (sessões do Windows): negações, MCP do aplicativo e os dois hooks."""
     if not ntpath.isabs(str(raiz)) or not ntpath.isabs(str(python)):
         raise EntradaInvalida("raiz e python precisam ser caminhos absolutos do Windows")
@@ -137,11 +160,12 @@ def perfil_windows(*, raiz: str, python: str, modelo: dict | None = None) -> dic
     pasta = ntpath.join(raiz, ".claude", "hooks")
     valores = {"PYTHON": python, "HOOK_CAMINHO": ntpath.join(pasta, "guarda_caminho.py"),
                "HOOK_IDENTIDADE": ntpath.join(pasta, "guarda_identidade.py")}
-    return renderizar(modelo or ler_modelo(MODELO_WINDOWS), valores)
+    return negar_skills(renderizar(modelo or ler_modelo(MODELO_WINDOWS), valores), negar)
 
 
 def perfil_wsl(*, raiz: str, projeto: str, perfil_windows: str, outros_projetos, backups=(), somente_leitura=(),
-               ancora_base: str = ANCORA_BASE_WSL, montagem: str = MONTAGEM, modelo: dict | None = None) -> dict:
+               ancora_base: str = ANCORA_BASE_WSL, montagem: str = MONTAGEM, modelo: dict | None = None,
+               negar=()) -> dict:
     """`.claude/settings.wsl.json` (sessão de dados reais no WSL2, sandbox estrito): `state/` legível e gravável
     pelos comandos do sandbox e negado à ferramenta Read; escrita negada nos outros projetos, na área do titular
     (`.claude`), na pasta da âncora e nas pastas só de leitura."""
@@ -157,7 +181,7 @@ def perfil_wsl(*, raiz: str, projeto: str, perfil_windows: str, outros_projetos,
     listas = {"OUTROS_PROJETOS": outros,
               "BACKUPS": [caminho_wsl(b, montagem) for b in backups],
               "SOMENTE_LEITURA": [caminho_wsl(s, montagem) for s in somente_leitura]}
-    perfil = renderizar(modelo or ler_modelo(MODELO_WSL), valores, listas)
+    perfil = negar_skills(renderizar(modelo or ler_modelo(MODELO_WSL), valores, listas), negar)
     problemas = conferir_perfil_wsl(perfil, raiz_wsl)
     if problemas:
         raise EntradaInvalida("o modelo do perfil do WSL não garante: " + "; ".join(problemas))
@@ -172,7 +196,7 @@ def projetos_da_raiz(raiz) -> list[str]:
     return sorted(p.name for p in pasta.iterdir() if p.is_dir() and not p.name.startswith("."))
 
 
-def identidade(titular: str, atual: dict | None = None) -> dict:
+def identidade(titular: str, atual: dict | None = None, projeto: str | None = None) -> dict:
     """`.claude/settings.local.json`: a identidade das sessões vem do lançador (regime de dados reais). Com o
     arquivo atual, acrescenta só a identidade e mantém o resto; outra identidade já gravada é `Conflito`."""
     identificador(titular, "titular")
@@ -185,6 +209,12 @@ def identidade(titular: str, atual: dict | None = None) -> dict:
         raise Conflito(f"settings.local.json já entrega a identidade {existente!r}, não {titular!r}: só o titular "
                        f"decide a troca")
     env[CHAVE_IDENTIDADE] = titular
+    if projeto is not None:
+        identificador(projeto, "projeto")
+        if env.get(CHAVE_PROJETO) not in (None, projeto):
+            raise Conflito(f"settings.local.json já entrega o projeto {env[CHAVE_PROJETO]!r}, não {projeto!r}: só o "
+                           f"titular decide a troca")
+        env[CHAVE_PROJETO] = projeto
     return novo
 
 
@@ -204,8 +234,13 @@ def conferir_perfil_wsl(perfil: dict, raiz_wsl: str) -> list[str]:
         problemas.append("state/ sem escrita no sandbox (v2: só leitura)")
     if raiz_wsl.rstrip("/") + "/.claude" not in (fs.get("denyWrite") or []):
         problemas.append(".claude da raiz gravável pelo sandbox")
-    if "Read(./state/**)" not in ((perfil.get("permissions") or {}).get("deny") or []):
+    negacoes = (perfil.get("permissions") or {}).get("deny") or []
+    if "Read(./state/**)" not in negacoes:
         problemas.append("ferramenta Read com acesso a state/")
+    if not {"WebFetch", "WebSearch"} <= set(negacoes):
+        problemas.append("WebFetch e WebSearch liberados: saída de dados que o sandbox de rede não cobre")
+    if EXCLUSAO_DE_DADOS not in (perfil.get("claudeMdExcludes") or []):
+        problemas.append("instruções de pastas de dados (CLAUDE.md, AGENTS.md) carregáveis: falta claudeMdExcludes")
     comandos = [h for g in ((perfil.get("hooks") or {}).get("PreToolUse") or []) for h in g.get("hooks", [])]
     esperados = {raiz_wsl.rstrip("/") + "/.claude/hooks/" + n for n in ("guarda_caminho.py", "guarda_identidade.py")}
     if not esperados <= {a for h in comandos for a in h.get("args", [])}:
@@ -333,6 +368,7 @@ def main(argv: list | None = None) -> int:
     w = sub.add_parser("perfil-windows")
     w.add_argument("--raiz", required=True)
     w.add_argument("--python", required=True)
+    w.add_argument("--negar-skill", action="append", default=[], help="skill aninhada em pasta de dados")
     w.add_argument("--saida")
     s = sub.add_parser("perfil-wsl")
     s.add_argument("--raiz", required=True)
@@ -342,9 +378,11 @@ def main(argv: list | None = None) -> int:
     s.add_argument("--somente-leitura", action="append", default=[])
     s.add_argument("--ancora-base", default=ANCORA_BASE_WSL)
     s.add_argument("--montagem", default=MONTAGEM)
+    s.add_argument("--negar-skill", action="append", default=[], help="skill aninhada em pasta de dados")
     s.add_argument("--saida")
     i = sub.add_parser("identidade")
     i.add_argument("--titular", required=True)
+    i.add_argument("--projeto", help="projeto autenticado das sessões (FUNDACAO_PROJECT)")
     i.add_argument("--atual", help="settings.local.json existente: acrescenta só a identidade")
     i.add_argument("--saida")
     c = sub.add_parser("wsl-conf")
@@ -360,18 +398,19 @@ def main(argv: list | None = None) -> int:
     a = ap.parse_args(argv)
     try:
         if a.cmd == "perfil-windows":
-            _entregar(texto_json(perfil_windows(raiz=a.raiz, python=a.python)), a.saida)
+            _entregar(texto_json(perfil_windows(raiz=a.raiz, python=a.python, negar=a.negar_skill)), a.saida)
         elif a.cmd == "perfil-wsl":
             existentes = projetos_da_raiz(a.raiz)
             if a.projeto not in existentes:
                 raise EntradaInvalida(f"projeto {a.projeto} ausente em {Path(a.raiz) / 'projects'}")
             perfil = perfil_wsl(raiz=a.raiz, projeto=a.projeto, perfil_windows=a.perfil_windows,
                                 outros_projetos=[p for p in existentes if p != a.projeto], backups=a.backups,
-                                somente_leitura=a.somente_leitura, ancora_base=a.ancora_base, montagem=a.montagem)
+                                somente_leitura=a.somente_leitura, ancora_base=a.ancora_base, montagem=a.montagem,
+                                negar=a.negar_skill)
             _entregar(texto_json(perfil), a.saida)
         elif a.cmd == "identidade":
             atual = json.loads(Path(a.atual).read_text(encoding="utf-8-sig")) if a.atual else None
-            _entregar(texto_json(identidade(a.titular, atual)), a.saida)
+            _entregar(texto_json(identidade(a.titular, atual, a.projeto)), a.saida)
         elif a.cmd == "wsl-conf":
             arquivo = Path(a.arquivo)
             atual = arquivo.read_text(encoding="utf-8") if arquivo.is_file() else ""

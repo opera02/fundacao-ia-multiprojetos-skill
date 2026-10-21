@@ -23,6 +23,7 @@
       "Edit(./.claude/**)"
     ]
   },
+  "claudeMdExcludes": ["**/projects/*/data/**"],
   "env": {
     "FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*"
   },

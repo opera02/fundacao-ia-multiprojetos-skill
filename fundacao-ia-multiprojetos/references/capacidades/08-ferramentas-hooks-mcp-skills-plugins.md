@@ -29,6 +29,13 @@ registro) que declare o mesmo `component_id`, ponto de entrada em `fundacao.comp
 e, se a habilitação gravou `entrypoint_sha256`, o mesmo código aprovado. Componente lido pelo
 host (`entrypoint: "host-skill:<caminho do SKILL.md>"`) não é executado pelo kit; desabilitá-lo no
 registro **não** o desliga no host, e o comando avisa enquanto o arquivo existir (ver §4).
+**Ecossistema do host** (R54) [Decisão; 1.7.0]: `python <skill>/scripts/inventariar_host.py gravar --saida
+<raiz>/registry/inventario-host.json --raiz <raiz>` registra, só lendo e sem rede, as skills do perfil e da raiz
+(ligação, `name`, versão, SHA-256, primeira linha da licença e nomes repetidos em pastas diferentes), plugins (id,
+versão, escopo e se há projeto, sem o caminho dele, que pode trazer nome de cliente), catálogos, hooks e servidores
+MCP — destes, só nome, tipo, o nome do executável (nunca caminho nem argumentos, mesmo num `command` em texto único,
+que pode trazer token) ou o host da URL; nunca `env`, `headers` nem dados da conta. O `atualizar_fundacao.py aplicar`
+termina com `verificar`, sem bloquear.
 
 ## 2. Hooks (R33, R52)
 **Donos diferentes** [Livro p56]: Git (`pre-commit`), Claude Code (eventos do produto),
@@ -211,3 +218,17 @@ Instrução permanente → AGENTS.md/CLAUDE.md · procedimento repetível → sk
 isolado → subagente · dados externos com autorização → MCP · garantia determinística →
 hook/permissão · distribuição → plugin. Fixe versão e hash de todo componente externo
 (R54) e revise o diff a cada atualização.
+
+**Instruções da raiz e pastas de dados** [Verificado 2026-10-21; Decisão; 1.7.0]: o Claude Code carrega ao iniciar
+o `CLAUDE.md` da pasta da sessão e das pastas acima (os de subpastas, quando lê arquivos nelas); `@AGENTS.md` dentro
+dele importa sem duplicar, e o `AGENTS.md` sozinho só é lido direto quando não há `CLAUDE.md` (2.1.277 ou
+posterior); recomendação: menos de 200 linhas por arquivo. O Codex lê `AGENTS.md` da raiz do Git até a pasta atual
+(sem Git, só a pasta atual), até 32 KiB. Na fundação, `python <skill>/scripts/instrucoes_raiz.py gerar --raiz <raiz>`
+escreve o `AGENTS.md` (resumo gerado entre marcadores, sem nomes de projetos, e um trecho do titular que a skill
+preserva) e o `CLAUDE.md` com `@AGENTS.md`; o C6 os regenera, e as chamadas aos provedores rodam numa pasta
+temporária vazia, sem eles. Pasta `data/` é dado: o perfil do host exclui `**/projects/*/data/**` das instruções
+(`claudeMdExcludes`, globs de caminho absoluto, em qualquer camada de configuração); skill em `.claude/skills/` de
+uma subpasta é carregada quando a sessão lê ou edita ali, sem configuração que desligue isso — negue-a por nome
+(`Skill(<nome>)`, opção `--negar-skill` de `assets/host/preparo_host.py perfil-windows|perfil-wsl`) a partir de
+`python <skill>/scripts/instrucoes_aninhadas.py listar --raiz <pasta>` (só lê; lista instruções, skills, agentes,
+comandos, regras, MCP e configurações aninhados, com as negações sugeridas).

@@ -83,6 +83,7 @@ class PerfilWindows(unittest.TestCase):
         esperado = {
             "permissions": {"deny": NEGACOES_DA_RAIZ + ["Read(~/.claude/.credentials.json)", "Read(~/.codex/auth.json)",
                                                         "Read(~/.ssh/**)", "Edit(./.claude/**)"]},
+            "claudeMdExcludes": ["**/projects/*/data/**"],  # 1.7.0: pasta de dados não vira instrução
             "env": {"FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*"},
             "hooks": ganchos(r"C:\Py\python.exe", r"E:\Fundacao Exemplo\.claude\hooks", "\\"),
         }
@@ -106,8 +107,9 @@ class PerfilWsl(unittest.TestCase):
             "permissions": {"deny": NEGACOES_DA_RAIZ + [
                 "Read(~/.claude/.credentials.json)", "Read(~/.codex/auth.json)", "Read(~/.ssh/**)",
                 f"Read(/{perfil_win}/.claude/.credentials.json)", f"Read(/{perfil_win}/.codex/auth.json)",
-                f"Read(/{perfil_win}/.ssh/**)", "Edit(./.claude/**)", "Edit(//mnt/c/ProgramData/FundacaoIA/**)",
-                "Edit(//mnt/d/Origem Ç/**)"]},
+                f"Read(/{perfil_win}/.ssh/**)", "WebFetch", "WebSearch",  # 1.7.0: sem saída pela web
+                "Edit(./.claude/**)", "Edit(//mnt/c/ProgramData/FundacaoIA/**)", "Edit(//mnt/d/Origem Ç/**)"]},
+            "claudeMdExcludes": ["**/projects/*/data/**"],
             "env": {"FUNDACAO_MCP_PERMITIDAS": "", "DISABLE_AUTOUPDATER": "1"},
             "hooks": ganchos("/usr/bin/python3", raiz + "/.claude/hooks", "/"),
             "sandbox": {

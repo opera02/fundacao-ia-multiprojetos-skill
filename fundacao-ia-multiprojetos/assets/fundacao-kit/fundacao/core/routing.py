@@ -13,6 +13,10 @@ ordem de preferência. Regras:
   fechada) até a administração reconciliar o custo da tentativa (`rota custo`). Custo
   informado negativo, NaN ou infinito conta como não medido, ao gravar e ao somar (#17);
 - resposta de rota simulada sai como `succeeded_simulated`, nunca como `succeeded`.
+- a política é validada ao carregar e falha fechada (análise do vibe-coding-toolkit, 21/10/2026,
+  proposta 4): tipo errado nunca vale como outro valor — `"enabled": "false"` em texto, teto em
+  texto, booleano, negativo ou NaN, rota citada que não existe e chave desconhecida recusam a
+  política inteira; o roteador só liga uma rota com `true` de verdade.
 - com teto, a capacidade é RESERVADA numa transação curta antes do despacho e a reserva é
   finalizada por ID junto com o registro da tentativa; chamadas simultâneas não passam do
   teto, e chamada interrompida continua contando até a administração reconciliar (F10).
@@ -30,6 +34,7 @@ from .auth import Policy, Principal
 from .contracts import ValidationError
 from .db import transaction, utcnow
 from .ids import new_id
+from .politica_rotas import validar_politica
 from .usage import custo_decimal
 
 DEFAULT_POLICY = {
@@ -54,8 +59,10 @@ def load_policy(root: Path) -> dict:
     if not path.exists():
         return json.loads(json.dumps(DEFAULT_POLICY))
     policy = json.loads(path.read_text(encoding="utf-8"))
-    if policy.get("schema_version") != "fundacao.route/1":
-        raise ValidationError("route_policy com schema_version desconhecido")
+    problemas = validar_politica(policy)
+    if problemas:
+        # Falha fechada: política com problema não vale de jeito nenhum (nenhuma rota é usada).
+        raise ValidationError("route_policy inválida: " + "; ".join(problemas), problemas=problemas)
     return policy
 
 
@@ -79,7 +86,7 @@ class Router:
         out = []
         for route in order:
             cfg = self.policy["routes"].get(route)
-            if cfg is None or not cfg.get("enabled"):
+            if cfg is None or cfg.get("enabled") is not True:  # texto "false" ou 1 não ligam a rota
                 out.append((route, "rota desabilitada na política"))
             elif cfg.get("only_titular") and self.principal.principal_id != self.policy.get("titular"):
                 out.append((route, "rota restrita ao titular"))

@@ -166,12 +166,20 @@ class SemUac(_Base):
         self.assertTrue(any(c.endswith("/Fundacao Teste/projects/lab-a") for c in fs["denyWrite"]))
         self.assertTrue(any(c.endswith("/Backups") for c in fs["allowWrite"]))
         local = json.loads((claude / "settings.local.json").read_text(encoding="utf-8"))
-        self.assertEqual(local["env"], {"FUNDACAO_PRINCIPAL": "titular"})
+        self.assertEqual(local["env"], {"FUNDACAO_PRINCIPAL": "titular", "FUNDACAO_PROJECT": "caso-real"})  # 1.7.0
         chave = self.item(rel, "chave")
         self.assertEqual((chave["acao"], chave["estado_da_senha"]), ("igual", "presente"))
         self.assertEqual(chave["impressao_digital"], impressao(self.publica))
         self.assertEqual(self.item(rel, "ancora")["acao"], "pendente_admin")
         self.assertFalse(self.ancora.exists())
+
+    def test_skills_aninhadas_negadas_por_nome_nos_dois_perfis(self):
+        """1.7.0 (proposta 2): -NegarSkill, com nomes separados por vírgula, vira Skill(<nome>) nas negações."""
+        p, _rel = self.rodar("-SemUAC", "-Projeto", "caso-real", "-NegarSkill", "skill-da-copia,outra-skill")
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        for perfil in ("settings.json", "settings.wsl.json"):
+            negadas = json.loads((self.raiz / ".claude" / perfil).read_text(encoding="utf-8"))["permissions"]["deny"]
+            self.assertLessEqual({"Skill(skill-da-copia)", "Skill(outra-skill)"}, set(negadas), perfil)
 
     def test_segunda_execucao_nao_altera_nada(self):
         self.rodar("-SemUAC", "-Projeto", "caso-real")
