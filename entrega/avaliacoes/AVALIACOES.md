@@ -201,7 +201,7 @@ Leitura crítica:
 - Ressalva no item 3: o invólucro que executa o legado pela fundação foi um script temporário da própria sessão
   (`despacho_caso.py`, fora do ambiente); a RETOMADA chama de invólucro o módulo do componente, que já existia. Quem
   quiser repetir a comparação precisa refazer o script. Proposta para a versão seguinte: o B7 e o B9 pedirem que a
-  ferramenta de execução pela fundação fique com o projeto, não na pasta temporária da sessão.
+  ferramenta de execução pela fundação fique com o projeto, não na pasta temporária da sessão. Tratada no texto do fluxo B (B7, B8 e B9) na 1.7.6, sem nova execução da E10.
 - Uma execução, notas dadas pelo coordenador da sessão (não por avaliador independente): 413 s, 54 turnos e
   US$ 1,51 informados pelo `claude -p`.
 - A execução usou o texto da skill do commit `2b6ec26`. Depois, a revisão de segurança da 1.7.4 levou a ajustes de

@@ -26,7 +26,8 @@ com um relatório que prende os arquivos por hash, funcionou sem perda de garant
 - **Portão 2 — execução e entrega (B6–B10).** Com o aceite do portão 1, rode B6→B10 em sequência e
   entregue um relatório único (esperado × observado por etapa, real × simulado, desvios do plano,
   hashes de cada arquivo entregue) para um aceite final.
-- **Pare antes do portão** só se: a origem divergir do manifesto do B1; uma prova negativa falhar;
+- **Pare antes do portão** só se: a origem divergir do manifesto do B1; a ferramenta de execução divergir do
+  manifesto dela (B7); uma prova negativa falhar;
   surgir divergência que a B8 não classifique; a etapa precisar de algo fora do aceite (dado real
   novo, execução não autorizada, efeito externo, custo). Pare, registre e pergunte só aquilo.
 - Etapa por etapa só se o usuário pedir. Paradas e perguntas seguem `references/comunicacao-leigo.md`.
@@ -189,9 +190,19 @@ mock rotulado) antes de gravar.
   módulo traz o manifesto (sha256 de cada arquivo do código, sem nenhum a mais ou a menos),
   confere-o imediatamente antes de cada execução e roda uma cópia privada conferida; habilite
   com `componente habilitar`, que grava o `entrypoint_sha256` [varredura da 1.4.5, #6].
+- A **ferramenta de execução**, a que roda os casos do golden **pela fundação** (chama o despacho do
+  componente do projeto autenticado), faz parte da adaptação: fica **no projeto**, numa pasta só dela (ex.:
+  `projects/<p>/ferramentas/<nome>/`, fora de `data/` e da origem), nunca na pasta temporária da sessão. Ela
+  **não define identidade**: usa a do ambiente de quem a chama (no kit, `principal_from_env`), nunca monta
+  `Principal(...)` nem grava `FUNDACAO_PRINCIPAL`; em laboratório, a identidade de ensaio vai no comando que a chama
+  (SKILL.md §7). Registre a pasta inteira com `python <skill>/scripts/manifesto.py criar --raiz <pasta>
+  --saida <manifesto>` (com `excluidos` 0) e cite o caminho e o SHA-256 do manifesto no relatório do portão 2, que prende os arquivos
+  por hash — não só em arquivos que a ferramenta ou o componente gravam. Sem ela, quem retomar não repete a
+  comparação do B8 [avaliação E10, 1.7.4; revisão de segurança da 1.7.6, R176-01 e R176-02].
 - Uma mudança por vez; após cada uma rode a caracterização e os testes de contrato.
 **Saídas:** mudanças registradas (arquivo, tipo, motivo, reversão); projeto e componente
-registrados; RETOMADA atualizada a cada mudança.
+registrados; ferramenta de execução no projeto, com o manifesto da pasta dela (caminho e SHA-256 no relatório do
+portão 2); RETOMADA atualizada a cada mudança.
 **Critério:** cada mudança passa na caracterização e nos testes de contrato antes da
 próxima; nenhum segredo copiado; origem intocada.
 **Falhas:** divergência após uma mudança → reverta só ela e investigue; necessidade de
@@ -200,7 +211,18 @@ os projetos).
 
 ### B8 — Comparação antes × depois
 **Entradas:** golden (B6); versão adaptada (B7).
-**Ações:** `python <skill>/scripts/caracterizar.py comparar --golden golden.json --cwd <nova> -- <comando>`.
+**Ações:** `python <skill>/scripts/caracterizar.py comparar --golden golden.json --cwd <nova> -- <comando>`,
+em que `<comando>` chama a ferramenta de execução que ficou no projeto (B7), e não um script da sessão. Antes de
+cada comparação: confira o SHA-256 do arquivo do manifesto com o citado no relatório; `python <skill>/scripts/manifesto.py
+verificar --raiz <pasta da ferramenta> --manifesto <manifesto>` confere a pasta inteira contra ele; e, como o
+manifesto não vê ligação (link ou junção), arquivo com nome de segredo nem pasta que ele ignora (`__pycache__`,
+`.venv`…), a pasta não pode ter nenhum deles: um `manifesto.py criar` dela numa saída temporária tem de dar
+`excluidos` 0 (ligações e nomes de segredo), e nenhuma pasta ou ligação com nome que ele ignora pode existir nela
+(o `criar` as descarta sem listar: procure-as listando a pasta sem seguir ligações). A ferramenta não põe a própria pasta no caminho de importação e roda com `python -P` (Python 3.11
+ou mais novo); em 3.10, com `python -I`, pondo ela mesma a raiz da fundação no `sys.path`; sem nenhum dos dois,
+não rode e pare. O `-P` (ou o `-I`) é o controle contra módulo plantado ao lado; o manifesto, contra mudança. É
+conferência de procedimento, não barreira: quem grava no projeto pode trocar ferramenta e manifesto juntos
+(`references/seguranca-isolamento.md` §3 e §6) [revisão de segurança da 1.7.6, R176-04 e R176-05].
 Toda divergência é classificada: regressão (corrigir a camada responsável),
 mudança intencional aprovada (atualizar especificação e versão do contrato) ou
 diferença irrelevante justificada (ex.: ordem de chaves JSON fora do contrato)
@@ -210,14 +232,20 @@ de linhas não basta [Livro p148].
 **Saídas:** relatório de comparação com a classificação de cada divergência.
 **Critério:** 0 regressões; mudanças intencionais com aprovação registrada.
 **Falhas:** golden "ajustado" sem decisão → descarte o ajuste e reabra a divergência;
-comparação impossível (ambiente diferente) → registre a lacuna e não declare equivalência.
+comparação impossível (ambiente diferente) → registre a lacuna e não declare equivalência; ferramenta de execução
+diferente do manifesto citado no relatório → não rode, registre e pare.
 
 ### B9 — Reexecução segura (projeto parcialmente adaptado)
 **Entradas:** `RETOMADA.md`; estado real (arquivos, registro, banco); golden.
 **Ações**
 - Antes de cada etapa, **detecte o que já existe**: projeto registrado, componente
-  no registro, adaptador presente, migração aplicada (`PRAGMA user_version`),
-  golden gravado, entradas da RETOMADA em "ações já realizadas".
+  no registro, adaptador presente, ferramenta de execução no projeto (B7) com o manifesto citado, migração
+  aplicada (`PRAGMA user_version`), golden gravado, entradas da RETOMADA em "ações já realizadas".
+- Comparação feita com uma ferramenta fora do projeto (pasta temporária, sessão anterior) não dá a etapa como
+  feita: recrie a ferramenta no projeto escrevendo-a de novo (não copie a da pasta temporária), confira o
+  conteúdo, registre o manifesto (B7) e repita a comparação (B8) no escopo da decisão que cobriu a primeira. Na
+  RETOMADA, cite cada artefato pelo caminho real (o módulo do componente e a ferramenta de execução), sem
+  trocar um pelo outro.
 - Atualize só o necessário; não duplique configuração, registros, dados ou efeitos
   (chaves de idempotência; "criar" que encontra instância existente informa e não
   substitui) [Livro p37].
@@ -227,8 +255,9 @@ comparação impossível (ambiente diferente) → registre a lacuna e não decla
 - Divergência entre estado registrado e arquivos: reconcilie por identificador e
   hash; não aceite "qualquer arquivo encontrado" [Livro p47].
 **Saídas:** lista de etapas "já existia" × "feito agora"; RETOMADA atualizada.
-**Critério:** reexecutar não cria duplicatas (registro, eventos, arquivos) e uma terceira
-passagem não muda nada.
+**Critério:** reexecutar não cria duplicatas (registro, eventos, arquivos), uma terceira
+passagem não muda nada e a comparação com o golden pode ser repetida pela ferramenta do projeto (cada repetição
+grava despachos e eventos novos, que registram a comparação e não são duplicatas).
 **Falhas:** estado registrado diverge dos arquivos → reconcilie antes de agir; RETOMADA
 desatualizada → confie no estado conferido e registre a divergência; com pedido de fechar ou concluir,
 termine as etapas pendentes do mesmo escopo (SKILL.md §1.2; `references/autonomia-e-escalonamento.md` §6).

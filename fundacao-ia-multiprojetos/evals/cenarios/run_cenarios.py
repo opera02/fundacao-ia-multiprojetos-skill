@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -30,6 +31,7 @@ FIX = SKILL / "evals" / "fixtures"
 PY = sys.executable
 BASE_ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1"}
 BASE_ENV.pop("FUNDACAO_PRINCIPAL", None)
+ISOLAR = "-P" if sys.version_info >= (3, 11) else "-I"  # B8: sem a pasta da ferramenta no caminho de importação
 
 
 def run(cmd, cwd=None, env=None, timeout=600, stdin=None):
@@ -264,6 +266,79 @@ destino.write_text(json.dumps(canonico, ensure_ascii=False, indent=2) + "\\n", e
 '''
 
 
+def pasta_ferramenta(root: Path) -> Path:
+    """B7: a ferramenta de execução fica no projeto, numa pasta só dela (revisão de segurança da 1.7.6, R176-06)."""
+    return root / "projects" / "peticoes-legado" / "ferramentas" / "executar_via_fundacao"
+
+
+def manifesto_ferramenta(W: Path, root: Path) -> Path:
+    """Manifesto da pasta inteira da ferramenta; ele e o SHA-256 citado (o relatório do portão 2) ficam fora do projeto."""
+    return W / "ref" / f"manifesto-ferramenta-{root.name}.json"
+
+
+def _citado(W: Path, root: Path) -> Path:
+    return W / "ref" / f"manifesto-ferramenta-{root.name}.sha256"
+
+
+def _manifesto_da_ferramenta(W: Path, root: Path) -> str:
+    m = manifesto_ferramenta(W, root)
+    if m.exists():
+        return "ja-existia"
+    r = run([PY, "-B", SCRIPTS / "manifesto.py", "criar", "--raiz", pasta_ferramenta(root), "--saida", m])
+    if r.returncode != 0 or json.loads(r.stdout)["excluidos"]:
+        return f"falhou: {r.stdout[-200:]} {r.stderr[-200:]}"
+    _citado(W, root).write_text(hashlib.sha256(m.read_bytes()).hexdigest(), encoding="utf-8")
+    return "feito"
+
+
+def _e_ligacao(path: Path) -> bool:
+    """Link simbólico ou junção, sem seguir (como `scripts/manifesto.py`)."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_reparse_tag", 0) & 0x20000000)
+
+
+def _nomes_ignorados(pasta: Path, ignorados: set[str]) -> list[str]:
+    """O manifesto descarta, sem listar, as pastas que ignora e ligações com esses nomes: procura-as à parte, sem
+    atravessar ligação (revisão de segurança da 1.7.6, terceira passada sobre o R176-04)."""
+    achados, pendentes = [], [pasta]
+    while pendentes:
+        atual = pendentes.pop()
+        with os.scandir(atual) as itens:
+            for item in itens:
+                caminho = Path(item.path)
+                if item.name in ignorados:
+                    achados.append(caminho.relative_to(pasta).as_posix())
+                elif item.is_dir(follow_symlinks=False) and not _e_ligacao(caminho):
+                    pendentes.append(caminho)
+    return sorted(achados)
+
+
+def _conferir_ferramenta(W: Path, root: Path) -> list[str]:
+    """B8, antes de cada comparação: o manifesto é o citado (SHA-256), a pasta inteira confere com ele e não tem nada
+    que o manifesto não vê (ligação, nome de segredo, pasta ignorada)."""
+    m, citado = manifesto_ferramenta(W, root), _citado(W, root)
+    if not (m.is_file() and citado.is_file()
+            and hashlib.sha256(m.read_bytes()).hexdigest() == citado.read_text(encoding="utf-8").strip()):
+        return ["manifesto da ferramenta ausente ou diferente do citado no relatório"]
+    problemas = []
+    v = run([PY, "-B", SCRIPTS / "manifesto.py", "verificar", "--raiz", pasta_ferramenta(root), "--manifesto", m])
+    if v.returncode != 0:
+        problemas.append("pasta da ferramenta diferente do manifesto: " + " ".join(v.stdout.split())[:300])
+    with tempfile.TemporaryDirectory(prefix="manifesto-agora-") as tmp:
+        agora = run([PY, "-B", SCRIPTS / "manifesto.py", "criar", "--raiz", pasta_ferramenta(root),
+                     "--saida", Path(tmp) / "m.json"])
+        if agora.returncode != 0 or json.loads(agora.stdout)["excluidos"]:
+            problemas.append("pasta da ferramenta com algo que o manifesto não vê: " + " ".join(agora.stdout.split())[:300])
+    ignorados = set(json.loads(m.read_text(encoding="utf-8"))["politica"]["pastas_ignoradas"])
+    achados = _nomes_ignorados(pasta_ferramenta(root), ignorados)
+    if achados:
+        problemas.append("pasta da ferramenta com pasta ou ligação que o manifesto ignora: " + ", ".join(achados[:5]))
+    return problemas
+
+
 def _escrever_se_diferente(path: Path, texto: str) -> str:
     if path.exists() and path.read_text(encoding="utf-8") == texto:
         return "ja-existia"
@@ -316,7 +391,8 @@ def adaptar(W: Path, root: Path, origem: Path, concluir: bool = True) -> list[tu
     """Executor de referência do Fluxo B (etapas B6–B9), idempotente. O projeto recebe só dados; o código
     que o componente executa vai para a fonte da fundação com manifesto de hashes, e a habilitação passa
     pela fundação (auditoria 1.5.0, achado 6). `concluir=False` para no estado interrompido do E3:
-    dados, código, adaptador e módulo escritos; componente não registrado nem habilitado; sem invólucro."""
+    dados, código, adaptador e módulo escritos; componente não registrado nem habilitado; sem a ferramenta de
+    execução."""
     passos = []
     trabalho = W / "trabalho-legado"
     if not trabalho.exists():
@@ -375,17 +451,25 @@ def adaptar(W: Path, root: Path, origem: Path, concluir: bool = True) -> list[tu
                "allowed_projects": ["peticoes-legado"], "permissions": ["legado:executar"],
                "timeout_seconds": 30, "requires_modules": [], "evidence": []}
     passos.append(("registro do componente", _registrar_e_habilitar(root, entrada)))
-    passos.append(("invólucro de execução via fundação", _escrever_se_diferente(W / "ferramentas" / "executar_via_fundacao.py", WRAPPER)))
+    # B7: a ferramenta de execução fica no projeto, numa pasta só dela, com o manifesto citado fora dele (R176-06).
+    passos.append(("ferramenta de execução no projeto", _escrever_se_diferente(
+        pasta_ferramenta(root) / "executar_via_fundacao.py", WRAPPER)))
+    passos.append(("manifesto da ferramenta de execução", _manifesto_da_ferramenta(W, root)))
     return passos
 
 
 def _comparar_golden(W: Path, root: Path):
+    problemas = _conferir_ferramenta(W, root)
+    if problemas:  # B8: ferramenta diferente do manifesto -> não rode, registre e pare
+        return subprocess.CompletedProcess([], 3, "", "ferramenta de execução diferente do manifesto: "
+                                           + "; ".join(problemas))
     saida = root / "projects" / "peticoes-legado" / "data" / "legado" / "saida"
     shutil.rmtree(saida, ignore_errors=True)  # saídas derivadas são regeneradas
     env = {k: v for k, v in BASE_ENV.items() if k not in ("PYTHONUTF8", "PYTHONIOENCODING")}
     env.update({"FUNDACAO_RAIZ": str(root), "FUNDACAO_PRINCIPAL": "titular"})  # sem modo UTF-8 de propósito
     return run([PY, "-B", SCRIPTS / "caracterizar.py", "comparar", "--golden", W / "ref" / "golden.json",
-                "--pasta-saida", saida, "--", PY, "-B", W / "ferramentas" / "executar_via_fundacao.py", "{entrada}"],
+                "--pasta-saida", saida, "--", PY, "-B", ISOLAR, pasta_ferramenta(root) / "executar_via_fundacao.py",
+                "{entrada}"],
                env=env)
 
 
@@ -418,6 +502,16 @@ def cen02(W: Path) -> Cenario:
             f"{len(res.get('divergencias', []))} divergências; casos={res.get('casos')}",
             cmp.returncode == 0 and res.get("casos") == 3 and not res["divergencias"],
             "inclui caso inválido (código 2) e fato sem fonte virando pendência")
+    plantado = pasta_ferramenta(W / "f2") / "fundacao"
+    plantado.mkdir()
+    try:
+        (plantado / "__init__.py").write_text("raise SystemExit('módulo plantado')\n", encoding="utf-8")
+        parada = _comparar_golden(W, W / "f2")
+    finally:
+        shutil.rmtree(plantado, ignore_errors=True)
+    c.check("módulo plantado ao lado da ferramenta de execução faz a comparação parar (B8)",
+            "não roda; acusa o manifesto", parada.stderr.strip()[:200],
+            parada.returncode != 0 and "manifesto" in parada.stderr)
     v = run([PY, "-B", SCRIPTS / "manifesto.py", "verificar", "--raiz", origem, "--manifesto", m0])
     c.check("origem inalterada (manifesto)", "sem alterados/ausentes/novos", v.stdout.strip()[:160], v.returncode == 0)
     c.check("segredo não copiado para o projeto", "sem .env no projeto",

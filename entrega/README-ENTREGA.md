@@ -8,8 +8,30 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–21/10/2026 · Versão da skill: **1.7.5** (kit de referência 1.7.4) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–21/10/2026 · Versão da skill: **1.7.6** (kit de referência 1.7.4) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
+
+> **1.7.6 (21/10/2026):** trata, no texto do fluxo B e no cenário executável dele, a ressalva da nova execução da
+> E10, sem nova execução da E10. O executor tinha comparado o legado com o golden pela fundação com um script
+> temporário da própria sessão, e a RETOMADA citou outro arquivo: quem retomasse não repetiria a comparação. Agora
+> a ferramenta de execução (a que roda os casos do golden pelo despacho do componente do projeto autenticado) fica
+> no projeto, numa pasta só dela, e não define identidade: usa a de quem a chama (B7). A pasta inteira vai por
+> manifesto, sem ligação, nome de segredo nem pasta ignorada, e o SHA-256 do manifesto é citado no relatório do
+> portão 2. Antes de cada comparação, o B8 confere esse SHA-256, a pasta pelo manifesto e o que o manifesto não vê,
+> e roda a ferramenta com `python -P` (Python 3.11 ou mais novo; em 3.10, `python -I`); uma divergência para a
+> execução — conferência de procedimento contra mudança, não barreira. O B9 procura a ferramenta antes de dar a
+> etapa como feita, manda reescrevê-la (não copiar a temporária) e repetir a comparação no escopo da decisão que
+> cobriu a primeira, e pede que a RETOMADA cite cada artefato pelo caminho real. O cenário do fluxo B (CEN-02 e
+> CEN-03) passou a seguir a regra, com uma verificação negativa: um módulo plantado ao lado da ferramenta faz a
+> comparação parar. A revisão de segurança (outro contexto do mesmo provedor) achou seis pontos em três passadas,
+> corrigidos antes da liberação: R176-01, o hash de um arquivo só não cobria o que a ferramenta importa; R176-02,
+> nada dizia de onde vem a identidade; R176-03, esta nota dizia que a ressalva estava fechada; R176-04, o
+> manifesto não vê ligações, nomes de segredo e pastas ignoradas (estas, na terceira passada); R176-05, o `-P` só existe a partir do Python
+> 3.11; R176-06, o cenário executável não seguia a regra. Testes novos:
+> `scripts/tests/test_regra_ferramenta_de_execucao_no_projeto.py` e quatro casos em
+> `entrega/testes/test_auditoria_1_5_0_avaliacoes.py` (falhavam antes de cada mudança, passam depois). O kit não
+> mudou (continua 1.7.4); no pacote instalável mudam só o fluxo B, a versão e o teste da regra. Resultados no
+> Windows deste PC: kit 355 OK (5 pulados), scripts 193 OK (2 pulados), entrega 100 OK (2 pulados); cenários 16/16 (113/113). O Ubuntu fica com a CI pública.
 
 > **1.7.5 (21/10/2026):** é a 1.7.4 com um arquivo corrigido. A liberação da 1.7.4 parou na montagem da
 > transferência: o texto para revisão não reproduzia `scripts/tests/test_regra_retomada_desatualizada.py`, gravado

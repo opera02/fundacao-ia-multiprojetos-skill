@@ -11,6 +11,9 @@ A16 — o trace é classificado pela estrutura (shlex e caminhos canônicos), n�
       serviço só conta como tal com negativa correspondente na trilha verificada.
 A22 — o legado fictício recusa `case_id` fora da gramática (código 2, sem saída) e não escreve
       fora de `saida/`.
+R176-06 (revisão de segurança da 1.7.6) — o modelo executável do Fluxo B segue o B7–B9: a ferramenta de
+      execução fica no projeto, numa pasta só dela, com o manifesto citado fora do projeto, e a comparação
+      para quando a pasta, o manifesto ou o que o manifesto não vê mudou.
 Tudo em pastas temporárias e com dados fictícios; nenhum provedor é chamado.
 """
 
@@ -198,7 +201,8 @@ class TestA6ComponenteLegadoExecutaSoCodigoAprovado(unittest.TestCase):
 
     def _executar(self, caso: str = "caso-001.json"):
         env = {**RC.BASE_ENV, "FUNDACAO_RAIZ": str(self.root), "FUNDACAO_PRINCIPAL": "titular"}
-        return subprocess.run([sys.executable, "-B", str(self.W / "ferramentas" / "executar_via_fundacao.py"),
+        return subprocess.run([sys.executable, "-B", RC.ISOLAR,
+                               str(RC.pasta_ferramenta(self.root) / "executar_via_fundacao.py"),
                                str(self.dados / "casos" / caso)], capture_output=True, text=True, encoding="utf-8",
                               errors="replace", env=env, timeout=300)
 
@@ -287,6 +291,65 @@ class TestA6ComponenteLegadoExecutaSoCodigoAprovado(unittest.TestCase):
         r = self._executar()
         self.assertEqual(r.returncode, 0, r.stderr[-800:])
         self.assertFalse(marca.exists())
+
+    def test_r176_06_ferramenta_de_execucao_no_projeto_com_manifesto(self):
+        pasta = RC.pasta_ferramenta(self.root)
+        self.assertEqual(pasta.parent, self.root / "projects" / "peticoes-legado" / "ferramentas")
+        self.assertTrue((pasta / "executar_via_fundacao.py").is_file())
+        self.assertFalse((self.W / "ferramentas").exists(), "ferramenta de execução fora do projeto")
+        self.assertEqual(RC._conferir_ferramenta(self.W, self.root), [])
+
+    def test_r176_06_modulo_plantado_ao_lado_da_ferramenta_faz_a_comparacao_parar(self):
+        marca = self.W / "modulo-plantado-rodou.txt"
+        plantado = RC.pasta_ferramenta(self.root) / "fundacao"
+        plantado.mkdir()
+        try:
+            (plantado / "__init__.py").write_text(
+                f"import pathlib\npathlib.Path({str(marca)!r}).write_text('rodou', encoding='utf-8')\n",
+                encoding="utf-8")
+            r = RC._comparar_golden(self.W, self.root)
+            self.assertNotEqual(r.returncode, 0, r.stdout[-400:])
+            self.assertIn("manifesto", r.stderr)
+            self.assertFalse(marca.exists(), "a comparação rodou com um módulo plantado ao lado da ferramenta")
+        finally:
+            shutil.rmtree(plantado, ignore_errors=True)
+        self.assertEqual(RC._conferir_ferramenta(self.W, self.root), [])
+
+    def test_r176_04_pasta_que_o_manifesto_ignora_faz_a_comparacao_parar(self):
+        # O manifesto descarta, sem listar, as pastas que ignora; a conferência do B8 as procura à parte.
+        pasta = RC.pasta_ferramenta(self.root)
+        for nome in ("__pycache__", ".venv"):
+            with self.subTest(nome):
+                plantada = pasta / nome
+                plantada.mkdir()
+                try:
+                    (plantada / "x.py").write_text("raise SystemExit('plantado')", encoding="utf-8")
+                    problemas = RC._conferir_ferramenta(self.W, self.root)
+                    self.assertTrue(any("ignora" in p for p in problemas), problemas)
+                    self.assertNotEqual(RC._comparar_golden(self.W, self.root).returncode, 0)
+                finally:
+                    shutil.rmtree(plantada, ignore_errors=True)
+        self.assertEqual(RC._conferir_ferramenta(self.W, self.root), [])
+
+    def test_r176_06_ferramenta_e_manifesto_trocados_juntos_fazem_a_comparacao_parar(self):
+        # O `verificar` aceita ferramenta e manifesto trocados juntos; só o SHA-256 citado no relatório pega a troca.
+        ferramenta = RC.pasta_ferramenta(self.root) / "executar_via_fundacao.py"
+        manifesto = RC.manifesto_ferramenta(self.W, self.root)
+        guardados = {ferramenta: ferramenta.read_bytes(), manifesto: manifesto.read_bytes()}
+        try:
+            ferramenta.write_text(guardados[ferramenta].decode("utf-8") + "\n# trocada\n", encoding="utf-8")
+            with tempfile.TemporaryDirectory() as tmp:
+                novo = Path(tmp) / "m.json"
+                subprocess.run([sys.executable, "-B", str(SKILL / "scripts" / "manifesto.py"), "criar", "--raiz",
+                                str(ferramenta.parent), "--saida", str(novo)], check=True, capture_output=True)
+                manifesto.write_bytes(novo.read_bytes())
+            problemas = RC._conferir_ferramenta(self.W, self.root)
+            self.assertTrue(problemas and "citado" in problemas[0], problemas)
+            self.assertNotEqual(RC._comparar_golden(self.W, self.root).returncode, 0)
+        finally:
+            for caminho, dados in guardados.items():
+                caminho.write_bytes(dados)
+        self.assertEqual(RC._conferir_ferramenta(self.W, self.root), [])
 
 
 NEGATIVA = [{"subject": "operador-engenharia", "action": "read", "resource": "project:juridico-lab"}]
