@@ -44,6 +44,11 @@ das versões instaladas, Claude Code 2.1.302 e codex-cli 0.163.0; `--max-turns` 
 - Codex: `--sandbox read-only`, `--ephemeral`, `--ignore-user-config`,
   `--ignore-rules`, `--skip-git-repo-check`. A documentação não diz se o modo
   somente leitura impede ler fora da pasta: trate como NÃO isolado para leitura.
+  Por isso o adaptador NÃO roda (estado `disabled`, nada sai) sem `isolamento_leitura`:
+  a descrição do isolamento EXTERNO (conta do SO, contêiner ou VM que exponha só a
+  pasta de trabalho) que impede o agente de ler `state/`, outros projetos e
+  configurações (varredura 1.4.5, #9). O kit não verifica a declaração: ela registra
+  a decisão de quem habilita a rota, que deve prová-la com o canário abaixo.
 Isso reduz a superfície, mas não é barreira: isolamento real do agente externo exige
 sandbox ou conta do SO. Antes de liberar a rota, prove com um documento-canário de
 outro projeto na raiz (deve continuar ausente da resposta).
@@ -353,11 +358,15 @@ class CodexCLIProvider:
     variaveis_padrao = ("CODEX_HOME",)
 
     def __init__(self, route: str = "cli_assinatura", executable: str = "codex",
-                 extra_args: list[str] | None = None, variaveis_extras: tuple[str, ...] = ()):
+                 extra_args: list[str] | None = None, variaveis_extras: tuple[str, ...] = (),
+                 isolamento_leitura: str | None = None):
         self.route = route
         self.executable = executable
         self.extra_args = list(extra_args or [])
         self.variaveis = (*self.variaveis_padrao, *variaveis_extras)
+        # `--sandbox read-only` restringe escrita, não leitura: o agente lê o que a identidade do SO do
+        # lançador lê. Sem a descrição do isolamento externo que impede isso, a rota não roda (#9).
+        self.isolamento_leitura = str(isolamento_leitura or "").strip()
 
     def build_args(self, exe: str, request: ProviderRequest | None = None) -> list[str]:
         # Sandbox somente leitura, sem persistir sessão, sem config.toml do usuário (servidores MCP)
@@ -366,6 +375,12 @@ class CodexCLIProvider:
                 "--ignore-rules", "--skip-git-repo-check", *self.extra_args, "-"]
 
     def call(self, request: ProviderRequest) -> ProviderResult:
+        if not self.isolamento_leitura:
+            return ProviderResult(self.provider_id, self.route, "disabled", dispatched=False,
+                                  diagnostic="Codex CLI sem isolamento de leitura declarado: com --sandbox read-only "
+                                             "o agente lê fora da pasta temporária com a identidade do lançador "
+                                             "(state/, outros projetos). Rode-o sob conta do SO, contêiner ou VM que "
+                                             "exponha só a pasta de trabalho e informe isso em isolamento_leitura")
         exe = shutil.which(self.executable)
         if exe is None:
             return ProviderResult(self.provider_id, self.route, "failed", dispatched=False,

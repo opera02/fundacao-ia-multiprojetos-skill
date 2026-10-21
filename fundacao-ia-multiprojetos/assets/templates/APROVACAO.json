@@ -6,7 +6,7 @@
   "artifact_id": null,
   "artifact_version": null,
   "content_hash": null,
-  "hash_alg": "sha256-canonico (UTF-8, LF, NFC; JSON RFC 8785)",
+  "hash_alg": "sha256-canonico (receita do kit em fundacao/core/canon.py: UTF-8, LF, NFC; JSON com chaves ordenadas e sem espaços; não é JCS/RFC 8785)",
   "approved_action": "gerar_minuta_de_contrato",
   "approved_by": null,
   "approved_at": null,

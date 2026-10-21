@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import unittest
 
-from helpers import FoundationTestCase
+from helpers import KIT, FoundationTestCase
 
 from fundacao.adapters.base import ProviderRequest
 from fundacao.adapters.cli import parse_claude_json, parse_codex_jsonl
@@ -102,11 +103,17 @@ class TestRotas(FoundationTestCase):
 
     def test_politica_distribuida_mantem_sigiloso_so_local(self):
         from fundacao.core.routing import load_policy
+        if (KIT / "registry" / "kit_install.json").exists():
+            # Raiz implantada: registry/ é configuração local (pode mudar por decisão registrada, como a
+            # rota sigilosa); o instalar_kit.py a preserva e a lista em configuracao_local_preservada.
+            self.skipTest("raiz implantada: a política distribuída é conferida no kit da skill")
         distribuida = load_policy(self.root)
         self.assertEqual(distribuida["task_routes"]["sigiloso"], DEFAULT_POLICY["task_routes"]["sigiloso"])
         self.assertEqual(distribuida["task_routes"]["sigiloso"], ["local"])
+
+    def test_sigiloso_nao_escoa_para_rota_paga_quando_a_local_falha(self):
         # mesmo com api_paga habilitada e configurada, a falha da rota local bloqueia (não escoa)
-        p = load_policy(self.root)
+        p = copy.deepcopy(DEFAULT_POLICY)
         p["routes"]["local"]["enabled"] = True
         p["routes"]["api_paga"]["enabled"] = True
         paga = SimulatedProvider("api-paga-sim")

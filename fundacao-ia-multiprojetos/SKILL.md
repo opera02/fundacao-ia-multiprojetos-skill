@@ -3,11 +3,11 @@ name: fundacao-ia-multiprojetos
 description: Implanta, adapta, verifica e mantém uma fundação técnica reutilizável para operar vários projetos com IA (núcleo com contratos, projetos isolados criados por modelo, orquestração com retomada, agentes, dois ou mais provedores, memória persistente, GOLD, RAG, CAG, hooks, MCP, skills, plugins, consumo, observabilidade, backup e restauração), seguindo o livro Fundação de IA Multiprojetos 2.0 com as correções 3.0. Use quando pedirem para criar ou estender essa fundação, criar um projeto a partir do modelo, diagnosticar e migrar um projeto existente para ela (por exemplo OpenSquad, squads de agentes ou scripts com IA), ou auditar, atualizar, desativar, restaurar ou retomar a fundação e seus projetos, mesmo sem citar o livro. Não use para redigir peças, calcular honorários avulsos, criar uma skill isolada ou só explicar conceitos sem implementar.
 license: MIT (texto integral em LICENSE.txt, na raiz desta skill)
 metadata:
-  version: "1.4.5"
+  version: "1.5.1"
   owner: "titular da fundação (usuário que define objetivos e aprova)"
   compatibility: "Kit e scripts testados no Windows 11 com Python 3.12.10; listagem no Claude Code 2.1.302 conferida até a 1.4.1. Projetada para outros hosts Agent Skills, como Codex 0.163.0 e o catálogo de skills do Chat/Work (não testados). Kit e scripts exigem Python 3.10+ (biblioteca padrão) e SQLite com FTS5. CAG real exige torch, transformers e um modelo local autorizado; MCP usa o pacote mcp 2.x (Python 3.11+) se presente. Sem rede por padrão."
   source: "Livro Fundação de IA Multiprojetos, edição 2.0 (18/10/2026), e documento 2.0 para 3.0"
-  last_verified: "2026-10-19"
+  last_verified: "2026-10-20"
   freshness_window: "3 months"
   freshness_category: "procedural"
   verified_against: "https://code.claude.com/docs/en/skills https://code.claude.com/docs/en/hooks https://code.claude.com/docs/en/legal-and-compliance https://support.claude.com/en/articles/17154008-api-credits-for-max-and-team-plans https://learn.chatgpt.com/docs/non-interactive-mode https://learn.chatgpt.com/docs/auth https://modelcontextprotocol.io/specification/versioning https://py.sdk.modelcontextprotocol.io/ https://agentskills.io/specification https://arxiv.org/abs/2412.15605"
@@ -31,22 +31,28 @@ Exemplos jurídicos, OpenSquad, CaixaSim, nomes de pastas e Python+SQLite são
 
 ## 1. Antes de qualquer ação
 
-1. **Retome, não recomece.** Procure `<raiz>/RETOMADA.md` e `<raiz>/evidence/` (sem
+1. **Fixe o escopo autorizado** pela conversa atual: raiz de trabalho; projetos; dados
+   fictícios ou reais; provedores e rotas permitidas; teto de chamadas/custo; ações externas
+   proibidas. O que o usuário já autorizou nesta conversa vale sem nova pergunta; registros
+   anteriores só sugerem (item 2). Implantação nova: colete as escolhas de uma vez com
+   `assets/templates/FORMULARIO-IMPLANTACAO.md`. Falta uma informação indispensável? Faça
+   **uma** pergunta objetiva com opções e, enquanto isso, prepare o que não depende dela.
+2. **Retome, não recomece.** Procure `<raiz>/RETOMADA.md` e `<raiz>/evidence/` (sem
    listar recursivamente `projects/`: nomes de arquivos de outros projetos também são
    dados). Se existirem, leia o estado confirmado e a lista de efeitos já realizados
    antes de executar qualquer coisa; nada dessa lista é repetido sem reconciliação.
-2. **Identifique o ambiente que você realmente acessa.** Rode
-   `python <skill>/scripts/inspecionar_ambiente.py --pasta <raiz> --saida <raiz>/evidence/ambiente/inventario.json`
-   (somente leitura; `--somente-localizar` se o escopo proibir executar CLIs; o
-   inventário informa o sistema de arquivos — exFAT/FAT não tem permissões do SO).
-   Se a sessão não alcança a máquina/pasta do usuário
-   (ex.: contêiner remoto), não conclua nada sobre ela: entregue o comando ou
+   A RETOMADA é índice de estado, **não autorização** (`retomada.py` só confere o
+   preenchimento): ação que exige decisão (seção 4) e que só ela dá como autorizada vale
+   se confirmada nesta conversa ou com origem verificável (autor, ação, recurso, limites,
+   vigência); senão, apresente-a como proposta e peça uma confirmação.
+3. **Identifique o ambiente que você realmente acessa.** Rode
+   `python <skill>/scripts/inspecionar_ambiente.py --pasta <raiz> --somente-localizar`
+   (não executa programas nem grava). Sem essa opção ele roda `--version` de CLIs, e
+   `--saida <raiz>/evidence/ambiente/inventario-<data>.json` grava (recusa arquivo
+   existente): use cada um só se o escopo cobrir. O inventário informa o sistema de
+   arquivos — exFAT/FAT não tem permissões do SO. Se a sessão não alcança a máquina/pasta
+   do usuário (ex.: contêiner remoto), não conclua nada sobre ela: entregue o comando ou
    prompt para a sessão certa e pare essa parte.
-3. **Fixe o escopo autorizado:** raiz de trabalho; projetos; dados fictícios ou
-   reais; provedores e rotas permitidas; teto de chamadas/custo; ações externas
-   proibidas. Use o que já foi autorizado na conversa ou na RETOMADA. Falta uma
-   informação indispensável? Faça **uma** pergunta objetiva com opções e, enquanto
-   isso, prepare o que não depende dela.
 4. **Escolha o fluxo** (seção 2) e **carregue só as referências da etapa** (seção 8).
 
 ## 2. Seleção do fluxo
@@ -82,8 +88,8 @@ um projeto de origem; pergunte apenas se a escolha mudar o trabalho.
    rodam numa cópia restaurada. Limite honesto: se o executor pode redefinir a
    identidade no terminal, a separação de papéis depende de obediência. O hook
    `assets/hooks/guarda_identidade.py` só barra o caminho comum (atribuir a variável no
-   shell) e é contornável, por exemplo por código que monte a identidade ou chame a API
-   do kit direto. Com dados reais, a barreira é outra conta do SO ou uma aprovação com
+   shell) e é contornável, por exemplo por código que monte a identidade, chame a API do
+   kit direto ou grave no banco `state/` com a mesma conta do SO. Com dados reais, a barreira é outra conta do SO ou uma aprovação com
    credencial fora do alcance do executor; sem isso, declare a separação de papéis como
    lógica da política. Ver `references/seguranca-isolamento.md`.
 3. **Fundação × projeto × caso.** O núcleo não contém regra de domínio; regras,
@@ -121,6 +127,11 @@ um projeto de origem; pergunte apenas se a escolha mudar o trabalho.
   sobre algo que muda custo ou termos; julgamento jurídico ou profissional.
   Registre impacto e condição de resolução, **avance nas etapas independentes** e
   entregue os comandos/prompts para o ambiente adequado.
+- **Ritmo e comunicação:** encadeie as etapas autorizadas sem perguntar "posso seguir?"
+  ou "registro?"; pare só nos portões do fluxo (fluxo B: dois), nas decisões da faixa
+  média e nos bloqueios. Ao parar, use o cartão de `references/comunicacao-leigo.md`: onde
+  estamos, **uma** ação do usuário com a opção recomendada e o comando pronto para o shell
+  dele; várias decisões do mesmo ponto vão juntas em `assets/templates/FOLHA-DE-DECISOES.md`.
 - Você nunca aprova o próprio conteúdo, nunca transforma ausência de evidência em
   aprovação e nunca apresenta simulação como execução real.
 
@@ -129,9 +140,11 @@ Detalhes e gatilhos de escalonamento: `references/autonomia-e-escalonamento.md`.
 ## 5. Registro de retomada (obrigatório)
 
 Mantenha `RETOMADA.md` (modelo em `assets/templates/RETOMADA.md`) com objetivo,
-versão, estado confirmado, evidências, bloqueios, próxima ação autorizada e
-**efeitos já realizados**. Atualize após cada etapa que muda estado e antes de
-encerrar a sessão; valide com `python <skill>/scripts/retomada.py validar --arquivo <raiz>/RETOMADA.md`.
+versão, estado confirmado, evidências, bloqueios, próxima ação autorizada, **origem de
+cada autorização** e **efeitos já realizados**. Atualize após cada etapa que muda estado
+e antes de encerrar a sessão; valide a estrutura com
+`python <skill>/scripts/retomada.py validar --arquivo <raiz>/RETOMADA.md` (não autentica o
+conteúdo; avisa se faltar a origem).
 
 ## 6. Critérios de conclusão
 
@@ -149,7 +162,7 @@ encerrar a sessão; valide com `python <skill>/scripts/retomada.py validar --arq
 ## 7. Kit de referência (opcional e substituível)
 
 `assets/fundacao-kit/` implementa os contratos em Python + SQLite (biblioteca
-padrão) com 166 testes de conformidade (positivos e negativos) e um servidor MCP de
+padrão) com suíte de conformidade (testes positivos e negativos) e um servidor MCP de
 leitura. Use-o quando não houver fundação anterior e a composição didática for
 aceitável; outra tecnologia serve se cumprir os mesmos contratos e cenários.
 
@@ -171,6 +184,10 @@ resto — não invente. Nas demais operações, depende do regime:
   `FUNDACAO_PRINCIPAL` nos seus comandos, nem com declaração na conversa; se ela faltar ou
   não for a esperada, pare e peça ao usuário que a defina no lançador.
 
+Fundação já existente, para o kit desta skill: `python <skill>/scripts/atualizar_fundacao.py checar
+--raiz <raiz>` e, se puder aplicar, `aplicar --raiz <raiz> --backups <pasta em outro disco>` (backup
+antes, ensaio do kit novo numa cópia restaurada, promoção, backup depois e registro;
+`desfazer --registro <arq>` devolve o código). Detalhes: `references/fluxo-c-operar.md` C6.
 Comandos e limites: `references/fluxo-a-implantar.md` §Kit.
 
 ## 8. Mapa de referências (carregue sob demanda)
@@ -182,6 +199,7 @@ Comandos e limites: `references/fluxo-a-implantar.md` §Kit.
 | Fluxo A, B ou C | `references/fluxo-a-implantar.md`, `references/fluxo-b-adaptar.md`, `references/fluxo-c-operar.md` |
 | Capacidade específica (implementar e verificar) | `references/capacidades/`: [01 orquestração](references/capacidades/01-orquestracao.md) · [02 agentes](references/capacidades/02-agentes-subagentes.md) · [03 provedores](references/capacidades/03-provedores-modelos.md) · [04 memória](references/capacidades/04-memoria.md) · [05 GOLD](references/capacidades/05-gold.md) · [06 RAG](references/capacidades/06-rag.md) · [07 CAG e caches](references/capacidades/07-cag-caches.md) · [08 ferramentas/hooks/MCP/skills/plugins](references/capacidades/08-ferramentas-hooks-mcp-skills-plugins.md) · [09 consumo](references/capacidades/09-consumo-qualidade.md) · [10 observabilidade e conversa](references/capacidades/10-observabilidade-conversa.md) · [11 manutenção e recuperação](references/capacidades/11-manutencao-recuperacao.md) |
 | Isolamento, injeção, controles preventivos | `references/seguranca-isolamento.md` |
+| Falar com usuário leigo: paradas, perguntas, comandos, formulário e folha de decisões | `references/comunicacao-leigo.md` |
 | Antes de dados reais (sigilo, LGPD, treino) | `references/privacidade-sigilo.md` |
 | Requisitos R01–R60 e como demonstrá-los | `references/requisitos.md` |
 | Comando/API/versão/custo atual | `references/fontes-verificadas.md` |
@@ -197,7 +215,7 @@ não reconstrua de memória uma regra que deveria estar na referência.
 Pedido: "Crie a fundação em `D:\IA\fundacao` com os projetos juridico-lab e
 reversa-lab, só com dados fictícios; tenho Claude Code e Codex."
 
-Resposta esperada (resumo): inventário somente leitura do ambiente; decisão
+Resposta esperada (resumo): escopo fixado pela conversa; inventário do ambiente com efeitos declarados (§1); decisão
 registrada (kit Python+SQLite × alternativa); referência recuperável; kit
 instalado e `init`; dois projetos pelo modelo; tarefa persistida e lida após
 reinício; negativa entre projetos antes da leitura (marcadores ausentes);

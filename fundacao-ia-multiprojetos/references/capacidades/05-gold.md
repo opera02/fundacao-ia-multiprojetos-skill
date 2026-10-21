@@ -67,6 +67,6 @@ revisor autenticado [Livro p87].
 ## Com o kit
 `fundacao/core/knowledge.py` (`register_source`, `prepare`, `curate` com `RUBRIC`,
 `withdraw`, `cleanup`). Dados didáticos (GUIA-001/002/003): `references/livro/m05-gold-rag.md`.
-Testes: `tests/test_conhecimento.py`.
+Testes: `tests/test_conhecimento.py`, `tests/test_auditoria_1_5_0_dados.py` (#12, #18).
 
-> **No kit:** identificadores de fonte são qualificados pelo projeto (`juridico-lab/GUIA-001`; citação `juridico-lab/GUIA-001@1, p. 2`). Os nomes curtos do livro (`GUIA-001@1`) continuam valendo como exemplo didático [Decisão: evita colisão e sondagem entre projetos].
+> **No kit:** identificadores de fonte são qualificados pelo projeto (`juridico-lab/GUIA-001`; citação `juridico-lab/GUIA-001@1, p. 2`). Os nomes curtos do livro (`GUIA-001@1`) continuam valendo como exemplo didático [Decisão: evita colisão e sondagem entre projetos]. Um identificador de fonte pertence a um só escopo (projeto e caso), e a versão é inteiro a partir de 1 [varredura da 1.4.5, #12, #18].

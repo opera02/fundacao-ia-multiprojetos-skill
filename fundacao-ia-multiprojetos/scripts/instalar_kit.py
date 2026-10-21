@@ -14,13 +14,16 @@ inteira (código 4, nada escrito).
   nunca é sobrescrita, nem com `--atualizar`.
 - Conflito sem decisão: NADA é escrito; a saída traz o plano revisável; código 3.
 - `--atualizar`: substitui os arquivos de código diferentes, guardando antes a versão do destino
-  em `registry/kit_backup/<data>/` (retorno = copiar de volta) — use só com referência
+  em `registry/kit_backup/<data>-<sufixo>/` (retorno = copiar de volta; o sufixo aleatório impede que
+  duas execuções no mesmo segundo dividam a pasta) — use só com referência
   recuperável feita e decisão registrada (fluxo C6).
 - `--manter-conflitos`: decisão explícita de estado MISTO: copia os ausentes e preserva os
   conflitos; o registro anota `composicao: "mista"` e a saída sai com código 3.
-- Escrita numa área de preparação dentro do destino (`registry/kit_preparo/<data>/`), conferida
+- Escrita numa área de preparação dentro do destino (`registry/kit_preparo/<data>-<sufixo>/`), conferida
   por hash, e promoção arquivo a arquivo; falha na promoção desfaz o que já tinha sido promovido
-  (código 5).
+  (código 5). Se o próprio retorno falhar, a saída não diz que desfez: `desfeito: false`,
+  `composicao: "indeterminada"`, cada arquivo não devolvido em `erros` e o caminho do backup em
+  `backup_dos_substituidos`; a execução entra no registro (auditoria sobre a 1.4.1, A03).
 - Depois da promoção, confere a composição: todos os arquivos de código do kit no destino com o
   hash da origem → `composicao: "verificada"` e `kit_version` declarada. Sem isso,
   `kit_version` fica nula e `versao_no_destino` mostra o que o `__init__.py` do destino declara.
@@ -29,7 +32,7 @@ inteira (código 4, nada escrito).
 
 Códigos: 0 instalação completa e verificada (ou simulação sem impedimento) · 2 uso incorreto ·
 3 incompleta (conflitos; nada escrito, ou estado misto por decisão) · 4 recusada por contenção ·
-5 falha durante a promoção (desfeita).
+5 falha durante a promoção (desfeita, ou com retorno incompleto: veja `desfeito`).
 Uso: python instalar_kit.py --destino RAIZ [--simular] [--atualizar | --manter-conflitos]
 Depois: cd RAIZ && python -m fundacao init --admin <identidade-do-titular>
 """
@@ -42,12 +45,14 @@ import json
 import os
 import shutil
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[1] / "assets" / "fundacao-kit"
 SKIP_PARTS = {"__pycache__", ".pytest_cache"}
 CONFIGURACAO = "registry"  # primeira parte do caminho: configuração local da fundação
+RETORNO_INCOMPLETO = "retorno incompleto em "  # prefixo, em `erros`, de arquivo que o desfazer não devolveu (A03)
 
 
 def sha(path: Path) -> str:
@@ -111,7 +116,8 @@ def planejar(dest: Path, atualizar: bool, carimbo: str) -> dict:
 
 
 def promover(dest: Path, plano: dict, carimbo: str) -> tuple[str | None, list[str]]:
-    """Prepara, confere e promove. Devolve (pasta do backup ou None, erros). Falha = desfeita."""
+    """Prepara, confere e promove. Devolve (pasta do backup, se existir, ou None; erros). Falha = desfeita; o
+    que o desfazer não conseguir devolver vai para `erros` com o prefixo RETORNO_INCOMPLETO, nunca é engolido."""
     origem = {rel: src for rel, src in arquivos_do_kit()}
     preparo = dest / "registry" / "kit_preparo" / carimbo
     backup = dest / "registry" / "kit_backup" / carimbo
@@ -140,21 +146,33 @@ def promover(dest: Path, plano: dict, carimbo: str) -> tuple[str | None, list[st
             os.replace(preparo / rel, alvo)
             promovidos.append((rel, existia))
     except OSError as exc:
+        erros = [str(exc)]
         for rel, existia in reversed(promovidos):  # desfaz o que já tinha sido promovido
             try:
                 if existia:
                     shutil.copy2(backup / rel, dest / rel)
                 else:
                     (dest / rel).unlink()
-            except OSError:
-                pass
+            except OSError as falha:
+                acao = f"copie de volta de {backup / rel}" if existia else "apague o arquivo novo"
+                erros.append(f"{RETORNO_INCOMPLETO}{rel} ({acao}): {falha}")
         shutil.rmtree(preparo, ignore_errors=True)
-        return None, [str(exc)]
+        return (str(backup) if backup.is_dir() else None), erros
     shutil.rmtree(preparo, ignore_errors=True)
     raiz_preparo = dest / "registry" / "kit_preparo"
     if raiz_preparo.is_dir() and not any(raiz_preparo.iterdir()):
         raiz_preparo.rmdir()
     return (str(backup) if plano["substituir"] else None), []
+
+
+def registrar(dest: Path, record: dict) -> None:
+    """Acrescenta a execução a `registry/kit_install.json`."""
+    reg = dest / "registry"
+    reg.mkdir(parents=True, exist_ok=True)
+    log = reg / "kit_install.json"
+    history = json.loads(log.read_text(encoding="utf-8")) if log.exists() else []
+    history.append(record)
+    log.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def conferir_composicao(dest: Path) -> list[str]:
@@ -174,7 +192,8 @@ def main() -> int:
                          help="estado misto por decisão explícita: copia os ausentes e preserva os conflitos")
     args = ap.parse_args()
     dest = args.destino.resolve()
-    carimbo = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # Sufixo aleatório: duas execuções no mesmo segundo não dividem backup nem preparo (A03).
+    carimbo = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
     versao_antes = kit_version(dest)
     plano = planejar(dest, args.atualizar, carimbo)
     record = {
@@ -209,8 +228,15 @@ def main() -> int:
     backup, erros = promover(dest, plano, carimbo)
     record["backup_dos_substituidos"] = backup
     if erros:
-        record.update(kit_version=None, versao_no_destino=kit_version(dest), composicao="nao_alterada",
-                      atualizacao_incompleta=True, erros=erros, desfeito=True)
+        retorno_incompleto = any(e.startswith(RETORNO_INCOMPLETO) for e in erros)
+        record.update(kit_version=None, versao_no_destino=kit_version(dest),
+                      composicao="indeterminada" if retorno_incompleto else "nao_alterada",
+                      atualizacao_incompleta=True, erros=erros, desfeito=not retorno_incompleto)
+        if retorno_incompleto:
+            record["acao_necessaria"] = ("a promoção falhou e o retorno também: o destino ficou com parte do kit "
+                                         "novo. Siga cada item 'retorno incompleto' de `erros` (a versão anterior "
+                                         "está em `backup_dos_substituidos`) e confira antes de repetir")
+            registrar(dest, record)  # escreveu algo que ficou no destino
         print(json.dumps(record, ensure_ascii=False, indent=2))
         return 5
     divergentes = conferir_composicao(dest)
@@ -222,12 +248,7 @@ def main() -> int:
         atualizacao_incompleta=not verificada,
         divergentes_do_kit=divergentes,
     )
-    reg = dest / "registry"
-    reg.mkdir(parents=True, exist_ok=True)
-    log = reg / "kit_install.json"
-    history = json.loads(log.read_text(encoding="utf-8")) if log.exists() else []
-    history.append(record)
-    log.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+    registrar(dest, record)
     print(json.dumps(record, ensure_ascii=False, indent=2))
     return 0 if verificada else 3
 

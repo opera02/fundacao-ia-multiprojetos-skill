@@ -17,6 +17,11 @@ caminho absoluto ou `..`, sem evals/ nem bytecode no .skill), integridade dos zi
 passo antes da promoção deixa a distribuição anterior intacta; falha durante a promoção devolve o
 conjunto anterior ao lugar.
 
+Antes de tudo, a árvore da skill é percorrida SEM seguir ligações: um link simbólico ou uma junção em
+qualquer ponto (a própria pasta da skill inclusive) recusa o empacotamento, porque o zip seguiria a
+ligação e publicaria o conteúdo do alvo, por exemplo um arquivo do computador que gera a entrega
+(varredura da 1.4.5, #1). O zip completo leva só os arquivos comuns dessa listagem.
+
 Uso: python empacotar.py --skill-creator <pasta do skill-creator> [--dist <pasta>]
 Códigos: 0 promovido · 1 falha (anterior preservado) · 2 ferramenta ausente ou uso incorreto.
 """
@@ -28,6 +33,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import zipfile
@@ -43,6 +49,41 @@ CONJUNTO = (f"{NOME}.skill", f"{NOME}-completo.zip", "SHA256SUMS.txt", "EMPACOTA
 
 def sha256(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def e_ligacao(p: Path) -> bool:
+    """Link simbólico ou junção do Windows (a regra do `instalar_skill.py`; `os.path.isjunction` só existe a
+    partir do 3.12, e no 3.10/3.11 a junção é reconhecida pela marca de ponto de montagem do `lstat`)."""
+    if p.is_symlink():
+        return True
+    is_junction = getattr(os.path, "isjunction", None)
+    if is_junction is not None:
+        return bool(is_junction(p))
+    if os.name != "nt":
+        return False
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return False
+    return bool(getattr(st, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT) and \
+        getattr(st, "st_reparse_tag", None) == stat.IO_REPARSE_TAG_MOUNT_POINT
+
+
+def arquivos_da_skill(raiz: Path) -> list[Path]:
+    """Arquivos comuns da árvore da skill, sem seguir ligações e sem bytecode. Uma ligação em qualquer ponto
+    recusa o empacotamento (RuntimeError): seguida, publicaria o conteúdo de fora da árvore (#1)."""
+    ligacoes = [raiz.name] if e_ligacao(raiz) else []
+    arquivos = []
+    for base, pastas, nomes in os.walk(raiz):
+        ligacoes += [(Path(base) / n).relative_to(raiz).as_posix() for n in [*pastas, *nomes]
+                     if e_ligacao(Path(base) / n)]
+        pastas[:] = [d for d in pastas if not e_ligacao(Path(base) / d)]  # não desce por uma ligação
+        arquivos += [Path(base) / n for n in nomes if not e_ligacao(Path(base) / n) and (Path(base) / n).is_file()]
+    if ligacoes:
+        raise RuntimeError("ligação (link simbólico ou junção) na árvore da skill: "
+                           f"{', '.join(sorted(ligacoes)[:10])}; o zip publicaria o conteúdo do alvo dela — "
+                           "substitua por arquivos comuns")
+    return sorted(p for p in arquivos if "__pycache__" not in p.relative_to(raiz).parts and p.suffix != ".pyc")
 
 
 def versao_da_skill(skill_md: str) -> str:
@@ -131,6 +172,7 @@ def main() -> int:
     preparo = dist / f".preparo-{datetime.now(timezone.utc):%Y%m%dT%H%M%S%fZ}"
     preparo.mkdir()
     try:
+        arquivos = arquivos_da_skill(SKILL)  # antes do package_skill, que também seguiria as ligações (#1)
         # UTF-8 no processo filho: o package_skill imprime emojis, e o console cp1252 do Windows quebraria.
         r = subprocess.run([sys.executable, "-B", "-m", "scripts.package_skill", str(SKILL), str(preparo)],
                            cwd=str(creator), capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -144,9 +186,8 @@ def main() -> int:
         if problemas:
             raise RuntimeError("; ".join(problemas))
         with zipfile.ZipFile(completo, "w", zipfile.ZIP_DEFLATED) as z:
-            for p in sorted(SKILL.rglob("*")):
-                if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc":
-                    z.write(p, (Path(SKILL.name) / p.relative_to(SKILL)).as_posix())
+            for p in arquivos:
+                z.write(p, (Path(SKILL.name) / p.relative_to(SKILL)).as_posix())
         problemas = conferir_pacote(completo, com_evals=(SKILL / "evals").is_dir())
         if problemas:
             raise RuntimeError("; ".join(problemas))

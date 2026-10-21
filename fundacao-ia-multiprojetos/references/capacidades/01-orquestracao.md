@@ -37,10 +37,18 @@ repetir efeitos já confirmados.
    transação durante chamada de modelo [Livro p45–46].
 5. **Idempotência e reconciliação:** mesma chave → reutiliza resultado validado;
    efeito externo de desfecho incerto é **reconciliado** pelo recibo antes de
-   repetir; não prometa execução única a serviços externos [Livro p45].
+   repetir; não prometa execução única a serviços externos [Livro p45]. No kit, saída
+   gravada sem confirmação só é reconciliada se o banco reservou a saída daquela geração
+   da posse e os bytes conferem; o recibo na pasta do projeto é registro, não prova. Saída
+   concluída que sumiu ou mudou: a etapa e as derivadas são refeitas [auditoria sobre a
+   1.4.1, A04; varredura da 1.4.5, #14].
 6. **Limites:** tentativas por etapa, prazo de posse (*lease*) para detectar
    trabalhador abandonado, orçamento de chamadas e de tempo; erros permanentes
    (login ausente, entrada inválida, permissão negada) não são repetidos [Livro p47].
+   No kit, a posse é por geração, com arquivo próprio por execução, e a posse vencida só
+   habilita a retomada; o prazo do orçamento de tempo (`max_seconds`) é gravado na 1ª
+   execução, vale em cada débito e não renasce na retomada — cooperativo: recusa novas
+   chamadas e lotes, não interrompe código em execução [auditoria sobre a 1.4.1, A05/A07].
 7. **Decisão humana:** etapa `waiting_human` apresenta opções concretas; a decisão
    fica ligada ao hash do conteúdo apresentado; tarefas independentes continuam
    [Livro p46; R07].
@@ -51,7 +59,8 @@ repetir efeitos já confirmados.
 |---|---|
 | Normal | ordem correta; transições registradas; contagem de execuções = 1 por etapa |
 | Interrupção após extração (estado confirmado) | retomada pelo mesmo `run_id` não reexecuta a extração |
-| Saída gravada sem confirmação | reconciliação pelo recibo/hash, sem reexecutar |
+| Saída gravada sem confirmação | reconciliação pela reserva no banco e pelos bytes, sem reexecutar; recibo forjado não confirma |
+| Saída concluída alterada ou removida | etapa e derivadas refeitas |
 | Fonte alterada | invalida só as etapas derivadas daquela entrada |
 | Dependência falhou | etapas dependentes não iniciam |
 | Erro transitório | repete até o limite e para |
@@ -76,4 +85,5 @@ desconhecidos para testar interrupção (use modo de teste) [Livro p44–47].
 ## Com o kit
 `fundacao/core/tasks.py` (`Coordinator`, `StepDef`, `Budget`, `NeedsHuman`,
 `TransientError`, `PermanentError`, modo `interrupt=(etapa,'before_commit'|'after_commit')`).
-Testes: `tests/test_orquestracao.py` (10 casos).
+Testes: `tests/test_orquestracao.py` (13 casos) e `tests/test_auditoria_1_5_0_execucao.py`
+(saídas conferidas, posse, prazo, autorização na transação).

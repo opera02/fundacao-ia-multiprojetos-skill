@@ -78,11 +78,19 @@ Mudança de banco: defina compatibilidade de leitura e retorno antes de escrever
 novos (`PRAGMA user_version` + scripts numerados; *expand/contract*); reverter código
 não reverte dados. Versão declarada ≠ versão carregada pelo host: recarregue e confira.
 Fixe versões de CLIs, SDKs e modelos no perfil "dados reais".
-Kit: `python <skill>/scripts/instalar_kit.py --destino <raiz>` monta o plano antes de
+Kit, em um comando [Decisão; 1.5.0]: `python <skill>/scripts/atualizar_fundacao.py checar --raiz <raiz>`
+(só lê: versões, o que muda, alteração local pelo hash registrado na instalação, identidade, cadeia) e
+`aplicar --raiz <raiz> --backups <outro disco>`: backup ANTES verificado → ensaio do kit novo numa cópia
+restaurada (`init`, cadeia, suíte; falha que já existia não bloqueia, regressão bloqueia sem tocar a raiz)
+→ promoção → backup DEPOIS → registro em `evidence/atualizacoes/`; `desfazer --registro <arq>` devolve o
+código se o `user_version` do banco não mudou. Etapa deixada em `running` pelo kit anterior é refeita
+quando a posse vence (o recibo antigo não basta): reconcilie efeitos externos antes de retomar.
+Passo a passo: `python <skill>/scripts/instalar_kit.py --destino <raiz>` monta o plano antes de
 escrever. Com conflito (código alterado localmente), **nada é escrito**: a saída traz o plano
 (`conflitos_preservados`, `atualizacao_incompleta: true`, `kit_version: null`) e o código 3.
 Depois da decisão: `--atualizar` substitui os arquivos de código diferentes e guarda a versão
-anterior em `registry/kit_backup/<data>/` (retorno = copiar de volta); `--manter-conflitos`
+anterior em `registry/kit_backup/<data>-<sufixo>/` (retorno = copiar de volta; código 5 com
+`desfeito: false` = o retorno também falhou); `--manter-conflitos`
 aceita, por decisão explícita, um estado **misto** (copia o que falta, preserva os conflitos,
 anota `composicao: "mista"` em `registry/kit_install.json` e sai com código 3). A configuração
 local (`registry/`: rotas, componentes) nunca é sobrescrita, nem com `--atualizar`. Ligação ou
@@ -137,6 +145,16 @@ retome sem repetir efeito confirmado; meça tempo e perda observável. Sem regis
 de retiradas disponível, a restauração não está pronta para usuários.
 Kit: `python -m fundacao backup restaurar --origem <ref> --destino <novo> --retiradas <log>`
 (backup e restauração copiam todos os projetos: exigem identidade com `admin` na fundação).
+A cópia leva `fundacao/`, `registry/`, `templates/`, `projects/`, o banco e os registros da fundação —
+`docs/`, `evidence/`, `ferramentas/`, `tests/` e `RETOMADA.md` —, sem complemento à parte; a lista dos
+registros fica em `registry/backup_policy.json` (`{"incluir": [...]}`). Segredos (`.env`) e o que é
+reconstruível (modelos, ambientes virtuais) ficam fora; destino dentro de pasta copiada é recusado.
+Âncora da cópia [varredura da 1.4.5, #8]: o `backup criar` devolve `sha256_manifesto` e o anota em
+`state/copias.jsonl`, ao lado do registro protegido; guarde o código fora da pasta da cópia e o
+livro junto do registro. A restauração confere a cópia por ele (`--sha256-manifesto` ou o livro ao
+lado de `--retiradas`): âncora errada não libera; cópia fora do livro, ou com código `fundacao/`
+diferente do kit que restaura, só com `--aceitar-copia-sem-ancora` (decisão do administrador,
+registrada); sem livro e com o mesmo código, libera com aviso `W_COPIA_SEM_ANCORA`.
 A restauração é autorizada pelo banco **da cópia**, aberto somente leitura — funciona com o
 banco de origem corrompido ou perdido e não cria nada na origem. Não libera (código 3) quando
 o registro de retiradas não foi informado, não existe no caminho dado, é ilegível, tem

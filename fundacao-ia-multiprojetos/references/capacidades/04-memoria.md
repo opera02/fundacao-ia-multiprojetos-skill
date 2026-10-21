@@ -31,14 +31,17 @@ separados: tipo epistêmico × origem (humano/IA/documento) × estado — "a IA 
 3. Proposta sem origem é recusada; repetição com o mesmo identificador de operação
    não duplica (chave de operação e gravação na mesma transação) [Livro p74].
 4. Correção versionada: tabela de revisões; consulta normal = revisão vigente aprovada;
-   histórico só para quem tem permissão de auditoria; correção de erro ≠ mudança de
-   decisão [Livro p80–81].
+   histórico só para quem tem permissão de auditoria (memória de caso: auditoria no caso
+   [varredura da 1.4.5, #15]); correção de erro ≠ mudança de decisão [Livro p80–81].
 5. Concorrência: **revisão esperada** — edição baseada em revisão antiga recebe
-   conflito; a executora relê, compara e repropõe [Livro p81].
+   conflito; a executora relê, compara e repropõe [Livro p81]. Aprovação concorrente
+   obsoleta também falha com `RevisionConflict` [auditoria sobre a 1.4.1, A10].
 6. Estado corrente + revisão + evento numa transação (`BEGIN IMMEDIATE`, espera
    limitada); `PRAGMA foreign_keys = ON` em cada conexão [Livro p81].
 7. Derivados: artefato que usou `memória@revisão` é marcado "revisão necessária"
-   quando a memória muda; não é corrigido automaticamente [Livro p81].
+   quando a memória muda; não é corrigido automaticamente [Livro p81]. O derivado
+   registrado é artefato (memória e fonte GOLD, não): de memória para memória, só pela
+   promoção [varredura da 1.4.5, #7].
 8. Promoção ao comum: candidato **depurado** (sem nome de cliente/caso), justificativa,
    aprovação ligada ao **hash** do conteúdo exato por papel de curadoria, publicação
    como **novo** registro; o original restrito permanece; alteração após aprovação
@@ -47,7 +50,8 @@ separados: tipo epistêmico × origem (humano/IA/documento) × estado — "a IA 
    decisão, a origem é conferida de novo (dentro da transação): retirada, fora de vigência ou
    mudada desde o pedido impede a publicação, e retirar a origem encerra os candidatos pendentes.
    A retirada alcança a memória, as chaves `memória@revisão` e os derivados diretos e indiretos
-   registrados a partir delas (só arestas exatas, sem coincidência de prefixo); o `init` aplica
+   registrados a partir delas (só arestas exatas, sem coincidência de prefixo), sem sair do
+   escopo de quem retira, salvo a publicação aprovada [varredura da 1.4.5, #7]; o `init` aplica
    o mesmo alcance a memórias retiradas por kit anterior.
 9. [3.0 R5.4] Anti-envenenamento: quarentena de propostas, origem "documento" nunca
    autoaprovada, teste negativo com documento que tenta se promover.
@@ -77,4 +81,5 @@ demonstrada). Sem contas/identidades reais do SO → R18 demonstrado como "lógi
 política"; isolamento real pendente (ver `references/seguranca-isolamento.md`).
 
 ## Com o kit
-`fundacao/core/memory.py` (`MemoryService`). Testes: `tests/test_memoria.py` (8 casos).
+`fundacao/core/memory.py` (`MemoryService`). Testes: `tests/test_memoria.py` (8 casos),
+`tests/test_auditoria_1_5_0_dados.py` (A10; #7, #15, #19).

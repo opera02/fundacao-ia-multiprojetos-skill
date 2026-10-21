@@ -1,6 +1,6 @@
 # Árvore da skill e finalidade de cada componente
 
-Raiz: `fundacao-ia-multiprojetos/` · 146 arquivos. Pastas com muitos arquivos de mesma natureza são descritas uma vez. `evals/` fica fora do pacote `.skill` (vai no pacote completo).
+Raiz: `fundacao-ia-multiprojetos/` · 162 arquivos. Pastas com muitos arquivos de mesma natureza são descritas uma vez. `evals/` fica fora do pacote `.skill` (vai no pacote completo).
 
 | Caminho | Finalidade |
 |---|---|
@@ -14,10 +14,10 @@ Raiz: `fundacao-ia-multiprojetos/` · 146 arquivos. Pastas com muitos arquivos d
 | `assets/fundacao-kit/fundacao/mcp_servidor.py` | Servidor MCP de leitura da fundação (listar_projetos, listar_documentos, buscar) pela camada de autorização. |
 | `assets/fundacao-kit/registry/` (2 arquivos) | Registro de componentes (desligados por padrão) e política de rotas. |
 | `assets/fundacao-kit/templates/project/` (3 arquivos) | Modelo de projeto (instruções, contrato de entregas, exemplo fictício). |
-| `assets/fundacao-kit/tests/` (20 arquivos) | Suíte de conformidade (166 testes positivos e negativos, incluídas as regressões da auditoria externa da 1.3.4 em test_auditoria_*.py e as da auditoria final da 1.4.2 em test_auditoria_final_1_4_2.py; até 3 pulados quando o sistema não permite criar links simbólicos: falta de privilégio no Windows ou volume exFAT). |
+| `assets/fundacao-kit/tests/` (25 arquivos) | Suíte de conformidade (238 testes positivos e negativos, incluídas as regressões da auditoria externa da 1.3.4 em test_auditoria_*.py, as da auditoria final da 1.4.2 em test_auditoria_final_1_4_2.py e as da 1.5.0 em test_auditoria_1_5_0_*.py; até 4 pulados quando o sistema não permite criar links simbólicos: falta de privilégio no Windows ou volume exFAT). |
 | `assets/hooks/guarda_caminho.py` | Hook preventivo (PreToolUse) que nega escrita fora do projeto autenticado e ferramentas MCP não liberadas; falha fechada. |
 | `assets/hooks/guarda_identidade.py` | Hook PreToolUse (Bash/PowerShell) do regime de dados reais: nega troca de FUNDACAO_PRINCIPAL pela sessão; falha fechada. |
-| `assets/templates/` (15 arquivos) | Modelos reutilizáveis (diagnóstico, mapa funcional, plano de adaptação, decisão, contrato, inventário, evidências, aprovação, proveniência, auditoria, relatório final, checklist de dados reais, compatibilidade de hosts, retomada, matriz). |
+| `assets/templates/` (17 arquivos) | Modelos reutilizáveis (diagnóstico, mapa funcional, plano de adaptação, decisão, contrato, inventário, evidências, aprovação, proveniência, auditoria, relatório final, checklist de dados reais, compatibilidade de hosts, retomada, matriz, formulário de implantação, folha de decisões). |
 | `evals/acionamento/montar_simulacao.py` | Monta e pontua a simulação de acionamento (catálogo real de skills, sem gabarito). |
 | `evals/cenarios/run_cenarios.py` | Executor determinístico dos cenários CEN-01–CEN-16 em pastas descartáveis. |
 | `evals/evals.json` | Avaliações com subagentes (9: novo, existente, reexecução, incompatível, dependência, retomada, acesso cruzado, referência ausente, injeção em conteúdo autorizado). |
@@ -38,6 +38,7 @@ Raiz: `fundacao-ia-multiprojetos/` · 146 arquivos. Pastas com muitos arquivos d
 | `references/capacidades/09-consumo-qualidade.md` | Orçamento, limites, contexto seletivo; medição × estimativa × desconhecido. |
 | `references/capacidades/10-observabilidade-conversa.md` | Eventos, painel de estado, seleção do projeto autorizado, operação por conversa. |
 | `references/capacidades/11-manutencao-recuperacao.md` | Dependências reproduzíveis, atualização, substituição, backup, restauração isolada, retomada sem duplicar efeitos. |
+| `references/comunicacao-leigo.md` | Comunicação com o titular leigo: parar só com motivo, cartão de parada, uma ação por vez, comando pronto no shell certo, linguagem simples. |
 | `references/fluxo-a-implantar.md` | Fluxo A (A1–A8): implantar a fundação e criar projetos; entradas, ações, saídas, conclusão e falhas; comandos do kit. |
 | `references/fluxo-b-adaptar.md` | Fluxo B (B1–B10): diagnosticar e adaptar projeto existente; classes de compatibilidade; caracterização; reversão; encerramento. |
 | `references/fluxo-c-operar.md` | Fluxo C (C1–C11): verificar, auditar, atualizar, desativar, backup/restauração, retomada, novo projeto, promoção. |
@@ -61,15 +62,16 @@ Raiz: `fundacao-ia-multiprojetos/` · 146 arquivos. Pastas com muitos arquivos d
 | `references/privacidade-sigilo.md` | Antes de dados reais: sigilo, LGPD, treino e retenção (fatos 3.0 não verificados rotulados). |
 | `references/requisitos.md` | R01–R60 em forma compacta: evidência para aceitar, onde a skill atende, cenário. |
 | `references/seguranca-isolamento.md` | Identidade fora do modelo, ACL, negar por padrão, injeção, controles preventivos (hooks), provas negativas. |
+| `scripts/atualizar_fundacao.py` | Atualiza uma fundação para o kit da skill num só comando: checar (só lê), aplicar (backup antes, ensaio numa cópia restaurada, promoção, backup depois e registro) e desfazer. |
 | `scripts/backup_sqlite.py` | Backup consistente de SQLite pela API de backup, com verificação de integridade. |
 | `scripts/cag_kv_demo.py` | Demonstração do mecanismo CAG (prefill único, ramo KV por pergunta, frio × quente, invalidação); bloqueia sem modelo. |
 | `scripts/caracterizar.py` | Testes de caracterização (golden master) antes × depois para o Fluxo B. |
-| `scripts/inspecionar_ambiente.py` | Inventário somente leitura do ambiente (SO, Python, SQLite/FTS5, CLIs, WSL) sem ler segredos. |
+| `scripts/inspecionar_ambiente.py` | Inventário do ambiente (SO, Python, SQLite/FTS5, CLIs, WSL) sem ler segredos; consulta a versão das CLIs (salvo --somente-localizar) e só grava com --saida, que recusa arquivo existente. |
 | `scripts/instalar_kit.py` | Instala o kit de referência numa raiz, idempotente, preservando conflitos e registrando hashes. |
 | `scripts/manifesto.py` | Manifesto de hashes (criar/verificar/comparar) para referência recuperável; segredos excluídos sem leitura. |
 | `scripts/matriz.py` | Matriz de requisitos: iniciar, validar regras de estado/evidência e relatório ordenado por bloqueios. |
 | `scripts/mcp_ensaio.py` | Ensaio MCP real-local: servidor da fundação em processo separado (stdio), descoberta, chamada autorizada, negativa entre projetos e encerramento. |
 | `scripts/retomada.py` | Cria e valida o registro de retomada (campos mínimos). |
 | `scripts/sinais_compatibilidade.py` | Sinais objetivos de compatibilidade (caminho absoluto, escape, credencial, rede, dependências) e classe sugerida. |
-| `scripts/tests/` (5 arquivos) | Testes dos scripts da skill (instalador do kit, caracterização, manifesto e matriz), em pastas descartáveis; rodar com python -B -m unittest discover -s scripts/tests -t scripts/tests. |
+| `scripts/tests/` (12 arquivos) | Testes dos scripts da skill (instalação e atualização do kit, caracterização, manifesto, backup SQLite, matriz, retomada, inventário, hooks e conformidade com configuração local), em pastas descartáveis; rodar com python -B -m unittest discover -s scripts/tests -t scripts/tests. |
 | `scripts/verificar_referencias.py` | Confere links e caminhos citados pela skill (integridade das referências). |

@@ -18,6 +18,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from test_relatorio_tecnico_1_4_0 import autenticar_origem
+
 ENTREGA = Path(__file__).resolve().parents[1]
 INSTALADOR = ENTREGA / "instalar_skill.py"
 NOME = "fundacao-ia-multiprojetos"
@@ -59,6 +61,7 @@ class TestF17Juncoes(unittest.TestCase):
             codigo.append(f"sys.version_info = {versao!r}")
         codigo.append("sys.argv = [sys.argv[1], *sys.argv[2:]]")
         codigo.append("runpy.run_path(sys.argv[0], run_name='__main__')")
+        args = autenticar_origem(args)  # origem autenticada, exigida desde a 1.5.0 (#2)
         return subprocess.run([sys.executable, "-B", "-c", "\n".join(codigo), str(INSTALADOR), *map(str, args)],
                               env=self.env, capture_output=True, text=True, encoding="utf-8", errors="replace",
                               timeout=120)

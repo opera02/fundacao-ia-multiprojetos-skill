@@ -88,11 +88,9 @@ def prep2(amb: Path, ref: Path):
 
 def prep3(amb: Path, ref: Path):
     shutil.copytree(FIX / "legado-squad", amb / "origem")
-    rc.adaptar(amb, amb / "fundacao", amb / "origem")
-    # interrupção: o componente e o invólucro não chegaram a ser registrados
-    (amb / "fundacao" / "registry" / "components" / "legado_peticoes.json").unlink()
-    (amb / "ferramentas" / "executar_via_fundacao.py").unlink()
-    (amb / "ferramentas").rmdir()
+    # interrupção: o componente não chegou a ser registrado nem habilitado e o invólucro não foi criado
+    # (a adaptação para antes: nenhum evento de habilitação fica na trilha sem o registro correspondente)
+    rc.adaptar(amb, amb / "fundacao", amb / "origem", concluir=False)
     sh([PY, "-B", SCRIPTS / "retomada.py", "criar", "--saida", amb / "RETOMADA.md"])
     texto = (amb / "RETOMADA.md").read_text(encoding="utf-8").splitlines()
     valores = {
@@ -103,19 +101,22 @@ def prep3(amb: Path, ref: Path):
         "Objetivo atual:": "integrar o squad de petições (origem/) à fundação (fundacao/) preservando o comportamento",
         "Resultado aceito até aqui:": "diagnóstico aceito; classe 'adaptação por interfaces'",
         "Estado confirmado:": "cópia de trabalho em trabalho-legado/; golden master gravado em ref/golden.json (3 casos); "
-                              "projeto peticoes-legado criado; código legado copiado por lista positiva para "
-                              "fundacao/projects/peticoes-legado/data/legado (sem .env); adaptador squad_canonico.py "
-                              "escrito; módulo fundacao/components/legado_peticoes.py escrito",
+                              "projeto peticoes-legado criado; dados do legado (casos, agentes, squad.json, painel) "
+                              "copiados por lista positiva para fundacao/projects/peticoes-legado/data/legado (sem .env); "
+                              "código executável do legado (run.py, scripts/) copiado para "
+                              "fundacao/components/legado_peticoes_codigo/, com o manifesto de hashes no módulo "
+                              "fundacao/components/legado_peticoes.py (escrito); adaptador squad_canonico.py escrito",
         "Versão do código/configuração:": "manifesto da origem não gravado nesta sessão (gravar antes de concluir)",
         "Versão ou hash dos artefatos relevantes:": "ref/golden.json",
         "Permissões e limites que continuam válidos:": "titular é administrador; nenhuma permissão a terceiros",
         "Evidências:": "ref/golden.json; fundacao/state/state.sqlite (evento project_created)",
-        "Pendência prioritária:": "registrar o componente legado_peticoes no registro (registry/components/) habilitado "
-                                  "somente para peticoes-legado e criar o invólucro que executa o legado via fundação",
+        "Pendência prioritária:": "registrar o componente legado_peticoes no registro (registry/components/), somente "
+                                  "para peticoes-legado, e habilitá-lo pela fundação (componente habilitar grava o "
+                                  "entrypoint_sha256); depois criar o invólucro que executa o legado via fundação",
         "Próxima ação autorizada:": "concluir o registro do componente e o invólucro; depois comparar com ref/golden.json",
         "Verificação necessária para aceitá-la:": "0 divergências no golden master; origem inalterada",
         "Ações já realizadas que não devem ser repetidas:": "criação do projeto peticoes-legado; gravação do golden "
-                                                            "master; cópia do código legado",
+                                                            "master; cópia dos dados e do código do legado",
         "Aprovações que precisam ser revalidadas:": "nenhum",
         "Bloqueios de acesso, custo ou decisão:": "nenhum",
         "Última conferência do registro:": "2026-10-17 18:40 -0300 (sessão interrompida)",

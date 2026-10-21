@@ -12,6 +12,7 @@ Código 0 se todas as verificações passarem.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -156,20 +157,50 @@ def cen01(W: Path) -> Cenario:
     return c
 
 
-POSITIVA = ["run.py", "scripts", "agents", "squad.json", "painel", "casos", "squads"]
+DADOS_LEGADO = ["agents", "squad.json", "painel", "casos", "squads"]  # lista positiva de dados do projeto
+CODIGO_LEGADO = ["run.py", "scripts"]  # o que o componente executa: fica na fonte da fundação, nunca nos dados
 
-COMPONENTE_LEGADO = '''"""Componente que executa o pipeline legado copiado para o projeto (adaptação sem alterar a origem)."""
+COMPONENTE_LEGADO = '''"""Componente que executa o pipeline legado aprovado (adaptação sem alterar a origem).
+
+O código executável do legado (run.py e scripts/) mora na fonte da fundação, em
+`legado_peticoes_codigo/`, e não nos dados do projeto, que quem opera o projeto altera; do projeto
+vêm só os casos. Antes de cada execução, a pasta aprovada é conferida contra o MANIFESTO (sha256
+de TODOS os arquivos: nenhum alterado, a mais ou a menos) e os bytes conferidos são copiados para
+uma pasta temporária própria, de onde o legado roda: roda exatamente o que foi conferido. O
+manifesto mora neste módulo, cujo hash a habilitação grava no registro (`entrypoint_sha256`).
+"""
+import hashlib
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+CODIGO = Path(__file__).resolve().parent / "legado_peticoes_codigo"
+MANIFESTO = __MANIFESTO__
+
+
+def _copia_conferida(destino):
+    presentes = sorted(p.relative_to(CODIGO).as_posix() for p in CODIGO.rglob("*") if p.is_file())
+    if presentes != sorted(MANIFESTO):
+        raise RuntimeError("código do legado difere do manifesto aprovado (arquivo a mais ou a menos); nada executado")
+    for rel, esperado in MANIFESTO.items():
+        dados = (CODIGO / rel).read_bytes()
+        if hashlib.sha256(dados).hexdigest() != esperado:
+            raise RuntimeError(f"código do legado alterado desde a aprovação ({rel}): difere do manifesto; nada executado")
+        alvo = destino / rel
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        alvo.write_bytes(dados)
 
 
 def run(request):
     legado = (Path(request["project_dir"]) / "data" / "legado").resolve()
     caso = (legado / request["payload"]["caso"]).resolve()
     caso.relative_to(legado)  # contenção: falha se escapar da pasta do legado
-    proc = subprocess.run([sys.executable, "-B", "run.py", str(caso)], cwd=str(legado),
-                          capture_output=True, text=True, encoding="utf-8", timeout=20)
+    with tempfile.TemporaryDirectory(prefix="legado-peticoes-") as tmp:
+        _copia_conferida(Path(tmp))
+        # -E -s: nem PYTHONPATH nem o site do usuário entram no import; -X utf8 mantém a saída em UTF-8.
+        proc = subprocess.run([sys.executable, "-B", "-E", "-s", "-X", "utf8", str(Path(tmp) / "run.py"), str(caso)],
+                              cwd=str(legado), capture_output=True, text=True, encoding="utf-8", timeout=20)
     return {"codigo": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr}
 '''
 
@@ -213,8 +244,51 @@ def _escrever_se_diferente(path: Path, texto: str) -> str:
     return "feito"
 
 
-def adaptar(W: Path, root: Path, origem: Path) -> list[tuple[str, str]]:
-    """Executor de referência do Fluxo B (etapas B6–B9), idempotente."""
+def _codigo_aprovado(origem: Path, destino: Path) -> tuple[str, dict[str, str]]:
+    """Copia o código executável do legado (CODIGO_LEGADO, lido na origem) para a fonte da fundação e
+    devolve o manifesto: sha256 de TODOS os arquivos copiados (os mesmos bytes conferidos). Idempotente."""
+    manifesto, feito = {}, False
+    for item in CODIGO_LEGADO:
+        base = origem / item
+        for p in sorted([base] if base.is_file() else base.rglob("*")):
+            rel = p.relative_to(origem)
+            if not p.is_file() or "__pycache__" in rel.parts:
+                continue
+            dados = p.read_bytes()
+            manifesto[rel.as_posix()] = hashlib.sha256(dados).hexdigest()
+            alvo = destino / rel
+            if not (alvo.is_file() and alvo.read_bytes() == dados):
+                alvo.parent.mkdir(parents=True, exist_ok=True)
+                alvo.write_bytes(dados)
+                feito = True
+    return ("feito" if feito else "ja-existia"), manifesto
+
+
+def _registrar_e_habilitar(root: Path, entrada: dict) -> str:
+    """Registra o componente desabilitado e o habilita pela fundação (`componente habilitar`, só a
+    administração): a habilitação grava o `entrypoint_sha256` do módulo, que traz o manifesto do código
+    do legado — todo o código executado fica amarrado ao aprovado. Já registrado, habilitado e com o
+    mesmo hash: 'ja-existia'."""
+    cid = entrada["component_id"]
+    reg = root / "registry" / "components" / f"{cid}.json"
+    modulo = root / "fundacao" / "components" / f"{cid}.py"
+    aprovado = {**entrada, "enabled": True, "entrypoint_sha256": hashlib.sha256(modulo.read_bytes()).hexdigest()}
+    try:
+        if json.loads(reg.read_text(encoding="utf-8")) == aprovado:
+            return "ja-existia"
+    except (OSError, json.JSONDecodeError):
+        pass
+    reg.parent.mkdir(parents=True, exist_ok=True)
+    reg.write_text(json.dumps({**entrada, "enabled": False}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    r = kit_cli(root, ["componente", "habilitar", "--id", cid], "titular")
+    return "feito" if r.returncode == 0 else f"falhou: {r.stderr[-200:]}"
+
+
+def adaptar(W: Path, root: Path, origem: Path, concluir: bool = True) -> list[tuple[str, str]]:
+    """Executor de referência do Fluxo B (etapas B6–B9), idempotente. O projeto recebe só dados; o código
+    que o componente executa vai para a fonte da fundação com manifesto de hashes, e a habilitação passa
+    pela fundação (auditoria 1.5.0, achado 6). `concluir=False` para no estado interrompido do E3:
+    dados, código, adaptador e módulo escritos; componente não registrado nem habilitado; sem invólucro."""
     passos = []
     trabalho = W / "trabalho-legado"
     if not trabalho.exists():
@@ -242,7 +316,7 @@ def adaptar(W: Path, root: Path, origem: Path) -> list[tuple[str, str]]:
                    ("ja-existia" if "E_EXISTS" in r.stderr else f"falhou: {r.stderr[-200:]}")))
     dest = root / "projects" / "peticoes-legado" / "data" / "legado"
     copiou = False
-    for item in POSITIVA:  # lista positiva: nada de .env, memória ou saídas antigas
+    for item in DADOS_LEGADO:  # lista positiva: nada de .env, memória, saídas antigas ou código executado
         src, dst = origem / item, dest / item
         if dst.exists():
             continue
@@ -252,23 +326,27 @@ def adaptar(W: Path, root: Path, origem: Path) -> list[tuple[str, str]]:
         else:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
-    passos.append(("código legado no projeto (lista positiva)", "feito" if copiou else "ja-existia"))
+    passos.append(("dados do legado no projeto (lista positiva)", "feito" if copiou else "ja-existia"))
+    estado, manifesto = _codigo_aprovado(origem, root / "fundacao" / "components" / "legado_peticoes_codigo")
+    passos.append(("código do legado na fonte da fundação (manifesto)", estado))
     passos.append(("adaptador do manifesto", _escrever_se_diferente(
         root / "projects" / "peticoes-legado" / "data" / "adaptadores" / "squad_canonico.py", ADAPTADOR)))
     run([PY, "-B", root / "projects" / "peticoes-legado" / "data" / "adaptadores" / "squad_canonico.py",
          dest / "squad.json", dest / "squad.canonico.json"])
     passos.append(("componente legado_peticoes", _escrever_se_diferente(
-        root / "fundacao" / "components" / "legado_peticoes.py", COMPONENTE_LEGADO)))
-    entrada = {"schema_version": "fundacao.component/1", "component_id": "legado_peticoes", "version": "1.0.0",
-               "kind": "workflow", "purpose": "pipeline legado de petições, executado sem alterar a origem",
-               "enabled": True, "entrypoint": "fundacao.components.legado_peticoes:run",
-               "allowed_projects": ["peticoes-legado"], "permissions": ["legado:executar"],
-               "timeout_seconds": 30, "requires_modules": [], "evidence": []}
-    passos.append(("registro do componente", _escrever_se_diferente(
-        root / "registry" / "components" / "legado_peticoes.json", json.dumps(entrada, ensure_ascii=False, indent=2) + "\n")))
+        root / "fundacao" / "components" / "legado_peticoes.py",
+        COMPONENTE_LEGADO.replace("__MANIFESTO__", json.dumps(manifesto, indent=4, sort_keys=True)))))
     for act in ("read", "use"):
         kit_cli(root, ["acl", "conceder", "--principal", "titular", "--recurso", "project:peticoes-legado",
                        "--acao-permitida", act], "titular")
+    if not concluir:
+        return passos
+    entrada = {"schema_version": "fundacao.component/1", "component_id": "legado_peticoes", "version": "1.0.0",
+               "kind": "workflow", "purpose": "pipeline legado de petições, executado sem alterar a origem",
+               "enabled": False, "entrypoint": "fundacao.components.legado_peticoes:run",
+               "allowed_projects": ["peticoes-legado"], "permissions": ["legado:executar"],
+               "timeout_seconds": 30, "requires_modules": [], "evidence": []}
+    passos.append(("registro do componente", _registrar_e_habilitar(root, entrada)))
     passos.append(("invólucro de execução via fundação", _escrever_se_diferente(W / "ferramentas" / "executar_via_fundacao.py", WRAPPER)))
     return passos
 
@@ -872,10 +950,12 @@ def cen10(W: Path) -> Cenario:
 
 
 def _skill_creator_validator() -> Path | None:
-    for base in (Path.home() / "AppData" / "Local" / "Packages").glob("Claude_*/LocalCache/Roaming/Claude/local-agent-mode-sessions/skills-plugin/*/*/skills/skill-creator"):
-        if (base / "scripts" / "quick_validate.py").exists():
-            return base
-    return None
+    """skill-creator do perfil: plugin oficial do Claude Code (cache de plugins) ou o do aplicativo; o mais recente."""
+    padroes = ((Path.home() / ".claude" / "plugins" / "cache", "claude-plugins-official/skill-creator/*/skills/skill-creator"),
+               (Path.home() / "AppData" / "Local" / "Packages",
+                "Claude_*/LocalCache/Roaming/Claude/local-agent-mode-sessions/skills-plugin/*/*/skills/skill-creator"))
+    achados = [b for raiz, padrao in padroes for b in raiz.glob(padrao) if (b / "scripts" / "quick_validate.py").exists()]
+    return max(achados, key=lambda b: (b / "scripts" / "quick_validate.py").stat().st_mtime) if achados else None
 
 
 def cen11(W: Path) -> Cenario:

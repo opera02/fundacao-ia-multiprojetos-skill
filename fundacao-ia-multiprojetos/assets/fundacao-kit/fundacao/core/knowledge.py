@@ -10,6 +10,10 @@ autorização aplicada NO SQL, antes do top-k -> citar trecho@versão:página.
 - Retirada: marcador (tombstone) primeiro, limpeza dos derivados depois;
   a limpeza pode ser interrompida e retomada sem reabrir o consumo.
 - Busca lexical não mede verdade nem concede permissão: bm25 só ordena.
+- Um identificador de fonte pertence a um só escopo (projeto e caso): a curadoria só
+  substitui versões do mesmo escopo (auditoria #18). Versão nova é inteiro positivo, como
+  o registro protegido de retiradas a representa (`id@<n>`; auditoria #12).
+- A autorização é conferida de novo dentro de cada transação de escrita (auditoria #11).
 """
 
 from __future__ import annotations
@@ -30,6 +34,16 @@ from .projects import verified_project_dir
 RUBRIC = ("origem", "fidelidade", "vigencia", "acesso", "finalidade")
 RUBRIC_VALUES = {"aprovado", "reprovado", "pendente"}
 DEFAULT_RECIPE = (80, 15)  # palavras por trecho, sobreposição (A16)
+VERSAO_MAXIMA = 2 ** 63 - 1  # maior INTEGER do SQLite
+
+
+def _versao(version, *, minima: int) -> int:
+    """Versão como o registro protegido de retiradas a lê (`id@<dígitos>`): inteiro de verdade (bool não
+    conta), a partir de `minima` e dentro do INTEGER do SQLite. Sem isso, `id@-1` ou `id@True` iriam ao
+    registro, e a leitura estrita dele (init, backup, restauração) pararia (auditoria #12)."""
+    if isinstance(version, bool) or not isinstance(version, int) or not minima <= version <= VERSAO_MAXIMA:
+        raise ValidationError(f"versão de fonte deve ser número inteiro de {minima} em diante")
+    return version
 
 
 def fts_table(project_id: str) -> str:
@@ -123,6 +137,7 @@ class KnowledgeService:
                         case_id: str | None = None, purpose: str = "") -> str:
         resource = self._resource(project_id, case_id)
         self.policy.require(self.principal, "write", resource)
+        _versao(version, minima=1)
         if not source_id.startswith(f"{project_id}/") or len(source_id) <= len(project_id) + 1:
             # Identificador qualificado pelo projeto: dois projetos nunca disputam o mesmo nome,
             # então registrar não revela o que existe em outro projeto.
@@ -133,14 +148,22 @@ class KnowledgeService:
         if not path.is_file():
             raise NotFound("arquivo de origem inexistente", rel_path=rel_path)
         digest = sha256_file(path)
-        existing = self.con.execute(
-            "SELECT original_hash FROM source_version WHERE source_id = ? AND version = ?", (source_id, version)
-        ).fetchone()
-        if existing:
-            if existing["original_hash"] != digest:
-                raise ValidationError("mesma versão com conteúdo diferente: registre nova versão")
-            return digest  # reingestão idempotente
         with transaction(self.con):
+            self.policy.recheck(self.principal, "write", resource)  # revogação no intervalo (auditoria #11)
+            # Um identificador pertence a um só escopo (projeto e caso). Sem isso, a versão nova registrada
+            # noutro caso substituiria, na curadoria, a fonte vigente deste (auditoria #18).
+            outro_escopo = self.con.execute("SELECT 1 FROM source_version WHERE source_id = ?"
+                                            " AND (project_id <> ? OR case_id IS NOT ?)",
+                                            (source_id, project_id, case_id)).fetchone()
+            if outro_escopo:
+                raise ValidationError("identificador de fonte já usado em outro escopo; escolha outro identificador")
+            existing = self.con.execute(
+                "SELECT original_hash FROM source_version WHERE source_id = ? AND version = ?", (source_id, version)
+            ).fetchone()
+            if existing:
+                if existing["original_hash"] != digest:
+                    raise ValidationError("mesma versão com conteúdo diferente: registre nova versão")
+                return digest  # reingestão idempotente
             self.con.execute(
                 "INSERT INTO source_version (source_id, version, project_id, case_id, rel_path, original_hash,"
                 " status, purpose, registered_by, registered_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -154,7 +177,8 @@ class KnowledgeService:
     def prepare(self, source_id: str, version: int, pages: list[str]) -> str:
         """Grava o texto preparado por página (a extração em si é feita fora)."""
         src = self._source(source_id, version)
-        self.policy.require(self.principal, "write", self._resource(src["project_id"], src["case_id"]))
+        resource = self._resource(src["project_id"], src["case_id"])
+        self.policy.require(self.principal, "write", resource)
         if src["status"] in ("withdrawn", "superseded"):
             raise ValidationError("fonte retirada ou substituída não é preparada novamente")
         prepared = canonical_json({"pages": pages})
@@ -162,6 +186,7 @@ class KnowledgeService:
         if src["prepared_hash"] == digest:
             return digest  # nada mudou
         with transaction(self.con):
+            self.policy.recheck(self.principal, "write", resource)  # revogação no intervalo (auditoria #11)
             # Estado lido DENTRO da transação: uma curadoria concorrente não usa a leitura antiga (F08).
             atual = self.con.execute("SELECT status, prepared_hash FROM source_version WHERE source_id = ? AND version = ?",
                                      (source_id, version)).fetchone()
@@ -218,10 +243,11 @@ class KnowledgeService:
                 raise ValidationError("quem preparou não aprova o próprio texto")
             era_consumivel = atual["status"] == "approved"
             if decision == "approved":
-                self.con.execute(
+                self.con.execute(  # só versões do mesmo escopo, mesmo com colisão gravada por kit anterior (#18)
                     "UPDATE source_version SET status = 'superseded', is_current = 0"
-                    " WHERE source_id = ? AND version <> ? AND status = 'approved'",
-                    (source_id, version),
+                    " WHERE source_id = ? AND version <> ? AND status = 'approved'"
+                    " AND project_id = ? AND case_id IS ?",
+                    (source_id, version, src["project_id"], src["case_id"]),
                 )
             alteradas = self.con.execute(
                 "UPDATE source_version SET status = ?, rubric_json = ?, approved_by = ?, approved_hash = ?,"
@@ -258,6 +284,7 @@ class KnowledgeService:
         table = self._ensure_fts(src["project_id"])
         added = 0
         with transaction(self.con):
+            self.policy.recheck(self.principal, "write", resource)  # revogação no intervalo (auditoria #11)
             # Texto lido DENTRO da transação: os trechos correspondem à preparação gravada agora,
             # não a uma leitura anterior a uma preparação concorrente (F08).
             atual = self.con.execute("SELECT status, prepared_json FROM source_version WHERE source_id = ? AND version = ?",
@@ -356,13 +383,17 @@ class KnowledgeService:
 
     def withdraw(self, source_id: str, version: int, reason: str, *, stop_after: int | None = None) -> dict:
         """Retira a fonte do consumo: marcador primeiro, limpeza dos derivados depois.
-        `stop_after` interrompe a limpeza (teste) — o marcador continua bloqueando."""
+        `stop_after` interrompe a limpeza (teste) — o marcador continua bloqueando. Versão que o registro
+        protegido não representa (negativa, gravada por kit anterior) é recusada antes de qualquer gravação:
+        tire-a de uso reprovando-a na curadoria (auditoria #12)."""
+        _versao(version, minima=0)
         src = self._source(source_id, version)
         resource = self._resource(src["project_id"], src["case_id"])
         self.policy.require(self.principal, "approve", resource)
         entity = f"{source_id}@{version}"
         from .backup import enqueue_protected, flush_outbox  # import tardio evita ciclo
         with transaction(self.con):
+            self.policy.recheck(self.principal, "approve", resource)  # revogação no intervalo (auditoria #11)
             self.con.execute(
                 "INSERT INTO tombstone VALUES (?,?,?,?,?,?) ON CONFLICT(entity_id) DO NOTHING",
                 (entity, src["project_id"], self.principal.principal_id, reason, utcnow(), "pending"),

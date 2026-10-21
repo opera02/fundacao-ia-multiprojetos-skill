@@ -22,8 +22,15 @@ que o projeto usa). Inclua aí as ferramentas MCP de infraestrutura do PRÓPRIO 
 aplicativo Claude Desktop, por exemplo, as `mcp__ccd_*` (plano, sessões, painéis): sem isso a
 sessão em que o hook estiver instalado perde essas ferramentas (auditoria final da 1.4.2,
 AF-08). Não grava conteúdo nem payload em log.
-Limite: protege as ferramentas de arquivo e MCP do agente; comandos de shell precisam de
-sandbox (WSL2) e regras de permissão — este hook não é fronteira completa.
+Ligações [Decisão; revisão de segurança da 1.4.5, #13]: nega quando `projects/` ou
+`projects/<projeto>` é ligação (link simbólico ou junção) ou não é filho exato da raiz, quando
+FUNDACAO_PROJECT não é nome simples (separador, `.`, `..`) e quando algum componente do destino é
+ligação — mesmo apontando para dentro do projeto, porque é o que se troca entre a checagem e a
+escrita. Ligações nos ancestrais da própria raiz (definida pelo lançador) são aceitas.
+Limite: controle CONSULTIVO. O hook decide antes de o host abrir o arquivo; uma troca de ligação
+nesse intervalo não é vista. Contenção no ponto de abertura exige permissões do SO ou sandbox.
+Protege só as ferramentas de arquivo e MCP do agente; comandos de shell precisam de sandbox e
+regras de permissão — este hook não é fronteira completa.
 """
 
 from __future__ import annotations
@@ -31,10 +38,29 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import stat
 import sys
 from pathlib import Path
 
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+# Bit "name surrogate" das etiquetas de reparse do Windows: links simbólicos e junções (arquivos de
+# nuvem e outros pontos de reparse não o têm).
+NAME_SURROGATE = 0x20000000
+
+
+def ligacao(caminho: str) -> bool:
+    """Link simbólico ou junção, sem segui-lo; caminho inexistente não é ligação."""
+    try:
+        st = os.lstat(caminho)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_reparse_tag", 0) & NAME_SURROGATE)
+
+
+def componentes(caminho: Path) -> list[str]:
+    """Prefixos do caminho absoluto, sem colapsar `..` (cada um pode ser ligação)."""
+    partes = caminho.parts
+    return [str(Path(*partes[:i])) for i in range(1, len(partes) + 1)]
 
 
 def decide(event: dict, env: dict) -> dict | None:
@@ -51,8 +77,14 @@ def decide(event: dict, env: dict) -> dict | None:
     project = env.get("FUNDACAO_PROJECT", "").strip()
     if not project:
         return deny("projeto autenticado ausente (FUNDACAO_PROJECT); escrita negada")
+    if project in (".", "..") or Path(project).name != project:
+        return deny("FUNDACAO_PROJECT inválido: use o nome simples da pasta em projects/")
     raiz = Path(env.get("FUNDACAO_RAIZ") or env.get("CLAUDE_PROJECT_DIR") or event.get("cwd") or ".")
-    allowed_root = (raiz / "projects" / project).resolve()
+    # Filho exato: `projects/` e `projects/<projeto>` resolvem para eles mesmos (sem ligação no meio).
+    allowed_root = os.path.join(os.path.realpath(raiz), "projects", project)
+    for pasta in (os.path.dirname(allowed_root), allowed_root):
+        if ligacao(pasta) or os.path.normcase(os.path.realpath(pasta)) != os.path.normcase(pasta):
+            return deny(f"projects/{project} redirecionada por ligação ou junção: escrita negada")
     tool_input = event.get("tool_input") or {}
     target = tool_input.get("file_path") or tool_input.get("notebook_path")
     if not target:
@@ -60,10 +92,14 @@ def decide(event: dict, env: dict) -> dict | None:
     path = Path(target)
     if not path.is_absolute():
         path = Path(event.get("cwd") or raiz) / path
+    path = path.absolute()  # sem colapsar `..`: cada prefixo é conferido como possível ligação
     try:
-        path.resolve().relative_to(allowed_root)
+        Path(os.path.realpath(path)).relative_to(allowed_root)
     except ValueError:
         return deny(f"escrita fora de projects/{project}/")
+    da_raiz = {os.path.normcase(c) for c in componentes(Path(os.path.abspath(raiz)))}
+    if any(ligacao(c) for c in componentes(path) if os.path.normcase(c) not in da_raiz):
+        return deny("ligação ou junção no caminho de destino: escrita negada")
     return None
 
 

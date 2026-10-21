@@ -2,7 +2,8 @@
 
 Regras: campo ausente = "unknown" (nunca zero); contagem exata, estimativa e
 faturamento observado são registros distintos; não somar subcategorias já
-incluídas no total.
+incluídas no total. Custo só vale como número finito e >= 0 (conferido em
+Decimal); negativo, NaN, infinito ou booleano = "unknown" (varredura 1.4.5, #17).
 
 Fatos de formato conferidos em 18/10/2026 (ver references/fontes-verificadas.md):
 - Claude (API e `claude -p --output-format json`): input_tokens NÃO inclui os
@@ -15,11 +16,31 @@ Fatos de formato conferidos em 18/10/2026 (ver references/fontes-verificadas.md)
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .contracts import SCHEMAS
 
 UNKNOWN = "unknown"
+
+
+def custo_decimal(valor: Any, *, texto: bool = False) -> Decimal | None:
+    """Custo em dólares como Decimal finito e >= 0, ou None (= desconhecido).
+
+    Aceita `int`/`float` (o que o provedor ou o adaptador informa) e, com `texto=True`, o decimal em
+    texto gravado na trilha. Negativo, NaN, infinito, booleano ou texto inválido = desconhecido: numa
+    rota com teto de custo, desconhecido bloqueia até a administração reconciliar (falha fechada). Sem
+    isso, um custo negativo reduzia o gasto acumulado e um NaN anulava a comparação com `max_usd` (#17).
+    O `json` do Python aceita `NaN` e `Infinity` na saída de um provedor."""
+    if isinstance(valor, bool) or not (isinstance(valor, (int, float)) or (texto and isinstance(valor, str))):
+        return None
+    try:
+        decimal = Decimal(str(valor).strip())
+    except (InvalidOperation, ValueError):
+        return None
+    if not decimal.is_finite() or decimal < 0:
+        return None
+    return decimal.copy_abs()  # -0 vira 0
 
 
 def _get(d: dict, key: str) -> Any:
@@ -62,8 +83,8 @@ def normalize(provider: str, usage: dict | None, *, route: str, run_id: str,
         "duration_ms": UNKNOWN if duration_ms is None else duration_ms,
         "state": state,
         "measurement": "contador_do_provedor" if usage else "nao_observado",
-        # Custo informado pelo cliente do provedor (estimativa do cliente, não fatura).
-        "custo_usd": cost_usd if isinstance(cost_usd, (int, float)) else UNKNOWN,
+        # Custo informado pelo cliente do provedor (estimativa do cliente, não fatura); inválido = unknown.
+        "custo_usd": cost_usd if custo_decimal(cost_usd) is not None else UNKNOWN,
     }
 
 

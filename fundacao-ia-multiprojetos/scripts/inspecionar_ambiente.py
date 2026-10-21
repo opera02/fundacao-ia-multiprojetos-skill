@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Inventário do ambiente SOMENTE LEITURA (livro A01; Apêndice D).
+"""Inventário do ambiente (livro A01; Apêndice D), com os efeitos declarados.
 
 Identifica sistema, shell, pasta, recursos e programas presentes, separando:
   presente (arquivo encontrado) | executado (versão consultada) | não verificado.
-Não instala nada, não inicia distribuições WSL, não lê credenciais nem valores de
-variáveis de ambiente, não muda autenticação. Para Python, consulta apenas o
-interpretador que já está executando este script; outros lançadores são listados
-pelo gerenciador (o lançador pode instalar Python automaticamente se não houver
-nenhum — por isso não executamos `python --version` às cegas).
+Efeitos (auditoria da 1.4.1, A18):
+  --somente-localizar  não executa programa externo: só presença e caminho. Use enquanto o
+                       escopo não autorizar executar CLIs.
+  sem essa opção       executa `--version` de git, node, npm, uv, claude, codex e docker,
+                       `pymanager list` ou `py -0p` e `wsl --list --verbose` (lista; não inicia WSL).
+  --saida ARQ          grava o JSON (cria as pastas) e recusa arquivo existente (código 1, nada
+                       executado) para não apagar evidência anterior. Sem --saida, nada é gravado.
+Nunca instala nada, não lê credenciais nem valores de variáveis de ambiente, não muda
+autenticação. Para Python, consulta apenas o interpretador que já está executando este script;
+outros lançadores são listados pelo gerenciador (o lançador pode instalar Python
+automaticamente se não houver nenhum — por isso não executamos `python --version` às cegas).
 
-Uso: python inspecionar_ambiente.py [--pasta DIR] [--saida inventario.json] [--somente-localizar]
-
---somente-localizar: não executa nenhum programa externo (nem `--version`); só registra
-presença e caminho. Use quando o escopo autorizado proibir executar CLIs de provedores.
+Uso: python inspecionar_ambiente.py [--pasta DIR] [--saida inventario-<data>.json] [--somente-localizar]
 """
 
 from __future__ import annotations
@@ -134,10 +137,14 @@ def long_paths_enabled() -> bool | None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pasta", type=Path, default=Path.cwd())
-    ap.add_argument("--saida", type=Path)
+    ap.add_argument("--saida", type=Path, help="grava o JSON; recusa arquivo existente")
     ap.add_argument("--somente-localizar", action="store_true",
                     help="não executa programas externos; só registra presença e caminho")
     args = ap.parse_args()
+    recusa = {"erro": "--saida já existe: escolha um nome novo para preservar a evidência anterior"}
+    if args.saida and (args.saida.exists() or args.saida.is_symlink()):
+        print(json.dumps(recusa, ensure_ascii=False))
+        return 1
     pasta = args.pasta.resolve()
     tools = {}
     for name in sorted(set(SAFE_VERSION) | set(LIST_ONLY)):
@@ -190,7 +197,12 @@ def main() -> int:
     text = json.dumps(result, ensure_ascii=False, indent=2)
     if args.saida:
         args.saida.parent.mkdir(parents=True, exist_ok=True)
-        args.saida.write_text(text, encoding="utf-8")
+        try:
+            with open(args.saida, "x", encoding="utf-8") as fh:  # "x": nunca substitui
+                fh.write(text)
+        except FileExistsError:
+            print(json.dumps(recusa, ensure_ascii=False))
+            return 1
     print(text)
     return 0
 

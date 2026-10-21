@@ -11,6 +11,27 @@ técnicas nomeadas [3.0 R16.1]: caracterização (golden master), *parallel run*
 Pré-requisito: versão de fundação de destino identificada (se não houver, rode o
 Fluxo A até A6). Cada etapa: **Entradas · Ações · Saídas · Critério · Falhas**.
 
+## Ritmo: dois portões (padrão)
+
+[Decisão; caso real de 2026-10-20: sete aceites, um por etapa, e o próprio titular pediu "completar
+todas as etapas de B e deixar para eu revisar e assinar as decisões tudo ao final"; o lote B5–B10,
+com um relatório que prende os arquivos por hash, funcionou sem perda de garantia.]
+
+- **Portão 1 — análise e plano (B1–B5).** Rode B1→B5 em sequência, sem pedir "posso seguir?": nada
+  aqui altera a origem nem executa código importado. Entregue de uma vez diagnóstico, mapa,
+  compatibilidade, plano e contratos, mais a **folha de decisões** (`assets/templates/FOLHA-DE-DECISOES.md`)
+  com tudo o que depende do usuário: mudanças intencionais de comportamento, executar código da
+  origem numa cópia isolada (B6), importar segredos ou dados sensíveis, efeitos externos,
+  componentes e o fluxo representativo do B2 (proponha o principal). Um aceite cobre o lote.
+- **Portão 2 — execução e entrega (B6–B10).** Com o aceite do portão 1, rode B6→B10 em sequência e
+  entregue um relatório único (esperado × observado por etapa, real × simulado, desvios do plano,
+  hashes de cada arquivo entregue) para um aceite final.
+- **Pare antes do portão** só se: a origem divergir do manifesto do B1; uma prova negativa falhar;
+  surgir divergência que a B8 não classifique; a etapa precisar de algo fora do aceite (dado real
+  novo, execução não autorizada, efeito externo, custo). Pare, registre e pergunte só aquilo.
+- Etapa por etapa só se o usuário pedir. Com a barreira de decisão assinada da fundação, uma
+  assinatura por portão. Paradas e perguntas seguem `references/comunicacao-leigo.md`.
+
 ## Sumário
 - Diagnóstico: B1 inspeção · B2 mapa de funcionamento · B3 compatibilidade
 - Planejamento: B4 inventário de decisões · B5 contratos a preservar · B6 referência e caracterização
@@ -92,7 +113,7 @@ um com campo extra) não se unificam antes de saber se a diferença é legítima
 [Livro p15]. Modelo: `assets/templates/PLANO-ADAPTACAO.md`.
 **Saídas:** `PLANO-ADAPTACAO.md` com a decisão por item.
 **Critério:** todo item tem decisão, motivo e teste; decisões que mudam comportamento
-estão marcadas para aprovação do usuário.
+estão marcadas para aprovação do usuário e entram na folha de decisões do portão 1.
 **Falhas:** item sem evidência suficiente → "investigar" com o teste decisivo, nunca
 "substituir" por suposição; decisão de negócio fora do escopo → prepare as opções e pergunte.
 
@@ -153,6 +174,10 @@ mock rotulado) antes de gravar.
   armazenamento próprio); dados particulares ficam no projeto/caso.
 - Exponha o programa legado como **componente** registrado (habilitação,
   autorização, timeout, versão) — `references/capacidades/08-ferramentas-hooks-mcp-skills-plugins.md`.
+- O código que o componente executa fica na fonte da fundação, nunca nos dados do projeto; o
+  módulo traz o manifesto (sha256 de cada arquivo do código, sem nenhum a mais ou a menos),
+  confere-o imediatamente antes de cada execução e roda uma cópia privada conferida; habilite
+  com `componente habilitar`, que grava o `entrypoint_sha256` [varredura da 1.4.5, #6].
 - Uma mudança por vez; após cada uma rode a caracterização e os testes de contrato.
 **Saídas:** mudanças registradas (arquivo, tipo, motivo, reversão); projeto e componente
 registrados; RETOMADA atualizada a cada mudança.
@@ -206,7 +231,8 @@ desatualizada → confie no estado conferido e registre a divergência.
 comparações (golden, negativas); limitações remanescentes; **procedimento de
 reversão** testado em cópia; estado de compatibilidade **demonstrado** (classe da
 B3 + evidências); matriz e RETOMADA atualizadas.
-**Saídas:** `RELATORIO-FINAL.md` da adaptação, procedimento de reversão, matriz e RETOMADA.
+**Saídas:** `RELATORIO-FINAL.md` da adaptação (o relatório único do portão 2, com o hash de cada
+arquivo entregue), procedimento de reversão, matriz e RETOMADA.
 **Critério (regra de honestidade):** um projeto demonstrativo funcionando comprova o
 cenário testado; **a migração do projeto original exige evidências próprias** sobre a
 origem e seus comportamentos [Livro p118, p193, p212]. Fluxos distintos (ex.:

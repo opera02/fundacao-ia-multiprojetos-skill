@@ -7,6 +7,7 @@ Os testes falham na 1.4.0; verificação item a item em `auditoria/VERIFICACAO-R
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -21,6 +22,27 @@ ENTREGA = Path(__file__).resolve().parents[1]
 INSTALADOR = ENTREGA / "instalar_skill.py"
 NOME = "fundacao-ia-multiprojetos"
 SKILL_MD = f"---\nname: {NOME}\ndescription: ficticia\n---\n"
+OPCAO_PASTA_DEV = "--pasta-de-desenvolvimento-nao-verificada"
+# Desde a 1.5.0 (varredura da 1.4.5, #2), `instalar` e `atualizar` exigem a origem autenticada: pacote com
+# `--sha256` ou pasta com a opção de desenvolvimento. Os testes que tratam de OUTRA coisa recebem isso de
+# `autenticar_origem` (o teste faz o papel do pipeline de liberação, que conhece o hash do pacote que acabou de
+# gerar); os do #2 passam `autenticar=False`. A opção de pasta só é acrescentada se o instalador a conhecer: assim
+# a mesma suíte também roda contra o instalador anterior (comparação antes × depois).
+_ACEITA_PASTA_DEV = OPCAO_PASTA_DEV in INSTALADOR.read_text(encoding="utf-8")
+
+
+def autenticar_origem(args: tuple) -> tuple:
+    """`args` de `instalar`/`atualizar` com a autenticação da origem, se ainda não houver."""
+    if not args or args[0] not in ("instalar", "atualizar") or "--origem" not in args \
+            or "--sha256" in args or OPCAO_PASTA_DEV in args:
+        return args
+    origem = Path(args[args.index("--origem") + 1])
+    if origem.is_dir():
+        return (*args, OPCAO_PASTA_DEV) if _ACEITA_PASTA_DEV else args
+    if origem.is_file():
+        return (*args, "--sha256", hashlib.sha256(origem.read_bytes()).hexdigest())
+    return args
+
 
 # Prelúdio do processo filho que simula um SQLite sem FTS5 (COD-03).
 SEM_FTS5 = """
@@ -69,7 +91,9 @@ class _PerfilDescartavel(unittest.TestCase):
         self.copia = self.perfil / ".agents" / "skills" / NOME
         self.link = self.perfil / ".claude" / "skills" / NOME
 
-    def rodar(self, *args, preludio: str = ""):
+    def rodar(self, *args, preludio: str = "", autenticar: bool = True):
+        if autenticar:
+            args = autenticar_origem(args)
         codigo = "\n".join([preludio, "import runpy, sys", "sys.argv = [sys.argv[1], *sys.argv[2:]]",
                             "runpy.run_path(sys.argv[0], run_name='__main__')"])
         p = subprocess.run([sys.executable, "-B", "-c", codigo, str(INSTALADOR), *map(str, args)], env=self.env,

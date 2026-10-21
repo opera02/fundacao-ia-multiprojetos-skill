@@ -19,7 +19,8 @@ Organização de arquivos e módulos; nomes; testes e dados fictícios; adaptaç
 caminhos ao Windows/WSL observado; correção do próprio código; repetição de
 verificações somente leitura; escolha entre bibliotecas já instaladas e aprovadas;
 reexecução segura de etapas idempotentes; atualização da RETOMADA e da matriz com
-evidência obtida [Livro p30, p34, p38].
+evidência obtida [Livro p30, p34, p38]; seguir para a próxima etapa já autorizada (não pergunte
+"posso seguir?" nem "registro?") [Decisão; implantação real de 2026-10-20].
 
 ## 3. Prepare e peça decisão (gatilhos)
 
@@ -35,8 +36,10 @@ evidência obtida [Livro p30, p34, p38].
 - Adotar framework/serviço que vira dependência de longo prazo.
 
 Formato: pergunta curta e concreta ("o contrato da proposta v2 ou o rascunho v1?")
-[Livro p159], acompanhada do que foi preparado. Não repita perguntas sobre
-preferências já registradas.
+[Livro p159], acompanhada do que foi preparado; várias decisões do mesmo ponto vão juntas numa
+folha (`assets/templates/FOLHA-DE-DECISOES.md`), com a opção recomendada primeiro e o padrão
+seguro se não houver resposta (`references/comunicacao-leigo.md`). Não repita perguntas sobre
+preferências já registradas (autorização registrada segue o §6).
 
 ## 4. Pare e bloqueie (sem improvisar)
 
@@ -74,3 +77,7 @@ Antes de encerrar uma sessão (ou ao atingir um bloqueio), atualize `RETOMADA.md
 A próxima IA reconstrói o estado pelos arquivos, não pela memória da conversa
 [Livro p118, p205]. Nunca repita ação externa com efeito sem conferir se já ocorreu
 (reconcilie pelo recibo/identificador) [Livro p47, p177].
+Os arquivos reconstroem **estado, não autoridade** [auditoria da 1.4.1, A17]: o que o usuário
+autorizou na conversa atual vale sem nova pergunta; ação do §3 que só a RETOMADA dá como
+autorizada, sem origem verificável (autor, ação, recurso, limites, vigência), é proposta —
+apresente-a com os limites e peça uma confirmação.

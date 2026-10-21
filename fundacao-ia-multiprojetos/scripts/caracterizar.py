@@ -18,6 +18,8 @@ passada em `{ensaio}`. A ferramenta só limpa pasta com essa marca: pasta existe
 --ignorar para neutralizar campos voláteis (ex.: datas) antes da comparação.
 Diferenças -> código 1; uso incorreto -> 2. Uma diferença pode ser regressão OU mudança
 intencional: registre a decisão no plano de adaptação, não ajuste o golden silenciosamente.
+No timeout, o código fica `timeout` e a saída parcial (o que o programa escreveu até o corte)
+é guardada e comparada; golden gravado antes disso compara só código e efeitos nesses casos.
 """
 
 from __future__ import annotations
@@ -98,8 +100,11 @@ def run_case(cmd: list[str], entrada: str, cwd: Path | None, out_dir: Path | Non
         stdout = norm(p.stdout.decode("utf-8", "replace"), patterns)
         stderr = norm(p.stderr.decode("utf-8", "replace"), patterns)
         code = p.returncode
-    except subprocess.TimeoutExpired:
-        stdout, stderr, code = "", "TIMEOUT", "timeout"
+    except subprocess.TimeoutExpired as exc:
+        # A16: o que o programa escreveu antes do corte também é comportamento observado.
+        stdout = norm((exc.stdout or b"").decode("utf-8", "replace"), patterns)
+        stderr = norm((exc.stderr or b"").decode("utf-8", "replace"), patterns)
+        code = "timeout"
     depois = foto(pasta_efeitos)
     return {"entrada": entrada, "codigo": code,
             "stdout_sha256": sha(stdout), "stdout_tamanho": len(stdout), "stdout": stdout[:TRECHO_STDOUT],
@@ -108,15 +113,18 @@ def run_case(cmd: list[str], entrada: str, cwd: Path | None, out_dir: Path | Non
             "arquivos": {rel: h for rel, (h, _mt) in depois.items()}}  # foto final (só p/ golden do formato 1)
 
 
-def comparar_caso(antes: dict, agora: dict) -> list[str]:
+def comparar_caso(antes: dict, agora: dict, timeout_sem_saida: bool = False) -> list[str]:
+    """`timeout_sem_saida`: golden gravado quando o timeout descartava a saída (stdout vazio, stderr
+    "TIMEOUT"); nesses casos stdout e stderr gravados não são o que o programa escreveu e ficam fora."""
+    fora = {"stdout", "stderr"} if timeout_sem_saida and antes.get("codigo") == "timeout" else set()
     if "stdout_sha256" not in antes:  # golden do formato 1: só os trechos e a foto da pasta
         campos = [("codigo", "codigo"), ("stdout", "stdout"), ("stderr", "stderr")]
-        diverg = [k for k, _ in campos if agora[k] != antes.get(k)]
+        diverg = [k for k, _ in campos if k not in fora and agora[k] != antes.get(k)]
         if agora["arquivos"] != antes.get("arquivos", {}):
             diverg.append("arquivos")
         return diverg
     return [nome for nome, chave in (("codigo", "codigo"), ("stdout", "stdout_sha256"), ("stderr", "stderr_sha256"),
-                                     ("efeitos", "efeitos")) if agora[chave] != antes.get(chave)]
+                                     ("efeitos", "efeitos")) if nome not in fora and agora[chave] != antes.get(chave)]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -153,17 +161,19 @@ def main(argv: list[str] | None = None) -> int:
         cases = [run_case(cmd, f, args.cwd, args.pasta_saida, args.ignorar, args.timeout, args.ensaio, i)
                  for i, f in enumerate(files)]
         golden = {"schema_version": "fundacao.golden/2", "comando": cmd, "ignorar": args.ignorar,
-                  "comparacao": "codigo, sha256 de stdout e stderr inteiros, efeitos por caso", "casos": cases}
+                  "comparacao": "codigo, sha256 de stdout e stderr inteiros, efeitos por caso",
+                  "saida_parcial_no_timeout": True, "casos": cases}
         args.saida.parent.mkdir(parents=True, exist_ok=True)
         args.saida.write_text(json.dumps(golden, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps({"casos_gravados": len(cases), "saida": str(args.saida)}, ensure_ascii=False))
         return 0
     golden = json.loads(args.golden.read_text(encoding="utf-8"))
+    sem_saida_no_timeout = not golden.get("saida_parcial_no_timeout")
     diffs = []
     for i, case in enumerate(golden["casos"]):
         now = run_case(cmd, case["entrada"], args.cwd, args.pasta_saida, golden.get("ignorar", []), args.timeout,
                        args.ensaio, i)
-        changed = comparar_caso(case, now)
+        changed = comparar_caso(case, now, sem_saida_no_timeout)
         if changed:
             mostrar = {"codigo": "codigo", "stdout": "stdout", "stderr": "stderr", "efeitos": "efeitos",
                        "arquivos": "arquivos"}
@@ -171,9 +181,15 @@ def main(argv: list[str] | None = None) -> int:
                           "antes": {k: case.get(mostrar[k]) for k in changed},
                           "depois": {k: now.get(mostrar[k]) for k in changed}})
     saida = {"casos": len(golden["casos"]), "divergencias": diffs}
+    avisos = []
     if golden.get("schema_version") != "fundacao.golden/2":
-        saida["aviso"] = ("golden do formato 1: compara só os trechos gravados (20.000/4.000 caracteres) e a foto da "
-                          "pasta; grave de novo para comparar as saídas inteiras e os efeitos por caso")
+        avisos.append("golden do formato 1: compara só os trechos gravados (20.000/4.000 caracteres) e a foto da "
+                      "pasta; grave de novo para comparar as saídas inteiras e os efeitos por caso")
+    if sem_saida_no_timeout and any(c.get("codigo") == "timeout" for c in golden["casos"]):
+        avisos.append("golden gravado quando o timeout descartava a saída parcial: nos casos com timeout, só o código "
+                      "e os efeitos foram comparados; grave de novo")
+    if avisos:
+        saida["aviso"] = "; ".join(avisos)
     print(json.dumps(saida, ensure_ascii=False, indent=2))
     return 1 if diffs else 0
 

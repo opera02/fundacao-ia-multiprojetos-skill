@@ -18,6 +18,11 @@ continuam excluídos, com aviso para refazê-lo.
 
 --texto-canonico: para .md/.txt/.json/.py/.yaml calcula o hash após normalizar
 UTF-8, LF e NFC (o mesmo arquivo com CRLF e LF dá o mesmo hash).
+
+Ligação (link simbólico ou junção, de pasta ou de arquivo) não é seguida: vai para `excluidos`
+e o destino dela não é listado nem lido. Manifesto salvo DENTRO da raiz não descreve a si mesmo:
+o caminho dele vai para `politica.exclusoes_literais` (comparação literal, sem curingas, e
+reaplicada na verificação). Mover o manifesto dentro da raiz depois exige gerá-lo de novo.
 """
 
 from __future__ import annotations
@@ -26,6 +31,8 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import os
+import stat
 import sys
 import unicodedata
 from datetime import datetime, timezone
@@ -36,6 +43,9 @@ SECRET_GLOBS = [".env", ".env.*", "*.pem", "*.key", "*.pfx", "*.p12", "id_rsa*",
                 "auth.json", "*.kdbx"]
 TEXT_SUFFIXES = {".md", ".txt", ".json", ".py", ".yaml", ".yml", ".toml", ".csv", ".html", ".sql"}
 FORMATO = "fundacao.manifest/2"
+# Windows: etiqueta de ponto de nova análise "substituta de nome" (bit 29) — junção, link simbólico e
+# afins, que redirecionam para outro caminho; arquivo de nuvem (OneDrive) e deduplicação não a têm.
+SUBSTITUTA_DE_NOME = 0x20000000
 
 
 def politica_padrao(extras: list[str] | None = None, canonical: bool = False) -> dict:
@@ -60,19 +70,51 @@ def file_hash(path: Path, canonical: bool) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def e_ligacao(path: Path) -> bool:
+    """Link simbólico ou junção (e afins do Windows), conferido sem seguir a ligação."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_reparse_tag", 0) & SUBSTITUTA_DE_NOME)
+
+
+def percorrer(root: Path, pastas_ignoradas: set[str]) -> list[tuple[Path, bool]]:
+    """Caminhos sob `root`, ordenados, sem atravessar ligação (A12): a ligação vem marcada (True) e o
+    que há do outro lado não é listado. `os.walk` sozinho entraria na junção do Windows."""
+    itens = []
+    for pasta, subpastas, nomes in os.walk(root):
+        atual = Path(pasta)
+        for nome in sorted(subpastas):
+            if nome in pastas_ignoradas or e_ligacao(atual / nome):
+                subpastas.remove(nome)
+                if nome not in pastas_ignoradas:
+                    itens.append((atual / nome, True))
+        itens.extend((atual / nome, e_ligacao(atual / nome)) for nome in nomes)
+    return sorted(itens)
+
+
 def build(root: Path, politica: dict, excluidos_extra: set[str] | None = None) -> dict:
     files, excluded = [], []
-    pastas = set(politica["pastas_ignoradas"])
-    for path in sorted(root.rglob("*")):
+    raiz_real = root.resolve()
+    literais = set(politica.get("exclusoes_literais", []))  # sem curingas: `manifest[1].json` é só ele
+    for path, ligacao in percorrer(root, set(politica["pastas_ignoradas"])):
         rel = path.relative_to(root)
-        if any(part in pastas for part in rel.parts[:-1]) or not path.is_file():
+        if ligacao:
+            excluded.append({"path": rel.as_posix(), "motivo": "ligação (link simbólico ou junção) não seguida"})
+            continue
+        if not path.is_file():
             continue
         if (is_secret(path.name, politica["padroes_de_segredo"])
                 or any(fnmatch.fnmatch(rel.as_posix(), g) for g in politica["exclusoes_extras"])
+                or rel.as_posix() in literais
                 or rel.as_posix() in (excluidos_extra or set())):
             excluded.append({"path": rel.as_posix(), "motivo": "segredo/credencial ou exclusão explícita"})
             continue
         try:
+            if not path.resolve().is_relative_to(raiz_real):  # trocado por ligação depois da listagem
+                excluded.append({"path": rel.as_posix(), "motivo": "caminho resolvido fora da raiz: não lido"})
+                continue
             files.append({"path": rel.as_posix(), "size": path.stat().st_size,
                           "sha256": file_hash(path, politica["texto_canonico"])})
         except OSError as exc:
@@ -111,7 +153,13 @@ def main() -> int:
     k = sub.add_parser("comparar"); k.add_argument("--a", type=Path, required=True); k.add_argument("--b", type=Path, required=True)
     args = ap.parse_args()
     if args.cmd == "criar":
-        m = build(args.raiz.resolve(), politica_padrao(args.excluir, args.texto_canonico))
+        raiz = args.raiz.resolve()
+        politica = politica_padrao(args.excluir, args.texto_canonico)
+        saida = args.saida.resolve()
+        if saida.is_relative_to(raiz):
+            # A13: o manifesto não entra no conjunto que descreve — nem na criação, nem na verificação.
+            politica["exclusoes_literais"] = [saida.relative_to(raiz).as_posix()]
+        m = build(raiz, politica)
         m["rotulo"] = args.rotulo
         args.saida.parent.mkdir(parents=True, exist_ok=True)
         args.saida.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")

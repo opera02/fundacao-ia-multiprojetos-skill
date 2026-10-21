@@ -1,15 +1,18 @@
 """Registro e ciclo de vida de componentes (livro A11, A34).
 
 Descoberta, instalação, habilitação, saúde e autorização são estados distintos.
-`discover()` só lê o registro JSON — nunca importa nem executa o componente.
+`discover()` só lê o registro JSON — nunca importa nem executa o componente, nem
+os pacotes das dependências declaradas (auditoria A08; varredura #25).
 `dispatch()` confere habilitação e autorização ANTES de iniciar o componente e
 executa-o em subprocesso com timeout real (no Windows não é possível
-interromper com segurança uma função no mesmo processo).
+interromper com segurança uma função no mesmo processo). O prazo vale para a
+árvore de processos: descendentes do componente são encerrados no prazo e
+quando ele termina (auditoria A06).
 """
 
 from __future__ import annotations
 
-import importlib.util
+import importlib.machinery
 import json
 import os
 import sqlite3
@@ -18,6 +21,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ..adapters.cli import _processo
 from . import events
 from .auth import Policy, Principal, resource_project
 from .canon import sha256_file
@@ -70,7 +74,7 @@ def discover(root: Path) -> list[dict]:
             found.append({"component_id": path.stem, "installed": True, "enabled": False,
                           "health": "registro_invalido", "motivo": str(exc), "allowed_projects": []})
             continue
-        missing = [d for d in entry.get("requires_modules", []) if importlib.util.find_spec(d) is None]
+        missing = [d for d in entry.get("requires_modules", []) if not modulo_disponivel(d)]
         found.append({
             "component_id": entry["component_id"],
             "version": entry["version"],
@@ -83,6 +87,37 @@ def discover(root: Path) -> list[dict]:
             "purpose": entry.get("purpose", ""),
         })
     return found
+
+
+def modulo_disponivel(nome: Any) -> bool:
+    """Diz se `nome` (ex.: `pacote.modulo`) pode ser importado SEM importar nada (A08; varredura #25).
+
+    `importlib.util.find_spec("pacote.modulo")` importa `pacote`, isto é, executa o `__init__.py`
+    dele no processo da fundação — inclusive para componente desabilitado, só por listar. Aqui os
+    localizadores padrão são consultados nível a nível, sem executar código dos pacotes; módulo já
+    importado conta como disponível. Conservador: pacote que monta o `__path__` ao ser importado, ou
+    que dependa de localizador próprio em `sys.meta_path`, aparece como ausente."""
+    partes = nome.split(".") if isinstance(nome, str) else []
+    if not partes or not all(p.isidentifier() for p in partes):
+        return False
+    busca = None
+    for i in range(len(partes)):
+        qualificado = ".".join(partes[:i + 1])
+        carregado = sys.modules.get(qualificado)
+        if carregado is not None:
+            busca = getattr(carregado, "__path__", None)
+            continue
+        if i > 0 and busca is None:
+            return False  # o nível anterior é módulo, não pacote
+        spec = None
+        if i == 0:
+            spec = (importlib.machinery.BuiltinImporter.find_spec(qualificado)
+                    or importlib.machinery.FrozenImporter.find_spec(qualificado))
+        spec = spec or importlib.machinery.PathFinder.find_spec(qualificado, busca)
+        if spec is None:
+            return False
+        busca = spec.submodule_search_locations
+    return True
 
 
 def validate_component_id(component_id: str) -> str:
@@ -249,7 +284,7 @@ def dispatch(root: Path, con: sqlite3.Connection, principal: Principal, project_
     except FundacaoError:
         _record(con, entry, project_id, principal.principal_id, "denied_entrypoint")
         raise
-    missing = [d for d in entry.get("requires_modules", []) if importlib.util.find_spec(d) is None]
+    missing = [d for d in entry.get("requires_modules", []) if not modulo_disponivel(d)]
     if missing:
         _record(con, entry, project_id, principal.principal_id, "denied_dependency")
         raise DependencyUnavailable("dependência ausente", component_id=component_id, missing=missing)
@@ -268,11 +303,12 @@ def dispatch(root: Path, con: sqlite3.Connection, principal: Principal, project_
     env["PYTHONIOENCODING"] = "utf-8"
     _record(con, entry, project_id, principal.principal_id, "executed")
     try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "fundacao.core.runner", module, func],
-            input=json.dumps(request), capture_output=True, text=True, encoding="utf-8",
-            timeout=entry["timeout_seconds"], cwd=str(Path(root).resolve()), env=env,
-        )
+        # O executor de árvore dos adaptadores (adapters/cli.py): o prazo vale para o componente E para
+        # os descendentes (Job Object no Windows; grupo de processos nos demais), e o que o componente
+        # deixar rodando ao terminar também é encerrado (auditoria A06). Limites documentados lá.
+        proc = _processo([sys.executable, "-m", "fundacao.core.runner", module, func],
+                         json.dumps(request).encode("utf-8"), entry["timeout_seconds"],
+                         str(Path(root).resolve()), env)
     except subprocess.TimeoutExpired:
         events.emit(con, "component_timeout", project_id=project_id, subject=principal.principal_id,
                     payload={"component_id": component_id})

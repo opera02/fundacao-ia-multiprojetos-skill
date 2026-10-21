@@ -13,8 +13,10 @@ Contrato de saída igual ao de guarda_caminho.py; falha fechada em evento ilegí
 Matcher recomendado: `Bash|PowerShell`.
 Limite: é um guarda-corpo para o caminho comum (atribuição explícita da variável). Passam por
 ele, por exemplo, o nome da variável montado em tempo de execução, `python -c` que altere
-`os.environ` e a chamada direta da API do kit. Não substitui conta do SO separada nem aprovação
-com credencial fora do alcance do executor.
+`os.environ`, a chamada direta da API do kit e, com `state/` gravável pela mesma conta do SO, a
+escrita direta no SQLite — por isso ampliar estes padrões não o torna barreira (revisão de
+segurança da 1.4.5, #4). Não substitui conta do SO separada nem aprovação com credencial fora
+do alcance do executor (desenho em references/seguranca-isolamento.md §2).
 Formas cobertas: `$env:X = …`, `${env:X} = …`, `+=`; Set-Item/Set-Content/New-Item/Remove-Item/
 Clear-Item sobre `env:X` (caminho com ou sem aspas, `-Path:`/`-Path=`, `Env:\\`, `-Name`, outros
 parâmetros antes); `[Environment]::SetEnvironmentVariable`; set/setx/export/unset e `X=valor comando`

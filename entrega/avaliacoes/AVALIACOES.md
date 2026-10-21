@@ -27,7 +27,7 @@ final) → 115 (1.3.4, ajustes da confirmação focada) → **163 (1.4.0, audito
 e achado N1; 3 pulados: o link de diretório antigo e dois links simbólicos de ARQUIVO, que pedem
 modo de desenvolvedor no Windows)** → **166 (1.4.3, auditoria final da 1.4.2: AF-01, opções
 obrigatórias da CLI; AF-09, leitura sem escrita no coordenador; os 3 falham no kit 1.4.0 — 6 casos
-por asserção e 2 por erro — e passam no 1.4.1)**. Os testes novos falham no código anterior e passam no
+por asserção e 2 por erro — e passam no 1.4.1)** → **238 (1.5.0, kit 1.5.0: auditoria técnica sobre a 1.4.1, A04–A11, e varredura de segurança da 1.4.5; 4 pulados, todos por link simbólico sem privilégio; os testes novos falham no kit 1.4.1)**. Os testes novos falham no código anterior e passam no
 corrigido (conferido para cada lote; o da 1.4.3 em
 `fundacao-ia-multiprojetos-workspace/auditoria-final-1.4.2/execucoes/19-regressoes-vermelhas-1.4.2.log`). No lote da 1.4.0, contra uma cópia descartável do snapshot
 da 1.3.4 (`fundacao-ia-multiprojetos-workspace/auditoria-externa-1.3.4/`): dos 48 testes novos
@@ -240,6 +240,16 @@ asserção de acesso pelo trace de ferramentas, e `evals/verificar_execucoes.py`
 acessos ao outro projeto em `<run>/trace.jsonl` (separando os feitos pelo serviço da fundação dos feitos
 direto no disco); sem trace, o fato fica "não medido" e a asserção não pode ser aprovada. A nota
 histórica do E7 sem a skill fica com esta ressalva.
+
+**Auditoria 1.5.0 (varredura da 1.4.5, #5 e #16).** O verificador lê o banco como dado (`mode=ro`,
+cadeia recalculada por ele) e não executa nada do ambiente avaliado. O acesso a outro projeto é
+classificado pela estrutura da chamada (shlex e caminhos canônicos): marcador em comentário ou
+`echo` não muda a classificação; chamada de shell à CLI da fundação só conta como serviço com
+negativa correspondente na trilha verificada; o restante conta como direto, com o motivo. No
+CEN-02/03, a etapa "código legado no projeto" virou "dados do legado no projeto" e entrou "código
+do legado na fonte da fundação (manifesto)"; o E3 começa com o componente sem registro nem
+habilitação, a fazer por `componente habilitar` (varredura #6). Regressões (#5, #6, #16, #22):
+`../testes/test_auditoria_1_5_0_avaliacoes.py`.
 
 **Alcance que continua valendo.** As rodadas são da 1.0.0 (E1–E8) e da 1.1.0 (E9); parte do registro
 é autodeclarada pelos executores; E2–E7 e E9 tinham o kit instalado na linha de base (medem o valor das

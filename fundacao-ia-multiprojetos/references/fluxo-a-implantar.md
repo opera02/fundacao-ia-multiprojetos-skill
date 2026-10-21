@@ -5,6 +5,12 @@ tratamento**. Atualize `RETOMADA.md` e a matriz ao fim de cada etapa. Origem:
 Módulos 01–02 do livro [Livro p8–p39], capacidades nos Módulos 03–10, reordenação
 em trilhas [3.0 §5.1].
 
+**Ritmo** [Decisão; implantação real de 2026-10-19/20]: colete as escolhas do usuário de uma vez,
+no início, com `assets/templates/FORMULARIO-IMPLANTACAO.md` (item em branco = padrão seguro), e
+encadeie A1→A8 sem pedir confirmação entre etapas. Volte ao usuário só pelo que depende dele por
+natureza (senha, administrador, contas e cobrança, custo acima do teto, dados reais), num cartão de
+parada — `references/comunicacao-leigo.md`.
+
 ## Sumário
 - A1 Ambiente, instruções, recursos e fundação anterior
 - A2 Objetivos, restrições, critérios e arquitetura
@@ -20,12 +26,16 @@ em trilhas [3.0 §5.1].
 
 ## A1 — Ambiente, instruções, recursos e fundação anterior [Livro A01 p8–11, A03 p16–19]
 
-**Entradas:** pedido do usuário; pasta autorizada; `RETOMADA.md`/relatórios anteriores; `AGENTS.md`/`CLAUDE.md`.
+**Entradas:** pedido do usuário e escopo fixado (SKILL.md §1); pasta autorizada; `RETOMADA.md`/relatórios
+anteriores (estado e evidências, não autorização); `AGENTS.md`/`CLAUDE.md`.
 
 **Ações**
-1. `python <skill>/scripts/inspecionar_ambiente.py --pasta <raiz> --saida <raiz>/evidence/ambiente/inventario.json`
-   (somente leitura: não instala, não inicia WSL, não lê credenciais; `--somente-localizar` se o
-   escopo proibir executar CLIs). Confira `pasta.sistema_de_arquivos` (exFAT/FAT = sem permissões do SO).
+1. `python <skill>/scripts/inspecionar_ambiente.py --pasta <raiz> --somente-localizar` — não executa
+   programas nem grava. Sem `--somente-localizar`, roda `--version` de CLIs (claude, codex, git…),
+   `py -0p`/`pymanager list` e `wsl --list` (lista; não inicia WSL): só se o escopo permitir executar
+   CLIs. `--saida <raiz>/evidence/ambiente/inventario-<data>.json` grava (exige escrita autorizada;
+   recusa arquivo existente) [auditoria da 1.4.1, A18]. Nunca instala nem lê credenciais. Confira
+   `pasta.sistema_de_arquivos` (exFAT/FAT = sem permissões do SO).
 2. Leia as instruções aplicáveis e classifique o acesso: Windows nativo, WSL ou remoto.
 3. Procure fundação anterior: `registry/`, `state/state.sqlite`, pacote `fundacao/`,
    `registry/kit_install.json`, `evidence/`. Se existir, este fluxo vira **extensão**:
@@ -37,7 +47,7 @@ em trilhas [3.0 §5.1].
 5. Defina orçamento de laboratório: teto de chamadas reais (padrão 4), regra de
    parada e despesas possíveis; valores desconhecidos ficam "não medido".
 
-**Saídas:** `evidence/ambiente/inventario.json`, `DIAGNOSTICO.md` (seções 1, 6, 7),
+**Saídas:** `evidence/ambiente/inventario-<data>.json` (com escrita autorizada), `DIAGNOSTICO.md` (seções 1, 6, 7),
 `ACESSOS.json`, `ORCAMENTO.md`, `PERMISSOES.md` (leitura × gravação × ação externa;
 onde a autorização será aplicada fora do modelo).
 
@@ -265,8 +275,11 @@ RETOMADA da última etapa concluída é o ponto de continuidade.
 ```
 python <skill>/scripts/instalar_kit.py --destino <raiz> [--simular]   # plano antes de escrever; conflito: nada escrito, código 3
 python <skill>/scripts/instalar_kit.py --destino <raiz> --atualizar   # atualização C6: guarda a versão anterior
+python <skill>/scripts/atualizar_fundacao.py checar --raiz <raiz>     # atualização C6 em um comando: só lê
+python <skill>/scripts/atualizar_fundacao.py aplicar --raiz <raiz> --backups <outro disco>  # backup, ensaio, promoção
 # Códigos: 0 composição verificada · 3 incompleta (conflito; --manter-conflitos = estado misto registrado)
-#          4 ligação/junção para fora do destino (nada escrito) · 5 falha na promoção (desfeita)
+#          4 ligação/junção para fora do destino (nada escrito) · 5 falha na promoção (desfeita; com
+#          `desfeito: false` o retorno também falhou: siga `erros` e `acao_necessaria`)
 cd <raiz>
 python -m fundacao init --admin <id-titular>      # estado, 1º administrador e registro de retiradas com identidade
 # Identidade com dados reais: o lançador define FUNDACAO_PRINCIPAL antes da sessão (PowerShell: $env:FUNDACAO_PRINCIPAL="<id>").
@@ -288,12 +301,17 @@ python -m fundacao rota gasto --rota api_creditos  # gasto e tentativas sem cust
 python -m fundacao rota custo --rota api_creditos --tentativa <event_id> --custo-usd 0.0123 --fonte "painel"
 python -m fundacao.mcp_servidor --raiz <raiz>      # servidor MCP de leitura (stdio; requer o pacote mcp)
 python <skill>/scripts/mcp_ensaio.py --raiz <raiz> --projeto <autorizado> --outro <nao-autorizado>
-python -B -m unittest discover -s tests            # 166 testes de conformidade
+python -B -m unittest discover -s tests            # suíte de conformidade
 # Os testes criam pastas temporárias. Para mantê-las dentro da raiz autorizada, antes defina
 # TMPDIR=<raiz>/state/tmp-testes (crie a pasta; no PowerShell: $env:TMPDIR='<raiz>/state/tmp-testes').
 # Windows: prefira raiz curta (ex.: D:/IA/fundacao). A pasta de trabalho de um processo não passa de
 # 260 caracteres mesmo com caminhos longos ligados; cópias de ensaio em pastas fundas podem falhar.
 ```
+
+Ferramenta própria que usa o kit direto (fora da CLI) abre o banco só se ele existir: `connect()` cria
+um banco vazio, e com `state/` mascarado (sandbox) ou perdido o resultado parece sucesso [Decisão;
+implantação real de 2026-10-20]. Siga a regra da CLI ("só o `init` cria o banco": confira
+`state/state.sqlite` antes de abrir) e recuse a execução quando faltar.
 
 Cobertura do kit: núcleo, projetos por modelo, ACL por identidade (comum/projeto/caso),
 tarefas com checkpoints/retomada/decisão humana/orçamento, componentes com timeout

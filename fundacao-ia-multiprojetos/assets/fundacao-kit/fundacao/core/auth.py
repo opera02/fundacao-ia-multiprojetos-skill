@@ -162,7 +162,9 @@ class Policy:
                 "DELETE FROM acl WHERE subject = ? AND resource = ? AND action = ?",
                 (subject, resource, action),
             ).rowcount
-            revisions.bump(self.con, scope_of(resource), "policy_rev")
+            # Caso conta no projeto; o comum entra no contexto de todo projeto, então revogar ali também
+            # invalida os caches de cada projeto, não só os do comum (auditoria #21).
+            revisions.incrementar_alcance(self.con, resource, "policy_rev")
             events.emit(
                 self.con, "acl_revoke", subject=admin.principal_id,
                 payload={"from": subject, "resource": resource, "action": action},

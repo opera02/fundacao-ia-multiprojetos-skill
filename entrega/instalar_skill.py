@@ -6,20 +6,37 @@ Convenção (a mesma já usada pelas outras skills deste perfil):
   ligação        ~/.claude/skills/fundacao-ia-multiprojetos  ->  cópia física
                  (Windows: junção de diretório, sem exigir administrador; Linux/macOS: link simbólico)
 
-  python instalar_skill.py instalar   --origem <pasta-da-skill | pacote.skill> [--sha256 <hash>]
-  python instalar_skill.py atualizar  --origem <...> [--sha256 <hash>]  (guarda a anterior em ~/.agents/skills-anteriores/)
-  python instalar_skill.py verificar [--origem <...>] [--sha256 <hash>]  (ligação; com --origem, compara os hashes)
+  python instalar_skill.py instalar   --origem <pacote.skill> --sha256 <hash>
+  python instalar_skill.py atualizar  --origem <pacote.skill> --sha256 <hash>
+                                          (guarda a anterior em ~/.agents/skills-anteriores/)
+  python instalar_skill.py verificar [--origem <pacote | pasta>] [--sha256 <hash>]
+                                          (ligação; com --origem, compara os hashes)
   python instalar_skill.py remover                        (pede --confirmar; remove a ligação, a cópia e a
                                                            instalação manual desta skill em ~/.claude/skills)
+  Só em desenvolvimento (INSEGURO, desligado por padrão):
+  python instalar_skill.py instalar|atualizar --origem <pasta-da-skill> --pasta-de-desenvolvimento-nao-verificada
 
 Somente arquivos locais; nada é baixado. Saída em JSON, também nos erros.
 Requer Python 3.10 ou posterior, conferido ANTES de qualquer alteração. A junção do Windows é
 reconhecida também sem `os.path.isjunction` (que só existe a partir do 3.12), pela marca de ponto
 de montagem do `lstat` — assim verificar, atualizar e remover funcionam no 3.10/3.11.
 
-Integridade do pacote, ANTES de extrair: com `--sha256` (hash recebido por outro canal) e com o
-`SHA256SUMS.txt` que estiver ao lado do pacote, se ele listar o arquivo. Qualquer divergência recusa a
-operação sem alterar nada; sem nenhum dos dois, a saída diz que o hash não foi conferido.
+Origem autenticada (varredura da 1.4.5, #2): `instalar` e `atualizar` exigem `--sha256` com o hash do pacote
+recebido por OUTRO canal (quem publicou a versão; numa liberação, o pipeline que acabou de gerar o pacote e
+conhece o hash dele). O `SHA256SUMS.txt` ao lado do pacote viaja no mesmo canal: continua conferido e uma
+divergência recusa (pega corrupção), mas ele não substitui o `--sha256` nem conta como verificação
+(`integridade_do_pacote.ok` só é true com o `--sha256`). Pasta como origem não tem hash: só com
+`--pasta-de-desenvolvimento-nao-verificada`, desligada por padrão, e a saída avisa que a origem NÃO foi verificada.
+`verificar` não altera nada e não exige `--sha256`; sem ele, diz que o pacote não foi autenticado.
+
+O pacote é lido UMA vez (até 100 MiB) e o hash e a extração usam esses mesmos bytes, em memória: trocar o arquivo
+depois da conferência não muda o que se instala (#3). Antes de extrair, as entradas de
+`fundacao-ia-multiprojetos/` são conferidas, e qualquer problema recusa o pacote sem alterar nada (auditoria
+sobre a 1.4.1, A02): mais de 10.000 entradas ou de 100 MiB descompactados; componente vazio, `.` ou `..`; nome que
+o Windows apelida ou descarta (`<>:"|?*`, barra invertida, controle, ponto ou espaço no fim, `CON`, `NUL`,
+`COM1`…), recusado em qualquer sistema; link simbólico; duplicata, também por maiúsculas/minúsculas ou forma
+Unicode; o mesmo caminho como arquivo e como pasta. Entradas fora dessa pasta não são extraídas. Pasta de origem
+com ligação (link simbólico ou junção) é recusada: a cópia a seguiria e traria conteúdo de fora da origem (A02).
 
 Instalar e atualizar trocam a versão por renomeação: a versão nova é copiada para uma área de preparo
 FORA das pastas de skills (~/.agents/skills-preparo/), conferida contra o pacote e só então posta no
@@ -29,24 +46,29 @@ troca ou na ligação devolve a versão anterior e descarta a cópia preparada; 
 duas renomeações, o próximo `instalar` ou `atualizar` conclui a troca com a cópia preparada (já
 conferida), e o `verificar` avisa enquanto isso não acontecer (auditoria final da 1.4.2, AF-02); se a
 marca da troca estiver ilegível, as cópias preparadas que sobrarem em skills-preparo são removidas e
-relatadas em `passos`, em vez de ficarem órfãs (conferência da 1.4.3, CF-04).
+relatadas em `passos`, em vez de ficarem órfãs (conferência da 1.4.3, CF-04). Se o RETORNO à versão anterior
+também falhar, a recusa diz isso e onde ela ficou (`versao_anterior_em`), em vez de dizer que ela voltou (A01).
 Ligação em conflito é recusada antes de copiar. A origem precisa declarar `name: fundacao-ia-multiprojetos`
-no SKILL.md (AF-03; UTF-8 com BOM aceito, e a recusa diz quando não há `name` legível, CF-03).
+no SKILL.md (AF-03; UTF-8 com BOM aceito, e a recusa diz quando não há `name` legível, CF-03); `atualizar`
+recusa uma pasta física em ~/.agents/skills que não declare esse `name` (A02).
 
 `remover` relata cada caminho e sai com código 1 se algo ficar no lugar; arquivo somente leitura
 não o interrompe; a área de preparo (sobras) também é removida; uma ligação em ~/.claude/skills com o
 nome desta skill que aponte para a pasta de OUTRA skill é mantida e relatada (AF-04), mas se o alvo
-não existir mais (ligação pendurada) só a ligação é removida e relatada (CF-02). `verificar`
-informa se o SQLite tem o FTS5 com o tokenizador do kit da fundação: é só informativo e não entra em
-`ok` (a skill instalada não depende dele; o kit, sim).
+não existir mais (ligação pendurada) só a ligação é removida e relatada (CF-02); pasta física em
+~/.agents/skills ou em ~/.claude/skills que não declare `name: fundacao-ia-multiprojetos` é mantida e
+relatada (A02). `verificar` informa se o SQLite tem o FTS5 com o tokenizador do kit da fundação: é só
+informativo e não entra em `ok` (a skill instalada não depende dele; o kit, sim).
 """
 from __future__ import annotations
 
 import argparse
 import fnmatch
 import hashlib
+import io
 import json
 import os
+import re
 import shutil
 import sqlite3
 import stat
@@ -54,6 +76,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import zipfile
 import zlib
 from pathlib import Path
@@ -66,6 +89,11 @@ PREPARO = Path.home() / ".agents" / "skills-preparo"  # cópia nova em preparo: 
 TROCA = PREPARO / "troca-em-andamento.json"  # marca gravada entre as duas renomeações da troca (AF-02)
 PADROES_IGNORADOS = ("__pycache__", "*.pyc", "evals")
 IGNORAR = shutil.ignore_patterns(*PADROES_IGNORADOS)
+OPCAO_PASTA_DEV = "--pasta-de-desenvolvimento-nao-verificada"  # origem sem hash: só desenvolvimento (#2)
+LIMITE_BYTES = 100 * 1024 * 1024  # do arquivo do pacote e da soma descompactada declarada (A02)
+LIMITE_ENTRADAS = 10_000
+RESERVADOS_WINDOWS = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} | \
+    {f"{prefixo}{n}" for prefixo in ("COM", "LPT") for n in "123456789\u00b9\u00b2\u00b3"}
 
 
 class Recusa(Exception):
@@ -90,18 +118,33 @@ def referencia_de(pasta: Path) -> dict[str, str]:
                                        for padrao in PADROES_IGNORADOS)}
 
 
-def integridade_do_pacote(origem: Path, sha_informado: str | None) -> dict:
-    """Confere o hash do pacote ANTES de extrair. Divergência com `--sha256` ou com o SHA256SUMS.txt ao
-    lado (se ele listar o arquivo) recusa a operação; nada é alterado."""
-    if origem.is_dir():
-        if sha_informado:
-            raise Recusa("--sha256 vale para pacote (.skill ou .zip), não para pasta; nada foi alterado")
-        return {"sha256": None, "conferido_com": [], "ok": None, "nota": "origem é pasta: não há hash de pacote"}
-    atual = hashlib.sha256(origem.read_bytes()).hexdigest()
-    res = {"sha256": atual, "conferido_com": [], "ok": None}
-    esperados = []
-    if sha_informado:
-        esperados.append(("--sha256", sha_informado.strip().lower()))
+def ler_pacote(origem: Path) -> bytes:
+    """Lê o pacote UMA vez, até LIMITE_BYTES. O hash e a extração usam estes mesmos bytes: trocar o arquivo
+    depois da conferência não muda o que se instala (varredura da 1.4.5, #3)."""
+    with open(origem, "rb") as f:
+        dados = f.read(LIMITE_BYTES + 1)
+    if len(dados) > LIMITE_BYTES:
+        raise Recusa(f"o pacote passa de {LIMITE_BYTES // 2**20} MiB; nada foi alterado")
+    return dados
+
+
+def sha_informado(texto: str | None) -> str | None:
+    """`--sha256` em minúsculas e sem espaços nas pontas, ou None se não foi informado."""
+    if texto is None:
+        return None
+    sha = texto.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise Recusa("--sha256 precisa dos 64 caracteres hexadecimais de um SHA-256; nada foi alterado")
+    return sha
+
+
+def integridade_do_pacote(origem: Path, dados: bytes, sha: str | None) -> dict:
+    """Confere o hash dos bytes lidos ANTES de extrair. Só o `--sha256` (recebido por outro canal) autentica o
+    pacote; o SHA256SUMS.txt ao lado, se listar o arquivo, viaja no mesmo canal e só pega corrupção (#2).
+    Divergência com qualquer um dos dois recusa a operação; nada é alterado."""
+    atual = hashlib.sha256(dados).hexdigest()
+    res = {"sha256": atual, "conferido_com": [], "ok": None, "autenticado_por": None}
+    esperados = [("--sha256", sha)] if sha else []
     manifesto = origem.parent / "SHA256SUMS.txt"
     if manifesto.is_file():
         listado = None
@@ -118,23 +161,100 @@ def integridade_do_pacote(origem: Path, sha_informado: str | None) -> dict:
         if atual != esperado:
             raise Recusa(f"o pacote não confere com {fonte}; nada foi alterado",
                          integridade_do_pacote={**res, "ok": False, "esperado": esperado, "fonte": fonte})
-    if esperados:
-        res["ok"] = True
+    if sha:
+        res.update(ok=True, autenticado_por="--sha256")
     else:
-        res.setdefault("nota", "sem --sha256 e sem SHA256SUMS.txt ao lado: hash do pacote não conferido")
+        res["nota"] = "; ".join(filter(None, [res.get("nota"), (
+            "sem --sha256: pacote NÃO autenticado (o SHA256SUMS.txt ao lado viaja no mesmo canal do pacote e "
+            "só detecta corrupção)")]))
     return res
 
 
-def origem_como_pasta(origem: Path, tmp: Path) -> Path:
+def problema_no_nome(parte: str) -> str | None:
+    """Por que um componente de caminho do pacote é ambíguo ou não portável, ou None. Vale em qualquer sistema:
+    no Windows o zipfile troca `<>:"|?*` por `_` e tira ponto e espaço do fim (`a?.py` vira `a_.py`, `nota.md.`
+    vira `nota.md`), e um nome de dispositivo (`nul`, `CON.txt`) não vira arquivo (auditoria sobre a 1.4.1, A02)."""
+    if parte in ("", ".", ".."):
+        return "componente vazio, '.' ou '..'"
+    if any(c in '<>:"|?*\\' or ord(c) < 32 for c in parte):
+        return "caractere que o Windows não aceita em nome de arquivo"
+    if parte[-1] in ". ":
+        return "nome terminado em ponto ou espaço"
+    if parte.partition(".")[0].rstrip(" ").upper() in RESERVADOS_WINDOWS:
+        return "nome de dispositivo do Windows"
+    return None
+
+
+def membros_conferidos(z: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    """Entradas de `NOME/` a extrair, conferidas ANTES de extrair (auditoria sobre a 1.4.1, A02): limites de
+    entradas e de tamanho descompactado declarado, nomes ambíguos ou não portáveis, link simbólico, duplicata
+    (também por maiúsculas/minúsculas ou forma Unicode) e o mesmo caminho como arquivo e como pasta. Entradas
+    fora de `NOME/` não são extraídas: não seriam instaladas."""
+    infos = z.infolist()
+    if len(infos) > LIMITE_ENTRADAS or sum(i.file_size for i in infos) > LIMITE_BYTES:
+        raise Recusa(f"o pacote passa de {LIMITE_ENTRADAS} entradas ou de {LIMITE_BYTES // 2**20} MiB "
+                     "descompactados; nada foi alterado")
+    membros, arquivos, pastas = [], set(), set()
+    for info in infos:
+        partes = info.filename.rstrip("/").split("/")
+        if partes[0] != NOME:
+            continue
+        motivo = next(filter(None, map(problema_no_nome, partes[1:])), None)
+        if motivo is None and stat.S_ISLNK(info.external_attr >> 16):
+            motivo = "link simbólico"
+        if motivo is None and len(partes) == 1 and not info.is_dir():
+            motivo = f"{NOME} precisa ser pasta"
+        if motivo:
+            raise Recusa(f"pacote com entrada recusada ({motivo}): {info.filename!r}; nada foi alterado")
+        chaves = [unicodedata.normalize("NFC", "/".join(partes[:i])).casefold() for i in range(1, len(partes) + 1)]
+        pastas.update(chaves[:-1])
+        if info.is_dir():
+            pastas.add(chaves[-1])
+        elif chaves[-1] in arquivos:
+            raise Recusa("pacote com entrada duplicada (também por maiúsculas/minúsculas ou forma Unicode): "
+                         f"{info.filename!r}; nada foi alterado")
+        else:
+            arquivos.add(chaves[-1])
+        membros.append(info)
+    if arquivos & pastas:
+        raise Recusa(f"pacote com o mesmo caminho como arquivo e como pasta: {min(arquivos & pastas)!r}; "
+                     "nada foi alterado")
+    return membros
+
+
+def ligacoes_na_origem(pasta: Path) -> list[str]:
+    """Ligações (link simbólico ou junção) na pasta de origem, fora do que a cópia ignora: a cópia as seguiria e
+    traria para a instalação conteúdo de fora da origem (auditoria sobre a 1.4.1, A02)."""
+    def ignorado(nome: str) -> bool:
+        return any(fnmatch.fnmatch(nome, padrao) for padrao in PADROES_IGNORADOS)
+    achadas = []
+    for base, pastas, arquivos in os.walk(pasta):
+        pastas[:] = [d for d in pastas if not ignorado(d)]
+        achadas += [(Path(base) / n).relative_to(pasta).as_posix() for n in [*pastas, *arquivos]
+                    if not ignorado(n) and e_ligacao(Path(base) / n)]
+        pastas[:] = [d for d in pastas if not e_ligacao(Path(base) / d)]  # não desce por uma ligação
+    return sorted(achadas)
+
+
+def origem_como_pasta(origem: Path, tmp: Path, dados: bytes | None = None) -> Path:
+    """Pasta com a skill a instalar. Pacote: extrai em `tmp` só as entradas conferidas, a partir de `dados` (os
+    mesmos bytes do hash; sem eles, lê o arquivo uma vez aqui). Pasta: recusa ligação dentro dela (A02)."""
     if origem.is_dir():
         if not (origem / "SKILL.md").exists():
             raise Recusa(f"{origem} não contém SKILL.md; nada foi alterado")
+        ligacoes = ligacoes_na_origem(origem)
+        if ligacoes:
+            raise Recusa("a origem contém ligação (link simbólico ou junção), que a cópia seguiria para fora "
+                         "dela; use uma cópia física autocontida; nada foi alterado", ligacoes=ligacoes[:20])
         pasta = origem
     else:
+        if dados is None:
+            dados = ler_pacote(origem)
         try:
-            with zipfile.ZipFile(origem) as z:
-                z.extractall(tmp)  # o zipfile tira unidade, raiz e componentes `..` dos nomes
-        except (zipfile.BadZipFile, zlib.error, EOFError, OSError, RuntimeError, NotImplementedError) as e:
+            with zipfile.ZipFile(io.BytesIO(dados)) as z:
+                z.extractall(tmp, members=membros_conferidos(z))
+        except (zipfile.BadZipFile, zlib.error, EOFError, OSError, RuntimeError, NotImplementedError,
+                ValueError) as e:
             raise Recusa(f"pacote ilegível ou corrompido ({type(e).__name__}: {e}); nada foi alterado") from e
         pasta = tmp / NOME
         if not (pasta / "SKILL.md").exists():
@@ -296,7 +416,8 @@ def promover(preparo: Path) -> Path | None:
 
     São DUAS renomeações (anterior -> skills-anteriores; preparo -> skills). Entre elas fica a marca
     `TROCA`: se o processo cair aí, `concluir_troca_interrompida` termina a troca no próximo comando.
-    Uma exceção na segunda renomeação devolve a anterior e descarta a cópia preparada (AF-02)."""
+    Uma exceção na segunda renomeação devolve a anterior e descarta a cópia preparada (AF-02); se a devolução
+    também falhar, a marca e a cópia preparada ficam e a recusa diz onde está a anterior (A01)."""
     anterior = None
     if AGENTS.exists() or e_ligacao(AGENTS):
         ANTERIORES.mkdir(parents=True, exist_ok=True)
@@ -310,9 +431,17 @@ def promover(preparo: Path) -> Path | None:
             os.replace(AGENTS, anterior)
         AGENTS.parent.mkdir(parents=True, exist_ok=True)
         os.replace(preparo, AGENTS)
-    except BaseException:
+    except BaseException as erro:
         if anterior is not None and not os.path.lexists(AGENTS):
-            os.replace(anterior, AGENTS)  # devolve a anterior ao lugar
+            try:
+                os.replace(anterior, AGENTS)  # devolve a anterior ao lugar
+            except OSError as falha:
+                raise Recusa("a troca falhou e a versão anterior NÃO voltou ao lugar; nada foi apagado. Rode "
+                             "`atualizar` de novo para concluir a troca com a cópia preparada (já conferida), ou "
+                             f"devolva a anterior à mão para {AGENTS}",
+                             versao_anterior_em=str(anterior), copia_preparada_em=str(preparo),
+                             causa=f"{type(erro).__name__}: {erro}",
+                             erro_do_retorno=f"{type(falha).__name__}: {falha}") from erro
         shutil.rmtree(preparo, ignore_errors=True)  # a cópia preparada não fica para trás
         TROCA.unlink(missing_ok=True)
         limpar_preparo()
@@ -369,14 +498,24 @@ def concluir_troca_interrompida() -> dict | None:
     return {"marca": marca, "acao": acao, "orfas_removidas": orfas, "orfas_nao_removidas": nao_removidas}
 
 
-def desfazer(anterior: Path | None) -> None:
-    """Depois de promover: retira a versão nova e, se havia uma anterior, devolve-a ao lugar."""
+def desfazer(anterior: Path | None, causa: BaseException) -> None:
+    """Depois de promover: retira a versão nova e, se havia uma anterior, devolve-a ao lugar. Se esse retorno
+    falhar, a recusa diz onde ficaram a anterior e a nova, em vez de dizer que a anterior voltou (A01)."""
     descarte = caminho_livre(PREPARO / f"{NOME}-descartada")
-    PREPARO.mkdir(parents=True, exist_ok=True)
-    if os.path.lexists(AGENTS):
-        os.replace(AGENTS, descarte)
-    if anterior is not None:
-        os.replace(anterior, AGENTS)
+    try:
+        PREPARO.mkdir(parents=True, exist_ok=True)
+        if os.path.lexists(AGENTS):
+            os.replace(AGENTS, descarte)
+        if anterior is not None:
+            os.replace(anterior, AGENTS)
+    except OSError as falha:
+        raise Recusa(("a ligação falhou e o retorno à versão anterior também: ela NÃO voltou ao lugar; nada foi "
+                      f"apagado. Devolva-a à mão para {AGENTS}") if anterior else
+                     f"a ligação falhou e a cópia nova não pôde ser retirada de {AGENTS}; retire-a à mão",
+                     versao_anterior_em=str(anterior) if anterior else None,
+                     versao_nova_em=str(descarte if os.path.lexists(descarte) else AGENTS),
+                     causa=f"{type(causa).__name__}: {causa}",
+                     erro_do_retorno=f"{type(falha).__name__}: {falha}") from causa
     shutil.rmtree(descarte, ignore_errors=True)
     limpar_preparo()
 
@@ -409,8 +548,13 @@ def planejar_remocao() -> list[dict]:
     if e_ligacao(AGENTS):
         plano.append({"caminho": str(AGENTS), "acao": "remover", "tipo": "ligação",
                       "aponta_para": os.path.realpath(AGENTS)})
-    elif AGENTS.exists():
+    elif AGENTS.is_dir() and nome_declarado(AGENTS) == NOME:
         plano.append({"caminho": str(AGENTS), "acao": "remover", "tipo": "cópia"})
+    elif AGENTS.exists():
+        # Pasta (ou arquivo) que não declara esta skill: a mesma conferência de ~/.claude/skills (A02).
+        plano.append({"caminho": str(AGENTS), "acao": "manter", "tipo": "pasta" if AGENTS.is_dir() else "arquivo",
+                      "motivo": f"não é uma cópia desta skill (o SKILL.md não declara name: {NOME}); resolva "
+                                "manualmente"})
     if PREPARO.exists():
         plano.append({"caminho": str(PREPARO), "acao": "remover", "tipo": "área de preparo (sobras de troca)"})
     return plano
@@ -450,6 +594,11 @@ def instalar_ou_atualizar(acao: str, pasta: Path, integridade: dict) -> dict:
         acao = "atualizar"  # a troca concluída deixou uma versão no lugar: segue como atualização
     if acao == "instalar" and (AGENTS.exists() or e_ligacao(AGENTS)):
         raise Recusa(f"{AGENTS} já existe; use 'atualizar'")
+    if AGENTS.exists() and not e_ligacao(AGENTS) and nome_declarado(AGENTS) != NOME:
+        # A troca guardaria em skills-anteriores, como se fosse versão desta skill, o que não é (A02).
+        raise Recusa(f"{AGENTS} existe, mas não é uma cópia desta skill (o SKILL.md não declara name: {NOME}); "
+                     "nada foi alterado. Confira o conteúdo e retire-o manualmente",
+                     name_no_destino=nome_declarado(AGENTS))
     conferir_ligacao_antes()
     preparo = preparar_copia(pasta, referencia)
     anterior = promover(preparo)
@@ -459,8 +608,8 @@ def instalar_ou_atualizar(acao: str, pasta: Path, integridade: dict) -> dict:
     passos.append("cópia instalada")
     try:
         passos.append(ligar())
-    except BaseException:
-        desfazer(anterior)
+    except BaseException as erro:
+        desfazer(anterior, erro)
         raise
     res = verificar(referencia)
     res["passos"] = passos
@@ -475,7 +624,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("acao", choices=["instalar", "atualizar", "verificar", "remover"])
     ap.add_argument("--origem", type=Path)
-    ap.add_argument("--sha256", help="hash SHA-256 esperado do pacote, recebido por outro canal")
+    ap.add_argument("--sha256", help="hash SHA-256 do pacote, recebido por OUTRO canal (quem publicou a versão; o "
+                                     "pipeline que gerou o pacote); obrigatório em instalar e atualizar")
+    ap.add_argument(OPCAO_PASTA_DEV, action="store_true",
+                    help="SÓ DESENVOLVIMENTO, INSEGURO: aceita uma PASTA como origem de instalar/atualizar sem "
+                         "nenhum hash independente; desligada por padrão, e a saída avisa")
     ap.add_argument("--confirmar", action="store_true")
     a = ap.parse_args()
     if tuple(sys.version_info[:2]) < PYTHON_MINIMO:
@@ -505,14 +658,38 @@ def main() -> int:
         origem = a.origem.resolve()
         if not origem.exists():
             raise Recusa(f"{origem} não existe; nada foi alterado")
-        integridade = integridade_do_pacote(origem, a.sha256)
+        altera = a.acao in ("instalar", "atualizar")
+        sha = sha_informado(a.sha256)
+        dados, aviso = None, None
+        if origem.is_dir():
+            if sha:
+                raise Recusa("--sha256 vale para pacote (.skill ou .zip), não para pasta; nada foi alterado")
+            if altera and not a.pasta_de_desenvolvimento_nao_verificada:
+                raise Recusa(f"pasta como origem não tem hash independente: use o pacote com --sha256 ou, só em "
+                             f"desenvolvimento, {OPCAO_PASTA_DEV}; nada foi alterado")
+            integridade = {"sha256": None, "conferido_com": [], "ok": None, "autenticado_por": None,
+                           "nota": "origem é pasta: não há hash de pacote"}
+            if altera:
+                aviso = (f"ORIGEM NÃO VERIFICADA ({OPCAO_PASTA_DEV}): pasta instalada sem hash independente; "
+                         "use só em desenvolvimento, nunca para distribuir")
+        else:
+            if a.pasta_de_desenvolvimento_nao_verificada:
+                raise Recusa(f"{OPCAO_PASTA_DEV} vale só para pasta; para pacote, informe --sha256; nada foi alterado")
+            if altera and not sha:
+                raise Recusa(f"{a.acao} exige --sha256 com o hash do pacote recebido por outro canal (quem publicou a "
+                             "versão; o pipeline que gerou o pacote). O SHA256SUMS.txt ao lado viaja no mesmo canal "
+                             "do pacote e não o autentica; nada foi alterado")
+            dados = ler_pacote(origem)  # lido uma vez: o hash e a extração usam os mesmos bytes (#3)
+            integridade = integridade_do_pacote(origem, dados, sha)
         with tempfile.TemporaryDirectory() as td:
-            pasta = origem_como_pasta(origem, Path(td))
+            pasta = origem_como_pasta(origem, Path(td), dados)
             if a.acao == "verificar":
                 res = verificar(referencia_de(pasta))
                 res["integridade_do_pacote"] = integridade
             else:
                 res = instalar_ou_atualizar(a.acao, pasta, integridade)
+        if aviso:
+            res["aviso"] = aviso
     except Recusa as r:
         print(json.dumps({**r.dados, "estado_atual": verificar()}, ensure_ascii=False, indent=2))
         return 1

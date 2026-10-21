@@ -10,7 +10,8 @@ ordem de preferência. Regras:
 - erros permanentes (login ausente, entrada inválida) não são repetidos na mesma rota;
 - tetos por rota (`max_calls`, `max_usd`) valem antes da chamada e contam só as tentativas
   que saíram para o provedor; custo não medido bloqueia rota com teto de custo (falha
-  fechada) até a administração reconciliar o custo da tentativa (`rota custo`);
+  fechada) até a administração reconciliar o custo da tentativa (`rota custo`). Custo
+  informado negativo, NaN ou infinito conta como não medido, ao gravar e ao somar (#17);
 - resposta de rota simulada sai como `succeeded_simulated`, nunca como `succeeded`.
 - com teto, a capacidade é RESERVADA numa transação curta antes do despacho e a reserva é
   finalizada por ID junto com o registro da tentativa; chamadas simultâneas não passam do
@@ -29,6 +30,7 @@ from .auth import Policy, Principal
 from .contracts import ValidationError
 from .db import transaction, utcnow
 from .ids import new_id
+from .usage import custo_decimal
 
 DEFAULT_POLICY = {
     "schema_version": "fundacao.route/1",
@@ -96,9 +98,12 @@ class Router:
         if cfg.get("max_calls") is not None and chamadas >= cfg["max_calls"]:
             return "teto de chamadas da rota atingido"
         if cfg.get("max_usd") is not None:
+            teto = custo_decimal(cfg["max_usd"])
+            if teto is None:  # NaN ou negativo anulariam a comparação abaixo
+                return "teto de custo inválido na política: rota bloqueada"
             if pendentes:
                 return "custo de chamada anterior não medido: teto não verificável"
-            if gasto >= cfg["max_usd"]:
+            if gasto >= teto:
                 return "teto de custo da rota atingido"
         return None
 
@@ -120,13 +125,15 @@ class Router:
     def _registrar(self, route: str, request, *, provider_id: str, state: str, simulated: bool,
                    dispatched: bool, custo, reserva: str | None) -> str:
         """Tentativa registrada e reserva finalizada NA MESMA transação; finalização idempotente por ID
-        (`AND state = 'reserved'`): repetir não conta duas vezes."""
+        (`AND state = 'reserved'`): repetir não conta duas vezes. Custo inválido (negativo, NaN,
+        infinito, booleano) é gravado como não medido: a rota com teto fica bloqueada até reconciliar."""
+        custo = custo_decimal(custo)
         with transaction(self.con):
             evento = events.emit(self.con, "provider_attempt", project_id=request.project_id,
                                  subject=self.principal.principal_id, run_id=request.run_id,
                                  payload={"route": route, "provider_id": provider_id, "state": state,
                                           "simulated": simulated, "dispatched": dispatched,
-                                          "cost_usd": f"{custo:.6f}" if isinstance(custo, (int, float)) else None,
+                                          "cost_usd": f"{custo:.6f}" if custo is not None else None,
                                           **({"reservation_id": reserva} if reserva else {})})
             if reserva:
                 self.con.execute(
@@ -187,7 +194,8 @@ def route_spending(con: sqlite3.Connection, route: str) -> tuple[float, int, lis
     Não contam: simulação e tentativa que não saiu (dispatched=false). Tentativa antiga sem o
     campo conta como saída (conservador). Custo reconciliado pela administração prevalece.
     Reserva em andamento (chamada ainda no adaptador, ou processo que caiu no meio) conta como
-    chamada e como custo não medido: o teto vale também para chamadas simultâneas (F10)."""
+    chamada e como custo não medido: o teto vale também para chamadas simultâneas (F10).
+    Custo gravado inválido (negativo, NaN, infinito — kit anterior) também conta como não medido (#17)."""
     total, chamadas, pendentes = _gasto_registrado(con, route)
     reservas = _reservas_em_andamento(con, route)
     return total, chamadas + len(reservas), pendentes + reservas
@@ -198,19 +206,20 @@ def _gasto_registrado(con: sqlite3.Connection, route: str) -> tuple[float, int, 
     for (payload,) in con.execute("SELECT payload_json FROM event WHERE kind = 'provider_cost_reconciled'"):
         p = json.loads(payload)
         reconciliado[p["attempt_event_id"]] = p["cost_usd"]
-    total, chamadas, pendentes = 0.0, 0, []
+    total, chamadas, pendentes = Decimal(0), 0, []
     for event_id, payload in con.execute(
             "SELECT event_id, payload_json FROM event WHERE kind = 'provider_attempt' ORDER BY seq"):
         p = json.loads(payload)
         if p.get("route") != route or p.get("simulated") or p.get("dispatched") is False:
             continue
         chamadas += 1
-        custo = reconciliado.get(event_id, p.get("cost_usd"))
+        # Decimal em texto (JSON canônico não aceita float); negativo, NaN ou infinito = não medido.
+        custo = custo_decimal(reconciliado.get(event_id, p.get("cost_usd")), texto=True)
         if custo is not None:
-            total += float(custo)  # decimal em texto (JSON canônico não aceita float)
+            total += custo
         else:
             pendentes.append(event_id)
-    return total, chamadas, pendentes
+    return float(total), chamadas, pendentes
 
 
 def spending_report(con: sqlite3.Connection, route: str) -> dict:
@@ -242,7 +251,7 @@ def reconcile_cost(con: sqlite3.Connection, admin: Principal, route: str, attemp
     p = json.loads(row[0])
     if p.get("route") != route or p.get("simulated"):
         raise ValidationError("a tentativa não é uma chamada real desta rota", attempt_event_id=attempt_event_id)
-    if p.get("cost_usd") is not None:
+    if custo_decimal(p.get("cost_usd"), texto=True) is not None:  # custo gravado inválido pode ser reconciliado
         raise ValidationError("a tentativa já tem custo medido", attempt_event_id=attempt_event_id)
     for (payload,) in con.execute("SELECT payload_json FROM event WHERE kind = 'provider_cost_reconciled'"):
         if json.loads(payload).get("attempt_event_id") == attempt_event_id:

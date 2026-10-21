@@ -91,9 +91,33 @@ por projeto e global; deprecação em 3 passos.
   integridade e contagens, e a resposta avisa (`aviso`/`aviso_copia`) — faça um backup novo
   depois de atualizar. A cópia do banco sai do modo WAL e é lida de forma imutável (só o
   arquivo do banco, o mesmo que a restauração copia): conferir não cria `-wal`/`-shm`, nem em
-  cópia antiga. Limite: manifesto e banco ficam na mesma pasta; quem reescrever os dois forja a
-  cópia — por isso a política 3-2-1-1-0 pede uma cópia imutável. `backup verificar` que não
-  confere sai com código 3; manifesto com estrutura inválida, com erro JSON e código 2.
+  cópia antiga. Manifesto e banco ficam na mesma pasta: quem reescreve os dois forja a cópia —
+  por isso a âncora externa (abaixo), e a política 3-2-1-1-0 continua pedindo uma cópia imutável.
+  `backup verificar` que não confere sai com código 3; manifesto com estrutura inválida, com erro
+  JSON e código 2.
+- **Âncora externa da cópia** [Decisão; varredura da 1.4.5, #8]: o `backup criar` devolve
+  `sha256_manifesto` (o SHA-256 do `manifest.json`, que confere cada arquivo e o banco) e o anota
+  no livro de cópias `state/copias.jsonl` — ao lado do registro protegido e fora da cópia. Guarde
+  o código fora da pasta da cópia (anotação, gerenciador de senhas, outro disco) e o livro junto
+  do registro protegido. A restauração confere o manifesto pela âncora: `--sha256-manifesto`
+  informado (diferente = não libera, nada copiado) ou o livro ao lado de `--retiradas`. Sem âncora,
+  **não** libera quando o livro existe e não tem a cópia (cópia alterada, de outra fundação ou
+  feita antes da âncora) ou quando o código da cópia (`fundacao/`, que a raiz restaurada executa)
+  difere do kit que restaura — salvo `--aceitar-copia-sem-ancora`, decisão do administrador depois
+  de conferir de onde veio a cópia, que fica na resposta (`ressalva_ancora`) e na trilha. Sem livro
+  e com o mesmo código (desastre em que só o registro foi guardado): libera com `aviso_ancora` e
+  `W_COPIA_SEM_ANCORA` no stderr. `backup verificar` mostra a situação (`ancora`), pela âncora
+  informada ou pelo livro da raiz onde roda.
+- **Backup completo** [Decisão; implantação real de 2026-10-19/20]: além do kit (`fundacao/`,
+  `registry/`, `templates/`, `projects/`) e do banco, a cópia leva por padrão os registros da
+  fundação — `docs/`, `evidence/`, `ferramentas/`, `tests/` e `RETOMADA.md`; troque a lista em
+  `registry/backup_policy.json` (`{"incluir": [...]}`). Caminho inválido na política (absoluto,
+  com `..`, em `state/` ou `.git`) ou destino dentro de uma pasta copiada recusam antes de
+  copiar; segredos continuam fora.
+- **Ligações** [Decisão; varredura da 1.4.5, #24]: ligação (link simbólico ou junção) em
+  `fundacao/`, `registry/`, `templates/`, `projects/` ou nos registros não é seguida: fica em
+  `ligacoes_nao_seguidas`, com aviso, e o conteúdo dela não entra na cópia; ligação dentro da
+  cópia não confere (restauração não liberada).
 - **Pasta de rede (UNC):** serve para guardar e conferir cópias e como origem da restauração.
   A fundação que será usada deve ser restaurada em disco local — o SQLite em WAL não deve
   operar num compartilhamento de rede; com destino em rede, a restauração avisa
@@ -128,6 +152,10 @@ Use identificador e política de idempotência. Revalide aprovações (hash) na 
 | Arquivo acrescentado à cópia, fora do manifesto (até código em `fundacao/`) | não confere (`extras`); restauração não liberada — confira o que é e faça uma cópia nova (não apague às cegas) |
 | `Thumbs.db`, `desktop.ini` ou `.DS_Store` criados pelo sistema na cópia | não barram (`ignorados_do_so`) e não são restaurados |
 | Manifesto com estrutura inválida | erro JSON, código 2 |
+| Código ou banco da cópia trocados e manifesto recalculado | âncora errada ou cópia fora do livro de cópias: restauração não liberada, nada copiado |
+| Restauração sem âncora (sem livro, sem `--sha256-manifesto`) | mesmo código do kit: liberada com `aviso_ancora`; código diferente: só com `--aceitar-copia-sem-ancora` |
+| Junção ou link em pasta copiada; ligação dentro da cópia | fora da cópia, em `ligacoes_nao_seguidas`, com aviso; dentro da cópia: não confere, restauração não liberada |
+| `docs/`, `evidence/`, `ferramentas/`, `tests/`, `RETOMADA.md` na raiz | entram na cópia e voltam na restauração; política inválida recusa antes de copiar |
 | Cópia com kit diferente do que restaura | liberada com `acao_necessaria` (atualizar o kit na raiz restaurada) |
 | Componente desligado depois da cópia | continua desligado no restaurado |
 | Cópia em pasta de rede (UNC) | criada, verificada e restaurada; destino em rede vem com `aviso_destino` |
@@ -146,6 +174,8 @@ Use identificador e política de idempotência. Revalide aprovações (hash) na 
 `fundacao/core/backup.py` (`create_backup`, `verify_backup`, `restore` com reaplicação),
 `scripts/manifesto.py`, `scripts/backup_sqlite.py`, `scripts/instalar_kit.py --atualizar`
 (atualização com cópia de retorno). Testes: `tests/test_cache_backup.py::TestBackupRestauracao`,
-`tests/test_restauracao.py`; cenários CEN-09 e CEN-16. `scripts/backup_sqlite.py` e a CLI
+`tests/test_restauracao.py`, `tests/test_auditoria_1_5_0_backup.py` (âncora e ligações),
+`tests/test_backup_completo.py`, `tests/test_restauracao_revisoes.py`; cenários
+CEN-09 e CEN-16. `scripts/backup_sqlite.py` e a CLI
 montam a URI do SQLite com `Path.as_uri()` (codifica `#`, `%` e espaços; sem isso, `#` vira
 fragmento e o SQLite abriria outro arquivo).

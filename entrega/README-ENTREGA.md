@@ -8,8 +8,64 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–19/10/2026 · Versão da skill: **1.4.5** (kit de referência 1.4.1) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–20/10/2026 · Versão da skill: **1.5.1** (kit de referência 1.5.1) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
+
+> **1.5.1 (20/10/2026):** correção achada pelo próprio ciclo de liberação. Na 1.5.0, o `atualizar_fundacao.py` (pela
+> 1.5.0 já instalada) ensaiou o kit novo numa cópia restaurada da fundação deste computador e **recusou promovê-lo**:
+> `test_backup_completo` lia a política de backup local da raiz implantada (`registry/backup_policy.json`) em vez de
+> conferir a padrão — falha que só aparece numa fundação real. A raiz não foi alterada; ficaram o backup ANTES e o
+> registro da falha. Correções, cada uma com regressão que falha na 1.5.0 e passa na 1.5.1:
+> - o teste isola a política local; `scripts/tests/test_conformidade_configuracao_local.py` cobre rota e backup
+>   numa raiz implantada com configuração própria;
+> - o ensaio apaga a cópia de ensaio também na falha, porque ela tem os dados da fundação (`--manter-ensaio` para
+>   examinar), e o registro guarda o motivo de cada teste que falhou;
+> - (ferramenta privada) o `liberar.py` usa no README público o hash da última versão publicada.
+>
+> Kit 1.5.1 (um teste do kit mudou). Resultados, em cópias e perfis descartáveis: kit 238 OK (4 pulados); scripts
+> 63 OK (1 pulado); entrega 81 OK (2 pulados); ferramentas de liberação 16 OK; cenários 16/16 (111/111); 285
+> referências e 0 ausentes; pacote `.skill` `cf1c9758…d7e6` (139 arquivos). **Instalada no perfil em 20/10/2026, às 23h48**
+> (`atualizar --sha256`; a 1.5.0 ficou em `~/.agents/skills-anteriores/`), a fundação deste computador atualizada
+> para o kit 1.5.1 com backup antes e depois e ensaio numa cópia restaurada, e a cópia pública enviada ao GitHub (a
+> primeira publicada desde a 1.4.5). Autorização: pedido do titular na conversa (DECISAO-004 da fundação). Registros:
+> `fundacao-ia-multiprojetos-workspace/correcoes-1.5.1/`.
+
+> **1.5.0 (20/10/2026):** resposta a **duas auditorias externas** recebidas em 20/10 — a auditoria técnica sobre a 1.4.1
+> (A01–A19, com patch proposto) e a varredura de segurança da cópia pública 1.4.5 (#1–#25) — e **automação para quem
+> não é da área técnica**, a partir da auditoria da implantação real neste computador (66 intervenções do titular em
+> ~23 h, 19 evitáveis e 10 causadas por lacunas da skill). Verificação item a item em
+> `auditoria/VERIFICACAO-AUDITORIAS-2026-10-20.md`: os 44 achados procedem (A01 parcial; #4 é limite de arquitetura,
+> documentado); cada correção de código tem regressão que falha na 1.4.5 e passa na 1.5.0. O patch do auditor parte da
+> 1.4.1 e não foi aplicado: serviu de referência.
+> - **Instalador e empacotador:** `--sha256` obrigatório em `instalar`/`atualizar` (o `SHA256SUMS.txt` ao lado só
+>   detecta corrupção); pacote lido uma vez, com hash e extração dos mesmos bytes; entradas conferidas antes de extrair;
+>   falha dupla de troca e retorno relatada com os caminhos; `empacotar.py` recusa ligações; `instalar_kit.py` não
+>   declara desfeito quando o retorno falha.
+> - **Kit 1.5.0:** saída conferida por hash e posse por geração na orquestração; prazo persistido; árvore de processos
+>   encerrada no timeout; descoberta sem importar o pacote pai; custo como Decimal finito; rota Codex só com
+>   `isolamento_leitura`; revisões de cache no alcance certo, aprovação revalidada, arestas autorizadas, versões ≥ 1,
+>   fonte presa ao escopo, promoção legada falha fechada e reconferência de permissão dentro das transações; backup
+>   sem seguir ligações, com âncora externa (`sha256_manifesto` e `state/copias.jsonl`) e **completo** (registros da
+>   fundação, lista em `registry/backup_policy.json`). Sem migração de esquema (`user_version` 4).
+> - **Scripts:** manifesto sem seguir ligações e sem descrever a si mesmo; `backup_sqlite.py` no mesmo snapshot;
+>   `caracterizar.py` guarda a saída parcial; `inspecionar_ambiente.py` com efeitos declarados; `retomada.py` declara a
+>   validação estrutural; hook de caminho nega raiz redirecionada e ligações; **`atualizar_fundacao.py`** (novo):
+>   atualização da fundação em um comando, com backup antes, ensaio numa cópia restaurada, promoção, backup depois e
+>   `desfazer`.
+> - **Instruções:** escopo antes da retomada; RETOMADA é índice, não autorização; checklist com objetivos por host;
+>   MCP com hashes; **`references/comunicacao-leigo.md`**, formulário único de implantação, folha de decisões, fluxo B
+>   com dois portões e ritmo sem "posso seguir?".
+> - **Avaliações:** verificador lê o banco como dado; acesso classificado pela estrutura do comando; componente legado
+>   conferido por manifesto; fixture com `case_id` contido; CEN-11 encontra o `quick_validate` do plugin oficial.
+>
+> Resultados na 1.5.0, em cópias e perfis descartáveis (Windows 11, Python 3.12.10): kit 238 OK (4 pulados, link simbólico sem privilégio); scripts
+> 62 OK (1 pulado); entrega 81 OK (2 pulados); ferramentas de liberação 16 OK; cenários 16/16 (111/111 verificações); 285 referências e
+> 0 ausentes; pacote `.skill` `69ffe53c…f39f` (139 arquivos). Pelo `liberar.py` (ferramenta privada do projeto, que
+> só declara a versão liberada depois de conferir GitHub, perfil e fundação), a **1.5.0 foi instalada no perfil em
+> 20/10/2026, às 23h22** (`atualizar --sha256`; registro em `ambiente/instalacao-2026-10-18.json`). A etapa seguinte,
+> a atualização da fundação deste computador, **recusou promover o kit 1.5.0**: o ensaio numa cópia restaurada achou
+> uma regressão (ver 1.5.1). A fundação não foi alterada e a 1.5.0 **não foi publicada**. Autorização: pedido do
+> titular na conversa (DECISAO-004 da fundação). Registros: `fundacao-ia-multiprojetos-workspace/correcoes-1.5.0/`.
 
 > **1.4.5 (19/10/2026):** fecha as pendências da conferência da 1.4.3 que a 1.4.4 deixou, a pedido do titular:
 > - **CF-05 (redação)** o bloco 1.4.2 deste README deixa de chamar a troca de "atômica" e remete à descrição da 1.4.3;
@@ -234,19 +290,25 @@ usado em 19/10, sempre com o OK do titular, para passar à 1.4.0 às 10h35, à 1
 titular, com `--sha256 b54b1714b466c411af49aab3c46fade3581e44f9527d04b75e501472d730401c`, e à 1.4.5 às 22h16, com
 `--sha256 1134a4f1cea654778499091dfd52ffe3c622a13fb7e7af6d4981ed1b556a1ac9`):
 
+Desde a 1.5.0, `instalar` e `atualizar` **exigem** `--sha256` com o hash publicado do pacote (linha do
+`.skill` em `dist/SHA256SUMS.txt` ou o hash informado por quem publicou): o `SHA256SUMS.txt` ao lado do pacote
+viaja no mesmo canal e só detecta corrupção. Pasta como origem só com `--pasta-de-desenvolvimento-nao-verificada`
+(a saída avisa "ORIGEM NÃO VERIFICADA"). O pacote é lido uma vez e conferido antes de extrair: nomes não
+portáveis, duplicatas, links e mais de 10.000 entradas ou 100 MiB são recusados. Na raiz desta entrega:
+
 ```powershell
-python <raiz-do-projeto>\entrega\instalar_skill.py atualizar --origem <raiz-do-projeto>\entrega\dist\fundacao-ia-multiprojetos.skill
+python entrega\instalar_skill.py atualizar --origem entrega\dist\fundacao-ia-multiprojetos.skill --sha256 <hash do .skill>
 ```
 
 **Claude Code neste computador** (mesma convenção das outras skills do perfil: cópia física
 em `~/.agents/skills` e junção em `~/.claude/skills`):
 
 ```powershell
-python <raiz-do-projeto>\entrega\instalar_skill.py instalar --origem <raiz-do-projeto>\entrega\dist\fundacao-ia-multiprojetos.skill
+python entrega\instalar_skill.py instalar --origem entrega\dist\fundacao-ia-multiprojetos.skill --sha256 <hash do .skill>
 ```
 
 ```powershell
-python <raiz-do-projeto>\entrega\instalar_skill.py verificar --origem <raiz-do-projeto>\entrega\dist\fundacao-ia-multiprojetos.skill
+python entrega\instalar_skill.py verificar --origem entrega\dist\fundacao-ia-multiprojetos.skill --sha256 <hash do .skill>
 ```
 
 O script não baixa nada, recusa sobrescrever uma instalação existente (use `atualizar`), exige que a
@@ -346,20 +408,27 @@ você no terminal); dados fictícios × reais (reais só após
   referência (`KIT_VERSION` em `assets/fundacao-kit/fundacao/__init__.py`) só sobe quando algum arquivo do
   kit muda (as skills 1.4.1 e 1.4.2 mantiveram o kit 1.4.0; a 1.4.4 manteve o 1.4.1, por decisão do titular
   em 19/10/2026). Assim, uma cópia restaurada só acusa "kit diferente" quando o kit mudou de fato.
-- **Da skill:** gere/obtenha o pacote novo e rode `instalar_skill.py atualizar --origem <pacote>`
+- **Da skill:** gere/obtenha o pacote novo e rode `instalar_skill.py atualizar --origem <pacote> --sha256 <hash>`
   (a versão anterior fica guardada, com data, em `~/.agents/skills-anteriores/` — fora da pasta
   de skills, para não ser lida como uma segunda skill). Depois:
   `python <skill>/scripts/verificar_referencias.py` e o `quick_validate` do skill-creator.
-  Validade dos fatos voláteis: `metadata.last_verified` = 2026-10-19, janela de 3 meses —
-  reconfira `references/fontes-verificadas.md` até 19/01/2027 ou antes de decisões de custo
+  Validade dos fatos voláteis: `metadata.last_verified` = 2026-10-20, janela de 3 meses —
+  reconfira `references/fontes-verificadas.md` até 20/01/2027 ou antes de decisões de custo
   ou termos. Licença da skill: MIT desde a 1.4.3 (`LICENSE.txt` na raiz da skill e no pacote). Os campos de frescor ficam dentro de `metadata` (o padrão Agent Skills exige
   mapa de textos e o `quick_validate` recusa chaves extras no cabeçalho); para publicar pelo
   legal-builder-hub, gere uma cópia com esses campos no formato do hub.
-- **Do kit numa fundação existente:** `python <skill>/scripts/instalar_kit.py --destino <raiz>`
+- **Do kit numa fundação existente, em um comando (1.5.0):** `python <skill>/scripts/atualizar_fundacao.py
+  checar --raiz <raiz>` só lê (versões, o que muda arquivo a arquivo, alteração local, identidade e cadeia de
+  eventos); `aplicar --raiz <raiz> --backups <pasta em outro disco>` faz backup ANTES verificado, ensaia o kit
+  novo numa cópia restaurada (`init`, cadeia e suíte; falha que já existia não bloqueia, regressão bloqueia sem
+  tocar a raiz), promove, faz backup DEPOIS e grava o registro em `<raiz>/evidence/atualizacoes/`;
+  `desfazer --registro <arq>` devolve o código se o esquema do banco não mudou. Passo a passo, se preferir:
+- **Do kit, passo a passo:** `python <skill>/scripts/instalar_kit.py --destino <raiz>`
   monta o plano antes de escrever: com conflito (código alterado localmente) **nada é escrito**
   e a saída é o código 3 com o plano; ligação ou junção que leve para fora do destino recusa
   tudo (código 4). Depois da decisão (fluxo C6), `--atualizar` substitui os arquivos de código e
-  guarda a versão anterior em `registry/kit_backup/<data>/`; `--manter-conflitos` aceita um
+  guarda a versão anterior em `registry/kit_backup/<data>-<sufixo>/` (código 5 com `desfeito: false` e
+  `composicao: "indeterminada"`: o retorno também falhou — siga `erros` e `acao_necessaria`); `--manter-conflitos` aceita um
   estado misto registrado (código 3). A configuração local (`registry/`) nunca é sobrescrita, e
   a versão só é declarada com a composição conferida (código 0). Componente habilitado cujo
   código mudou precisa ser habilitado de novo (o registro guarda o hash do código aprovado).

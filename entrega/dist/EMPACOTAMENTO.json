@@ -1,17 +1,17 @@
 {
-  "versao": "1.4.5",
-  "gerado_em": "2026-10-20T01:14:08+00:00",
+  "versao": "1.5.1",
+  "gerado_em": "2026-10-21T02:47:57+00:00",
   "ferramenta": {
-    "skill_creator": "C:\\Users\\<usuario>\\AppData\\Local\\Packages\\Claude_pzs8sxrjxfjjc\\LocalCache\\Roaming\\Claude\\local-agent-mode-sessions\\skills-plugin\\15227e74-5e67-4674-b0ab-4676879a499c\\707dcdd1-5309-4264-9a7c-2461e2b93848\\skills\\skill-creator",
+    "skill_creator": "C:\\Users\\<usuario>\\.claude\\plugins\\cache\\claude-plugins-official\\skill-creator\\5d6e71434145\\skills\\skill-creator",
     "package_skill_sha256": "1a33059b0db1ef73375d46d513e5ea81369d2e8838c970597b0d52ddef8d1c0f",
-    "quick_validate_sha256": "f65315971b2a723349234947062de2ffae76cad98884b7f441e453e6dbe01892"
+    "quick_validate_sha256": "67cf5703402013936c8fb75ad6a1afecd8841d45cc5e606b634eb05825fde365"
   },
   "arquivos": {
-    "fundacao-ia-multiprojetos.skill": 123,
-    "fundacao-ia-multiprojetos-completo.zip": 146
+    "fundacao-ia-multiprojetos.skill": 139,
+    "fundacao-ia-multiprojetos-completo.zip": 162
   },
   "sha256": {
-    "fundacao-ia-multiprojetos.skill": "1134a4f1cea654778499091dfd52ffe3c622a13fb7e7af6d4981ed1b556a1ac9",
-    "fundacao-ia-multiprojetos-completo.zip": "5a6013276820d709e61029a0d112064e01798bca6e6c2f64f42b7323cb06d3ad"
+    "fundacao-ia-multiprojetos.skill": "cf1c975834a3cac022351fc0c19d51a69072dcb80661f72f8fe6294e0e49d7e6",
+    "fundacao-ia-multiprojetos-completo.zip": "152531e604364e0715c1e384847e32149d64a1318c5aa251a04a89ea091db776"
   }
 }

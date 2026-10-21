@@ -54,6 +54,8 @@ teto de custo (falha fechada) até a administração conferir o custo numa fonte
 reconciliá-lo: `python -m fundacao rota gasto --rota <r>` lista as tentativas sem custo;
 `python -m fundacao rota custo --rota <r> --tentativa <event_id> --custo-usd <valor>
 --fonte "<painel ou fatura>"` registra o valor (uma vez por tentativa, evento na trilha).
+Custo só vale como Decimal finito ≥ 0: informado negativo, NaN ou infinito conta como não
+medido, e `max_usd` inválido bloqueia a rota [varredura da 1.4.5, #17].
 [Decisão; auditoria externa da 1.3.4] Com teto, a capacidade é **reservada** numa transação
 curta antes do despacho (que serializa entre conexões e processos) e a reserva é finalizada,
 por ID e de forma idempotente, junto com o registro da tentativa; nenhuma transação fica aberta
@@ -97,7 +99,13 @@ Resposta de rota simulada sai como `succeeded_simulated`, nunca como `succeeded`
    que antes prendia a resposta. Falha ao iniciar o processo e prompt acima do limite saem como resultado
    `failed`, dentro do contrato. Isso reduz a superfície, mas
    não é barreira: antes de liberar a rota, prove com um documento-canário de outro projeto
-   na raiz.
+   na raiz. O canário é necessário, não suficiente (uma negativa não prova que outra instrução
+   não leia): com dados reais numa fundação multiprojeto, a rota Codex CLI fica **desligada**
+   até o processo rodar sob conta do SO, contêiner ou VM que só enxergue as entradas da tarefa e
+   a pasta temporária; prefira rota sem ferramentas de arquivo [Decisão; revisão de segurança
+   da 1.4.5, #9]. No kit, `CodexCLIProvider` só roda com `isolamento_leitura` declarado — a
+   descrição desse isolamento externo, que quem habilita prova com canário de outro projeto e
+   de `state/` (o kit não a confere); sem ela, devolve `disabled` sem iniciar processo.
 3. O núcleo autentica a identidade e autoriza o projeto **antes**; o adaptador recebe só
    o contexto necessário e não amplia o projeto [Livro p40].
 4. Uso normalizado sem dupla contagem: Claude entrada total = `input_tokens` +
@@ -141,4 +149,5 @@ antes de repetir); modelo rejeitado (não invente substituto nem mude o orçamen
 — código presente), `fundacao/core/routing.py`, `fundacao/core/usage.py`,
 `registry/route_policy.json`. Testes: `tests/test_eventos_rotas.py`,
 `tests/test_adaptadores_rotas.py` (linha de comando, entrada padrão, ambiente e tetos, com
-`subprocess.run` substituído — nenhuma CLI de provedor é executada).
+`subprocess.run` substituído — nenhuma CLI de provedor é executada),
+`tests/test_auditoria_1_5_0_execucao.py` (#9, #17).

@@ -249,11 +249,19 @@ def cmd_backup(args) -> dict:
         raise FundacaoError("informe --origem (pasta da cópia)")
     quem = _autorizar_pela_copia(args.origem)
     if args.acao == "verificar":
-        return backup.verify_backup(args.origem)
+        # Âncora (#8): a informada ou a do livro de cópias desta raiz.
+        return backup.verify_backup(args.origem, sha256_manifesto=args.sha256_manifesto,
+                                    livro=args.raiz / "state" / backup.LIVRO_COPIAS)
     if not args.destino:
         raise FundacaoError("informe --destino (pasta nova)")
-    return backup.restore(args.origem, args.destino, args.retiradas, executado_por=quem,
-                          aceitar_registro_nao_comprovado=args.aceitar_registro_nao_comprovado)
+    resultado = backup.restore(args.origem, args.destino, args.retiradas, executado_por=quem,
+                               aceitar_registro_nao_comprovado=args.aceitar_registro_nao_comprovado,
+                               sha256_manifesto=args.sha256_manifesto,
+                               aceitar_copia_sem_ancora=args.aceitar_copia_sem_ancora)
+    if resultado.get("released") and resultado.get("aviso_ancora"):
+        sys.stderr.write(json.dumps({"aviso": {"code": "W_COPIA_SEM_ANCORA", "message": resultado["aviso_ancora"]}},
+                                    ensure_ascii=False) + "\n")
+    return resultado
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -286,6 +294,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--aceitar-registro-nao-comprovado", action="store_true",
                    help="decisão do administrador, depois de conferir o registro à mão: aceita registro sem "
                         "identidade comprovada (cópia de kit anterior ou registro recriado); fica na trilha")
+    s.add_argument("--sha256-manifesto", help="âncora da cópia: o sha256_manifesto devolvido pelo `backup criar`, "
+                                              "guardado fora da cópia (verificar e restaurar)")
+    s.add_argument("--aceitar-copia-sem-ancora", action="store_true",
+                   help="decisão do administrador, depois de conferir de onde veio a cópia: restaura cópia sem "
+                        "âncora que não consta no livro de cópias ou cujo código difere do kit; fica na trilha")
     s.set_defaults(func=cmd_backup)
     return p
 

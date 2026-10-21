@@ -1,9 +1,13 @@
 """Hash canônico reprodutível entre Windows e WSL.
 
 Texto: UTF-8, sem BOM, quebras de linha LF, normalização Unicode NFC.
-JSON: chaves ordenadas, sem espaços, UTF-8 (compatível com a RFC 8785 para
-documentos sem números de ponto flutuante; floats são rejeitados para evitar
-divergência de serialização — use strings decimais, como o livro recomenda).
+JSON: receita própria do kit — chaves ordenadas por ponto de código (`sort_keys` do Python),
+sem espaços, UTF-8 sem escapes ASCII e NFC nas strings e nas chaves. NÃO é o JCS da RFC 8785
+(que não normaliza Unicode e ordena as chaves por unidades UTF-16; auditoria A11). Floats são
+rejeitados para evitar divergência de serialização (use strings decimais, como o livro
+recomenda), e chaves distintas que ficariam iguais depois da NFC também: seriam fundidas em
+silêncio, e o hash cobriria só uma delas. Entrada sem colisão produz o mesmo texto e o mesmo
+hash das versões anteriores.
 """
 
 from __future__ import annotations
@@ -39,14 +43,21 @@ def _reject_floats(value: Any) -> None:
 
 
 def canonical_json(value: Any) -> str:
-    """Serialização determinística (ordem de chaves, sem espaços, NFC nas strings)."""
+    """Serialização determinística (ordem de chaves, sem espaços, NFC nas strings e nas chaves).
+    Chaves que colidem depois da NFC são recusadas (ValueError), nunca fundidas."""
     _reject_floats(value)
 
     def norm(obj: Any) -> Any:
         if isinstance(obj, str):
             return unicodedata.normalize("NFC", obj)
         if isinstance(obj, dict):
-            return {unicodedata.normalize("NFC", k): norm(v) for k, v in obj.items()}
+            saida = {}
+            for chave, item in obj.items():
+                nfc = unicodedata.normalize("NFC", chave)
+                if nfc in saida:  # a compreensão de dicionário guardaria só a última, sem aviso (A11)
+                    raise ValueError("chaves JSON distintas ficam iguais depois da normalização NFC")
+                saida[nfc] = norm(item)
+            return saida
         if isinstance(obj, (list, tuple)):
             return [norm(v) for v in obj]
         return obj

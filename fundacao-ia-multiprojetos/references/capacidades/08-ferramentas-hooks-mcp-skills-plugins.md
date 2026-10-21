@@ -14,7 +14,9 @@ pode usar) — estados distintos [Livro p52, p170]. Registro próprio (contrato 
 fundação, não formato nativo): `schema_version`, `component_id`, `version`,
 `entrypoint`, permissões, projetos autorizados, timeout, estado, evidências; consulte
 `enabled` **antes** de importar ou iniciar; descobrir não executa [Livro p53].
-Componente em subprocesso com timeout real [3.0 R2.6]. Ciclo: interface → implementação
+Componente em subprocesso com timeout real [3.0 R2.6]; no kit, a descoberta não importa o
+pacote pai das dependências e o timeout encerra a árvore de processos [auditoria sobre a
+1.4.1, A06/A08; varredura da 1.4.5, #25]. Ciclo: interface → implementação
 → instalação documentada → descoberta sem execução → habilitar e demonstrar nos dois
 projetos → desabilitar (contador de chamadas prova que o ponto de entrada não foi
 atingido) → atualizar em separado (0.1.0 → 0.2.0 com campo opcional) → voltar à versão
@@ -67,10 +69,13 @@ Fatos conferidos [Verificado 2026-10-18]:
   confiado de novo); a documentação os chama de proteção, não fronteira completa.
 
 Procedimento:
-1. **Preventivo antes do observador** [3.0 R4.1–R4.3]: `permissions.deny` para segredos
-   como primeira camada; hook PreToolUse que nega escrita fora de
-   `projects/<projeto autenticado>/` como segunda (`assets/hooks/guarda_caminho.py`);
-   sandbox em WSL2 no perfil "dados reais".
+1. **Preventivo antes do observador** [3.0 R4.1–R4.3]: objetivo verificável no host em uso —
+   segredos ilegíveis, escrita só em `projects/<projeto autenticado>/` e execução isolada, cada
+   um com prova negativa e falha fechada se o mecanismo faltar. Claude Code: `permissions.deny`
+   para segredos (1ª camada), PreToolUse com `assets/hooks/guarda_caminho.py` (2ª) e, no
+   Windows, sandbox em WSL2 com `sandbox.failIfUnavailable: true`; Codex ou outro host:
+   mecanismo equivalente conferido na versão instalada. Presença do mecanismo não prova o
+   objetivo [auditoria da 1.4.1, A19].
 2. Auditoria posterior (A11B): PostToolUse em `Write|Edit` que grava **só metadados**
    (sessão, evento, caminho relativo, resultado), com chave única
    (hook + sessão + `tool_use_id`) para não duplicar; sem chamadas de rede/IA [Livro p57].
@@ -94,11 +99,13 @@ alterar `.claude/settings*.json` do usuário exige decisão dele):
 Sem `mcp__.*` no matcher, ferramentas MCP nem chegam ao hook. O `guarda_caminho.py` nega
 toda ferramenta MCP que não esteja em `FUNDACAO_MCP_PERMITIDAS` (ele não sabe se a
 ferramenta lê ou grava: libere as de leitura que o projeto usa) e falha fechado em evento
-ilegível. O `guarda_identidade.py` (regime de dados reais) nega comandos de shell que
-atribuam ou troquem `FUNDACAO_PRINCIPAL` de forma explícita — guarda-corpo, não barreira:
-nome montado em tempo de execução ou a API do kit chamada direto passam por ele (ver
-`../seguranca-isolamento.md`); o laboratório pode liberar com
-`FUNDACAO_PERMITIR_TROCA_IDENTIDADE=1` no ambiente do lançador.
+ilegível. Nega também `projects/` ou a pasta do projeto trocadas por ligação/junção e ligação
+no caminho do destino; é consultivo — troca de ligação depois da checagem passa (ver
+`../seguranca-isolamento.md` §5). O `guarda_identidade.py` (regime de dados reais) nega
+comandos de shell que atribuam ou troquem `FUNDACAO_PRINCIPAL` de forma explícita —
+guarda-corpo, não barreira: nome montado em tempo de execução, a API do kit chamada direto ou
+a escrita direta em `state/` passam por ele (ver `../seguranca-isolamento.md`); o laboratório
+pode liberar com `FUNDACAO_PERMITIR_TROCA_IDENTIDADE=1` no ambiente do lançador.
 
 ## 3. MCP (R34)
 Cliente (inicia e pede) · servidor (oferece *tools*, *resources*, *prompts*) · host [Livro p60].
@@ -138,7 +145,16 @@ autorizada, confere a negativa entre projetos (registrada na trilha) e encerra, 
 Ensaiado nesta skill com o SDK `mcp` 2.3.0 já presente no ambiente (real-local; cenário
 CEN-15 e teste `test_mcp.py`). Verifique a presença do pacote no inventário
 (`modulos_opcionais.mcp`) — é fato do ambiente, não da skill; ausente, instalar exige
-autorização e ambiente isolado (`python -m pip install "mcp>=2.3,<3"` numa venv descartável).
+autorização e cadeia fixada [Decisão; revisão de segurança da 1.4.5, #20]: (1) num ambiente
+confiável com o mesmo SO, arquitetura e Python da venv de destino, o operador resolve
+`mcp==2.3.0` (versão ensaiada; outra exige repetir CEN-15 e `test_mcp.py`) e gera
+`requirements-mcp.txt` com todas as dependências transitivas em `==` e `--hash=sha256:`
+(`pip download` + `pip hash`, ou `uv pip compile --generate-hashes`; confira as opções na
+versão instalada); (2) revisa a lista e guarda o arquivo e seu SHA-256 fora das pastas de
+projeto; (3) instala numa venv própria:
+`<python-da-venv> -m pip install --require-hashes --only-binary :all: -r requirements-mcp.txt`.
+Hash divergente ou dependência sem hash: o pip recusa — refaça (1)–(2), nunca afrouxe. Hash
+prova que os bytes são os revisados, não que são seguros.
 Pendente: registrar o servidor no host (Claude Code `claude mcp add`; Codex
 `[mcp_servers.<nome>]`) altera a configuração do usuário e exige decisão dele; depois,
 prove o disparo pelo host com a mesma negativa entre projetos.

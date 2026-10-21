@@ -76,11 +76,11 @@ R = {
         "—", "Livro", "Procedimento escrito; kit executado"),
 "R08": ("Falha, repetição e retomada controladas",
         "Ap. B p188; A09 'O que um checkpoint precisa guardar' p45–47; A35 p177",
-        "Checkpoints com hashes; limite de tentativas; erros permanentes não repetidos; reconciliação de saída gravada sem confirmação; retomada pelo mesmo run_id sem repetir efeitos.",
+        "Checkpoints com hashes; saída conferida pelo hash do banco antes de ser reaproveitada (sumiu ou mudou: etapa e derivadas refeitas); posse por geração, com arquivo próprio por execução; limite de tentativas; erros permanentes não repetidos; saída gravada sem confirmação reconciliada só se o banco a reservou para aquela geração e os bytes conferem (o recibo é registro, não prova); retomada pelo mesmo run_id sem repetir efeitos.",
         CAP + "01-orquestracao.md; references/fluxo-c-operar.md C4; scripts/retomada.py; assets/templates/RETOMADA.md",
         "Falha induzida, limite respeitado e retomada que não reexecuta etapa concluída (contagem de execuções = 1).",
         K + "test_orquestracao.py (TestRetomada); CEN-06; E6",
-        "Execução única não é prometida para serviços externos sem chave de idempotência do destino.",
+        "Execução única não é prometida para serviços externos sem chave de idempotência do destino. Migração: etapa deixada em `running` pelo kit anterior é refeita quando a posse vence — reconcilie efeitos externos antes de retomar.",
         "—", "Livro", "Procedimento escrito; kit executado"),
 "R09": ("Papéis com entradas, saídas, ferramentas e limites",
         "Ap. B p188; A10 'Delegação útil tem entrada e saída delimitadas' p48–49",
@@ -138,7 +138,7 @@ R = {
 
 "R15": ("Modalidade, continuidade e cobrança identificadas",
         "Ap. B p189; A03 'Três modalidades de trabalho' p16; A08 p40–41; A13; 3.0 R1.6 (+A12)",
-        "Cada resultado registra rota (assinatura/créditos/API/local/simulado), modo de integração (programática × transferência manual) e consumo normalizado; ausente = 'unknown'.",
+        "Cada resultado registra rota (assinatura/créditos/API/local/simulado), modo de integração (programática × transferência manual) e consumo normalizado; ausente ou inválido (custo negativo, NaN ou infinito) = 'unknown'.",
         CAP + "03-provedores-modelos.md; fundacao/core/usage.py; fundacao/adapters/base.py (ProviderResult.route, simulated)",
         "Registro distingue integração programática de transferência manual e discrimina assinatura, créditos confirmados e API.",
         K + "test_eventos_rotas.py (TestConsumo)",
@@ -338,7 +338,7 @@ R = {
         "—", "Livro", "Procedimento escrito; execução pendente"),
 "R39": ('Orçamento e limite de repetição produzem efeito',
         'Ap. B p192; A08 p41; A09 p45–47; A21',
-        'Teto de chamadas e tempo por execução; tentativas máximas; regra de interrupção; evento registrado; chamada excedente não ocorre.',
+        'Teto de chamadas e tempo por execução (prazo gravado na 1ª execução, conferido em cada débito e não renovado na retomada); custo só como Decimal finito ≥ 0 (inválido = não medido); tentativas máximas; regra de interrupção; evento registrado; chamada excedente não ocorre.',
         'references/capacidades/09-consumo-qualidade.md §Orçamento; Budget/StepContext.charge_call',
         'Tarefa que atingiria o limite é interrompida antes da chamada excedente.',
         'assets/fundacao-kit/tests/test_orquestracao.py (orçamento, tentativas); test_adaptadores_rotas.py (tetos por rota: custo, chamadas, custo não medido até reconciliar; tentativa que não saiu não conta)',
@@ -365,7 +365,7 @@ R = {
 "R42": ("Testes detectam falhas por componente e por projeto",
         "Ap. B p192; A17; A25; A28; A30",
         "Casos positivos, negativos e de regressão cobrindo os dois projetos e suas fronteiras.",
-        "assets/fundacao-kit/tests/ (166 testes); scripts/tests/ (23); evals/cenarios/run_cenarios.py",
+        "assets/fundacao-kit/tests/ (238 testes); scripts/tests/ (62); evals/cenarios/run_cenarios.py",
         "Suíte executa em instalação limpa e falha diante de regressões.",
         "CEN-12; CEN-01 a CEN-16; regressão da auditoria final da 1.4.2: assets/fundacao-kit/tests/test_auditoria_final_1_4_2.py (AF-01, AF-09) e entrega/testes/test_auditoria_final_1_4_2.py (AF-02, AF-03, AF-04)",
         "CI em Windows e Ubuntu (R59) não configurado.",
@@ -390,17 +390,17 @@ R = {
         "—", "—", "Livro", "Procedimento escrito; executado"),
 "R45": ("Backup restaura a fundação em destino separado",
         "Ap. B p192; A07; A35 p174–177",
-        "Restauração em destino novo com banco íntegro, dados esperados, permissões e registro de retiradas aplicado antes da abertura.",
+        "Restauração em destino novo com banco íntegro, dados esperados, permissões e registro de retiradas aplicado antes da abertura; a cópia leva kit, banco, projetos e os registros da fundação (`docs/`, `evidence/`, `ferramentas/`, `tests/`, `RETOMADA.md`; lista em `registry/backup_policy.json`) e é conferida por uma âncora guardada fora dela.",
         CAP + "11-manutencao-recuperacao.md; fundacao/core/backup.py",
-        "Restauração liberada só após integridade (arquivos e banco conferidos contra o manifesto), identidade do registro e reaplicação de retiradas, revogações e desativações (não liberada = código 3, sem copiar nada); restaurar sobre a origem é recusado; backup e restauração só pela administração; caminho com '#' e pasta de rede funcionam.",
-        K + "test_cache_backup.py; test_cli_autorizacao.py; test_restauracao.py; CEN-09",
+        "Restauração liberada só após integridade (arquivos e banco conferidos contra o manifesto, e o manifesto contra a âncora `sha256_manifesto` ou o livro `state/copias.jsonl`), identidade do registro e reaplicação de retiradas, revogações e desativações (não liberada = código 3, sem copiar nada); ligação nas pastas copiadas não é seguida; restaurar sobre a origem é recusado; backup e restauração só pela administração; caminho com '#' e pasta de rede funcionam.",
+        K + "test_cache_backup.py; test_cli_autorizacao.py; test_restauracao.py; test_backup_completo.py; CEN-09",
         "—", "—", "Livro", "Procedimento escrito; kit executado"),
 "R46": ('Atualizações verificam compatibilidade',
         'Ap. B p192; A33 p167–169',
         'Atualização isolada, versões e migrações registradas (user_version), testes de contrato e retorno exercitado; modelo ≠ instância.',
-        'references/capacidades/11-manutencao-recuperacao.md; references/fluxo-c-operar.md C6',
+        'references/capacidades/11-manutencao-recuperacao.md; references/fluxo-c-operar.md C6; scripts/atualizar_fundacao.py (`checar`; `aplicar`: backup antes, ensaio numa cópia restaurada, promoção, backup depois e registro; `desfazer`)',
         'Comparação antes/depois nos quatro contratos e retorno em ambiente isolado.',
-        'assets/fundacao-kit/tests/test_nucleo_projetos.py (drift do modelo); ensaio de atualização no ambiente do usuário; CEN-16 (atualização do kit: conflito preservado, substituição com retorno, versão instalada)',
+        'assets/fundacao-kit/tests/test_nucleo_projetos.py (drift do modelo); ensaio de atualização no ambiente do usuário; CEN-16 (atualização do kit: conflito preservado, substituição com retorno, versão instalada); scripts/tests/test_atualizar_fundacao.py (versão antiga × alteração local, regressão no ensaio sem tocar a raiz, `desfazer`); assets/fundacao-kit/tests/test_auditoria_1_5_0_dados.py (banco da 1.4.1 aberto pelo kit novo)',
         '—',
         '—',
         'Livro + 3.0',
@@ -469,7 +469,7 @@ R = {
 "R54": ("Componentes externos fixados por versão e hash",
         "Proposta 3.0 §5.4 (100%)",
         "Registro de componentes com versão e hash; instalação do kit registra hashes; revisão de diff a cada atualização.",
-        "assets/templates/INVENTARIO-COMPONENTE.json (pinned_hash); scripts/instalar_kit.py",
+        "assets/templates/INVENTARIO-COMPONENTE.json (pinned_hash); scripts/instalar_kit.py; dependência opcional `mcp`: requisitos com hashes e `--require-hashes` (references/capacidades/08-ferramentas-hooks-mcp-skills-plugins.md §3)",
         "Todos os componentes externos com versão e hash conferidos.",
         "CEN-01 (kit_install.json)",
         "Componentes de terceiros dependem do ambiente do usuário.",
@@ -683,6 +683,47 @@ CONFERENCIA_143 = {
            "CF-03 BOM no SKILL.md, CF-04 marca de troca ilegível)",
 }
 
+# Regressões da 1.5.0, por requisito: auditoria técnica sobre a 1.4.1 (A01–A19,
+# auditoria/AUDITORIA-TECNICA-1.4.1-A01-A19.md) e revisão de segurança (varredura) da 1.4.5 (#1–#25,
+# auditoria/SCAN-SEGURANCA-1.4.5/). Falham na 1.4.5 e passam na 1.5.0, salvo os controles de compatibilidade.
+EX = K + "test_auditoria_1_5_0_execucao.py"
+DA = K + "test_auditoria_1_5_0_dados.py"
+AUDITORIA_TECNICA_141 = {
+    "R03": "scripts/tests/test_inspecionar_ambiente.py (A18: `--saida` recusa arquivo existente)",
+    "R07": f"{DA} (A11: chaves que colidem depois da NFC são recusadas)",
+    "R08": f"{EX} (A04: saída conferida pelo hash do banco; A05: posse por geração); "
+           "scripts/tests/test_retomada.py (A17: validação estrutural, não autorização)",
+    "R19": f"{DA} (A10: aprovação concorrente obsoleta recusada)",
+    "R28": f"{DA} (A09: aprovar, publicar ou retirar memória invalida o cache)",
+    "R32": f"{EX} (A06: prazo encerra a árvore de processos; A08: descoberta sem importar o pacote pai)",
+    "R39": f"{EX} (A07: prazo gravado na 1ª execução, conferido em cada débito, não renovado na retomada)",
+    "R44": "scripts/tests/test_auditoria_1_5_0_manifesto_backup.py (A12–A15: manifesto sem seguir ligação nem "
+           "listar a si mesmo; backup_sqlite no mesmo snapshot, com contagens exatas)",
+    "R46": "entrega/testes/test_auditoria_1_5_0_instalacao.py (A01, A02); "
+           "scripts/tests/test_auditoria_1_5_0_instalar_kit.py (A03); "
+           "scripts/tests/test_auditoria_1_5_0_manifesto_backup.py (A16: caracterização guarda a saída parcial)",
+}
+REVISAO_SEGURANCA_145 = {
+    "R04": f"{EX} e test_auditoria_1_5_0_dados.py (#11: autorização conferida de novo dentro de cada transação)",
+    "R07": f"{EX} (#11: aprovador revogado no meio não decide)",
+    "R08": f"{EX} (#14: recibo forjado não confirma etapa); scripts/tests/test_retomada.py (#10)",
+    "R12": f"{EX} (#9: Codex CLI sem `isolamento_leitura` não inicia processo)",
+    "R15": f"{EX} (#17: custo negativo, NaN ou infinito = não medido)",
+    "R18": f"{DA} (#15: histórico de memória de caso exige auditoria no caso)",
+    "R20": f"{DA} (#19: promoção pendente sem vínculo com a revisão da origem não publica)",
+    "R24": f"{DA} (#7: retirada não sai do escopo de quem retira, salvo a publicação aprovada)",
+    "R28": f"{DA} (#21, #23); test_restauracao_revisoes.py (#21 reaplicado na restauração)",
+    "R30": f"{DA} (#18: identificador de fonte preso a um escopo)",
+    "R31": f"{DA} (#12: versão de fonte inteira a partir de 1; registro protegido sem linha inválida)",
+    "R32": f"{EX} (#25)",
+    "R39": f"{EX} (#17: custo inválido não reduz nem anula `max_usd`)",
+    "R42": "entrega/testes/test_auditoria_1_5_0_avaliacoes.py (#5, #6, #16, #22: harness das avaliações)",
+    "R45": K + "test_auditoria_1_5_0_backup.py (#8: âncora externa da cópia; #24: ligação não seguida)",
+    "R46": "entrega/testes/test_auditoria_1_5_0_instalacao.py (#1: empacotador recusa ligações; #2: `instalar` e "
+           "`atualizar` exigem `--sha256`; #3: instala os mesmos bytes conferidos)",
+    "R52": "scripts/tests/test_hooks.py (#13: ligação ou junção na pasta do projeto, em projects/ e no destino)",
+}
+
 
 def main() -> int:
     entrega, skill = Path(sys.argv[1]), Path(sys.argv[2])
@@ -699,6 +740,10 @@ def main() -> int:
             row[5] = f"{row[5]}; regressão da auditoria sobre a 1.4.1: {AUDITORIA_141[rid]}"
         if rid in CONFERENCIA_143:
             row[5] = f"{row[5]}; regressão da conferência da 1.4.3: {CONFERENCIA_143[rid]}"
+        if rid in AUDITORIA_TECNICA_141:
+            row[5] = f"{row[5]}; regressão da auditoria técnica sobre a 1.4.1: {AUDITORIA_TECNICA_141[rid]}"
+        if rid in REVISAO_SEGURANCA_145:
+            row[5] = f"{row[5]}; regressão da revisão de segurança da 1.4.5: {REVISAO_SEGURANCA_145[rid]}"
         R[rid] = tuple(row)
     out_dir = entrega / "rastreabilidade"
     out_dir.mkdir(parents=True, exist_ok=True)

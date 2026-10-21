@@ -9,6 +9,11 @@ próxima ação e efeitos já realizados (que não devem ser repetidos), além d
 identificação do projeto/execução e arquivos mínimos para leitura.
 Um campo vazio ou que ainda contenha "(preencher" conta como ausente. Use "nenhum" quando
 não houver item — isso é uma informação, não uma omissão.
+
+A validação é ESTRUTURAL: confere o preenchimento; não autentica quem escreveu, não confirma
+evidências e não torna válida nenhuma autorização — o arquivo é índice de estado, não fonte de
+permissão (auditoria da 1.4.1, A17). Sem "Origem das autorizações" preenchida, a saída traz um
+aviso, que não bloqueia.
 """
 
 from __future__ import annotations
@@ -34,6 +39,8 @@ REQUIRED = {
     "efeitos já realizados": r"^Ações já realizadas que não devem ser repetidas:",
     "última conferência": r"^Última conferência do registro:",
 }
+ORIGEM = r"^Origem das autorizações:"
+VALIDACAO = "estrutural (preenchimento): não autentica autor, autorizações nem evidências"
 
 
 def field_value(lines: list[str], pattern: str) -> str:
@@ -77,7 +84,11 @@ def main() -> int:
         value = field_value(lines, pattern)
         if not value or "(preencher" in value:
             missing.append(name)
-    print(json.dumps({"ok": not missing, "campos_ausentes": missing}, ensure_ascii=False, indent=2))
+    origem = field_value(lines, ORIGEM)
+    avisos = [] if origem and "(preencher" not in origem else [
+        "origem das autorizações não registrada: permissões e próxima ação valem só se confirmadas na conversa atual"]
+    print(json.dumps({"ok": not missing, "campos_ausentes": missing, "avisos": avisos, "validacao": VALIDACAO},
+                     ensure_ascii=False, indent=2))
     return 1 if missing else 0
 
 

@@ -68,15 +68,21 @@ não avaliada; R27 só fica validado com modelo real autorizado e avaliação de
   de qualquer hit** e versão/fontes/permissões antes de entregar.
 - Chave de resposta inclui identidade autenticada, escopo, revisão de política e de
   corpus, provedor, modelo, versão do prompt, hash do contexto, configuração de geração
-  e pergunta — metadados produzidos pelo servidor, nunca pelo modelo [Livro p108].
+  e pergunta — metadados produzidos pelo servidor, nunca pelo modelo [Livro p108]. No kit,
+  chave e tipo gravado levam o formato `fundacao.cache/2:<tipo>` (resposta e recuperação não
+  se misturam); entradas antigas não servem e não são apagadas [auditoria sobre a 1.4.1, A09].
 - `policy_rev`/`corpus_rev` por projeto: revogar incrementa a primeira; aprovar,
   atualizar ou retirar fonte incrementa a segunda → entradas antigas deixam de servir.
   TTL não resolve revogação [Livro p107–108]. Reprovar ou devolver a pendente uma fonte que
   estava aprovada também incrementa `corpus_rev`: sair do conjunto consumível muda o corpus.
+  `corpus_rev` muda também ao aprovar, publicar ou retirar memória; mudança no comum
+  (revogação ou memória) vale para todos os projetos [auditoria sobre a 1.4.1, A09; varredura
+  da 1.4.5, #21, #23].
 - [Decisão; auditoria externa da 1.3.4] **Uma validação para todas as portas.** A leitura
   normal e a leitura por ID (`get_by_key`) usam o mesmo validador: projeto, identidade,
   revisões, prazo e estado de cada fonte citada (retirada; memória fora de vigência; versão GOLD
-  não aprovada, não vigente ou com hash aprovado diferente do preparado). Acrescentar uma
+  não aprovada, não vigente ou com hash aprovado diferente do preparado) e a permissão atual de
+  leitura no escopo de cada fonte citada (comum, caso) [varredura da 1.4.5, #21]. Acrescentar uma
   verificação só a uma porta reabre o problema.
 - Protocolo: frio · quente · outro projeto · revogação (inclusive leitura por ID antigo)
   · fonte alterada · leitura antiga pausada antes da entrega (*stale read*) ·
@@ -94,4 +100,5 @@ resposta/recuperação com o kit.
 
 ## Com o kit
 `fundacao/core/cache.py` (`response_key`, `ResponseCache.get/get_by_key/put`),
-`fundacao/core/revisions.py`. Testes: `tests/test_cache_backup.py::TestCache`.
+`fundacao/core/revisions.py`. Testes: `tests/test_cache_backup.py::TestCache`,
+`tests/test_auditoria_1_5_0_dados.py` (A09; #21, #23).

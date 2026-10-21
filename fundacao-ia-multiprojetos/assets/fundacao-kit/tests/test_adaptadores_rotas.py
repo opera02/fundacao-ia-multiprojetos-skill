@@ -61,6 +61,9 @@ def req(objetivo: str = OBJETIVO):
                            [{"id": "juridico-lab/GUIA-001", "sha256": "a" * 64, "text": "Dado de várias\nlinhas."}])
 
 
+# Rota Codex só roda com o isolamento de leitura declarado (varredura 1.4.5, #9); aqui nenhuma CLI roda.
+ISOLAMENTO_FIC = "ensaio fictício: _processo substituído, nenhuma CLI é executada"
+
 AMBIENTE_SUJO = {"FUNDACAO_PRINCIPAL": "titular", "ANTHROPIC_API_KEY": "sk-fic", "OPENAI_API_KEY": "sk-fic",
                  "SEGREDO_QUALQUER": "x", "CLAUDE_CONFIG_DIR": "C:/fic/claude", "CODEX_HOME": "C:/fic/codex"}
 
@@ -113,7 +116,7 @@ class TestAdaptadoresIsolados(FoundationTestCase):
         with mock.patch.dict(os.environ, AMBIENTE_SUJO), \
                 mock.patch.object(cli.shutil, "which", return_value="codex-fic"), \
                 mock.patch.object(cli, "_processo", cap):
-            res = cli.CodexCLIProvider().call(req())
+            res = cli.CodexCLIProvider(isolamento_leitura=ISOLAMENTO_FIC).call(req())
         c = cap.chamadas[0]
         self.assertTrue(c["cwd_vazio"])
         for flag in ("--sandbox", "read-only", "--ephemeral", "--ignore-user-config", "--ignore-rules"):
@@ -124,7 +127,7 @@ class TestAdaptadoresIsolados(FoundationTestCase):
 
     def test_shim_cmd_recusa_opcao_com_caractere_especial(self):
         cap = Captura("")
-        prov = cli.CodexCLIProvider(extra_args=["-c", 'model="x" & echo INJETADO'])
+        prov = cli.CodexCLIProvider(extra_args=["-c", 'model="x" & echo INJETADO'], isolamento_leitura=ISOLAMENTO_FIC)
         with mock.patch.object(cli.shutil, "which", return_value=r"C:\fic\codex.CMD"), \
                 mock.patch.object(cli, "_processo", cap):
             res = prov.call(req())
@@ -133,7 +136,7 @@ class TestAdaptadoresIsolados(FoundationTestCase):
         self.assertEqual(cap.chamadas, [])
         with mock.patch.object(cli.shutil, "which", return_value=r"C:\fic\codex.CMD"), \
                 mock.patch.object(cli, "_processo", Captura("")) as ok:
-            cli.CodexCLIProvider().call(req())  # opções fixas passam pelo shim
+            cli.CodexCLIProvider(isolamento_leitura=ISOLAMENTO_FIC).call(req())  # opções fixas passam pelo shim
         self.assertEqual(len(ok.chamadas), 1)
 
     def test_falha_ao_iniciar_e_prompt_grande_ficam_no_contrato(self):
