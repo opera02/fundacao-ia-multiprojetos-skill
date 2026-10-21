@@ -77,13 +77,24 @@ class Cenario:
                 "passou": self.passou, "bloqueado": self.bloqueio, "erro": self.erro, "verificacoes": self.checks}
 
 
+def falhou_de_fato(r: dict) -> bool:
+    """Erro, ou verificação que rodou e falhou: o bloqueio de parte do cenário não esconde isso (revisão de
+    segurança da 1.7.3, VCT170-06)."""
+    return bool(r.get("erro")) or any(v.get("passou") is False and not v.get("pulada")
+                                      for v in r.get("verificacoes", []))
+
+
 def situacao(r: dict) -> str:
-    return "BLOQUEADO" if r.get("bloqueado") else ("PASSOU" if r["passou"] else "FALHOU")
+    if r.get("bloqueado") and not falhou_de_fato(r):
+        return "BLOQUEADO"
+    return "PASSOU" if r["passou"] else "FALHOU"
 
 
 def codigo_de_saida(resultados: list[dict], opcionais_bloqueiam: bool = False) -> int:
-    """0 se todos passaram; com `opcionais_bloqueiam`, cenário bloqueado por dependência opcional não reprova."""
-    ruins = [r for r in resultados if not r["passou"] and not (opcionais_bloqueiam and r.get("bloqueado"))]
+    """0 se todos passaram; com `opcionais_bloqueiam`, cenário bloqueado por dependência opcional não reprova, desde
+    que nada do que rodou nele tenha falhado."""
+    ruins = [r for r in resultados if not r["passou"]
+             and not (opcionais_bloqueiam and r.get("bloqueado") and not falhou_de_fato(r))]
     return 0 if not ruins else 1
 
 
@@ -979,23 +990,33 @@ def cen11(W: Path) -> Cenario:
     c = Cenario("CEN-11", "Estrutura, metadados e limites da skill", "estrutural", "R35 (formato) + auditoria")
     text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     m = re.match(r"^---\n(.*?)\n---", text, re.S)
-    import yaml  # disponível neste ambiente; usado só na validação
-    fm = yaml.safe_load(m.group(1))
-    # Nome canônico, não o nome da pasta onde a cópia está (uma cópia em `arvore/` não é defeito; AF-05).
-    c.check("nome kebab-case igual ao canônico fundacao-ia-multiprojetos", "fundacao-ia-multiprojetos", fm["name"],
-            fm["name"] == "fundacao-ia-multiprojetos" and bool(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", fm["name"])),
-            f"pasta: {SKILL.name}")
-    d = fm["description"]
-    c.check("descrição ≤ 1024 caracteres e sem < >", "≤1024", len(d), len(d) <= 1024 and "<" not in d and ">" not in d)
-    # Lista do validador do catálogo Chat/Work, mais estrita que a especificação (que aceita `compatibility`
-    # na raiz): `compatibility` fica dentro de `metadata` (relatório técnico da 1.4.0, PRM-02).
-    meta = fm.get("metadata") or {}
-    c.check("chaves de cabeçalho aceitas pelo padrão e pelo validador do Chat/Work",
-            "name, description, license, metadata (compatibility dentro de metadata, até 500 caracteres)",
-            sorted(fm), set(fm) <= {"name", "description", "license", "allowed-tools", "metadata"}
-            and isinstance(meta.get("compatibility"), str) and 0 < len(meta["compatibility"]) <= 500)
-    c.check("metadata como mapa de textos", "todos str", {k: type(v).__name__ for k, v in fm["metadata"].items()},
-            all(isinstance(v, str) for v in fm["metadata"].values()))
+    c.check("cabeçalho entre --- no início do SKILL.md", "presente", "presente" if m else "ausente", m is not None)
+    import importlib.util
+    if importlib.util.find_spec("yaml") is None:
+        # CI pública da 1.7.2: o PyYAML só existe no computador do titular. Sem ele o cabeçalho não é lido como
+        # YAML; o cenário fica BLOQUEADO (nunca PASSOU) e as verificações que não dependem dele rodam.
+        c.bloquear("PyYAML ausente (dependência opcional): o cabeçalho do SKILL.md não foi lido como YAML aqui")
+    elif m:
+        import yaml  # usado só na validação
+        fm = yaml.safe_load(m.group(1))
+        # Nome canônico, não o nome da pasta onde a cópia está (uma cópia em `arvore/` não é defeito; AF-05).
+        nome = fm["name"]
+        c.check("nome kebab-case igual ao canônico fundacao-ia-multiprojetos", "fundacao-ia-multiprojetos", nome,
+                nome == "fundacao-ia-multiprojetos" and bool(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", nome)),
+                f"pasta: {SKILL.name}")
+        d = fm["description"]
+        c.check("descrição ≤ 1024 caracteres e sem < >", "≤1024", len(d),
+                len(d) <= 1024 and "<" not in d and ">" not in d)
+        # Lista do validador do catálogo Chat/Work, mais estrita que a especificação (que aceita `compatibility`
+        # na raiz): `compatibility` fica dentro de `metadata` (relatório técnico da 1.4.0, PRM-02).
+        meta = fm.get("metadata") or {}
+        c.check("chaves de cabeçalho aceitas pelo padrão e pelo validador do Chat/Work",
+                "name, description, license, metadata (compatibility dentro de metadata, até 500 caracteres)",
+                sorted(fm), set(fm) <= {"name", "description", "license", "allowed-tools", "metadata"}
+                and isinstance(meta.get("compatibility"), str) and 0 < len(meta["compatibility"]) <= 500)
+        c.check("metadata como mapa de textos", "todos str",
+                {k: type(v).__name__ for k, v in fm["metadata"].items()},
+                all(isinstance(v, str) for v in fm["metadata"].values()))
     linhas = text.count("\n")
     c.check("SKILL.md enxuto (< 500 linhas)", "< 500", linhas, linhas < 500)
     outros = [p for p in SKILL.rglob("SKILL.md") if p != SKILL / "SKILL.md" and "evals" not in p.relative_to(SKILL).parts[:1]]

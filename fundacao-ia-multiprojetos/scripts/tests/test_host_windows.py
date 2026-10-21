@@ -297,7 +297,13 @@ class Funcoes(_Base):
         s = self.ps(f"Get-SondagemAncora -Ancora '{self.ancora}' | ConvertTo-Json -Compress -Depth 6")
         self.assertFalse(s["protegida"])
         self.assertTrue(s["arquivo"]["direitos"]["GENERIC_WRITE"])
-        self.assertTrue(any("dono" in m for m in s["motivos"]))
+        acusa_dono = any("dono" in m for m in s["motivos"])
+        if ELEVADO and s["arquivo"]["dono_administradores"]:
+            # Processo elevado no Windows Server (CI pública da 1.7.2): o arquivo novo nasce com o grupo
+            # Administradores como dono, e a sondagem acusa só pelos direitos de escrita desta conta.
+            self.assertFalse(acusa_dono, s["motivos"])
+        else:
+            self.assertTrue(acusa_dono, s["motivos"])
 
 
     def test_chamado_de_um_powershell_7_ainda_carrega_o_get_acl(self):

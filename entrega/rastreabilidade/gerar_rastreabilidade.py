@@ -753,7 +753,8 @@ ANALISE_VCT_170 = {
            "scripts/tests/test_revisao_seguranca_170.py (VCT170-03: sem caminho de projeto nem argumentos); "
            "entrega/testes/test_ci_publica.py (ações da CI fixadas por SHA)",
     "R58": "entrega/testes/test_ci_publica.py (cinco verificações, duas plataformas, cinco rodadas); "
-           "entrega/testes/test_cenarios_bloqueio.py (cenário bloqueado por dependência opcional, nunca aprovado)",
+           "entrega/testes/test_cenarios_bloqueio.py (cenário bloqueado por dependência opcional, nunca aprovado; CEN-11 sem PyYAML)",
+    "R59": "entrega/testes/test_ligacao_por_caminho_alternativo.py (perfil aberto por um caminho que não é o final, como o nome curto da CI: a ligação pendurada é reconhecida)",
 }
 
 

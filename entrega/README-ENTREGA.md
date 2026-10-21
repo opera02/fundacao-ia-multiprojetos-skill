@@ -8,10 +8,26 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–21/10/2026 · Versão da skill: **1.7.2** (kit de referência 1.7.2) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–21/10/2026 · Versão da skill: **1.7.3** (kit de referência 1.7.2) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
 
-> **1.7.2 (21/10/2026):** a CI pública, conferida pela primeira vez na liberação da 1.7.1, falhou nas 10 rodadas por
+> **1.7.3 (21/10/2026):** a CI pública da 1.7.2, a primeira a rodar as quatro verificações até o fim nas dez rodadas,
+> falhou em três pontos de ambiente que este computador não reproduz; a 1.7.2 foi publicada, instalada e aplicada à
+> fundação, mas não declarada liberada. (1) O instalador recusava o `atualizar` depois de uma troca interrompida com a
+> marca ilegível quando o perfil tem nome curto (`RUNNER~1` no Windows do GitHub): a ligação pendurada devolvia o alvo
+> como foi gravado, e a cópia esperada saía pelo nome longo. Agora o alvo gravado passa pelo caminho final antes da
+> comparação; um teste novo abre o perfil por uma junção, que reproduz o efeito aqui. (2) O CEN-11 lia o cabeçalho do
+> `SKILL.md` com o PyYAML, que só existe neste computador: sem ele, o cenário fica BLOQUEADO, como o CEN-10 e o
+> CEN-15, e as verificações que não dependem do pacote rodam. (3) O teste da sondagem da âncora esperava o usuário
+> como dono do arquivo novo; no Windows Server elevado da CI o dono é o grupo Administradores, e o teste passa a
+> seguir o dono real. A revisão de segurança independente achou um problema introduzido pela correção (2) (VCT170-06,
+> baixo): com a opção da CI, um cenário bloqueado em parte perdoava também uma verificação que rodou e falhou; agora o
+> bloqueio só perdoa o que não rodou, e o CEN-11 confere, sem o PyYAML, que o cabeçalho existe. Kit inalterado
+> (1.7.2). Resultados: Windows deste PC — kit 326 OK (5 pulados), scripts 184 OK (2 pulados), entrega 96 OK (2
+> pulados), cenários 16/16 (112/112); Ubuntu do WSL — scripts 184 OK, entrega 96 OK, cenários no modo da CI com CEN-10
+> e CEN-15 bloqueados e os demais aprovados; 342 referências e 0 ausentes.
+
+> **1.7.2 (21/10/2026; publicada, instalada e aplicada, com a CI pública vermelha):** a CI pública, conferida pela primeira vez na liberação da 1.7.1, falhou nas 10 rodadas por
 > diferenças de ambiente em testes que só tinham rodado neste computador; a 1.7.1 foi publicada, instalada e aplicada
 > à fundação, mas não declarada liberada. Correções: no Windows do GitHub, o runner é administrador e o
 > `preparar-maquina.ps1` recusa rodar elevado (por desenho) — os ensaios com a conta comum são pulados num processo

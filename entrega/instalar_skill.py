@@ -288,8 +288,33 @@ def e_ligacao(p: Path) -> bool:
         getattr(st, "st_reparse_tag", None) == stat.IO_REPARSE_TAG_MOUNT_POINT
 
 
+BARRA = chr(92)
+PREFIXO_LONGO = BARRA * 2 + "?" + BARRA  # caminho estendido do Windows, como o os.readlink devolve o alvo da junção
+PREFIXO_UNC_LONGO = PREFIXO_LONGO + "UNC" + BARRA
+
+
+def alvo_da_ligacao(p: Path) -> Path | None:
+    """Alvo gravado na ligação (link simbólico ou junção), absoluto e sem o prefixo estendido; None se ilegível."""
+    try:
+        alvo = os.readlink(p)
+    except (OSError, ValueError):
+        return None
+    if alvo.startswith(PREFIXO_UNC_LONGO):
+        alvo = BARRA * 2 + alvo[len(PREFIXO_UNC_LONGO):]
+    elif alvo.startswith(PREFIXO_LONGO):
+        alvo = alvo[len(PREFIXO_LONGO):]
+    caminho = Path(alvo)
+    return caminho if caminho.is_absolute() else p.parent / caminho
+
+
 def ligacao_aponta_para_copia() -> bool:
-    return e_ligacao(CLAUDE) and CLAUDE.resolve() == AGENTS.resolve()
+    """Compara caminhos finais dos dois lados: a parte que existe sai sem nome curto (8.3) nem ligação no meio. Com a
+    cópia ausente (ligação pendurada depois de uma troca interrompida), `CLAUDE.resolve()` devolve o alvo como foi
+    gravado, e o perfil com nome curto (CI pública da 1.7.2, RUNNER~1) parecia apontar para outro lugar."""
+    if not e_ligacao(CLAUDE):
+        return False
+    alvo = alvo_da_ligacao(CLAUDE)
+    return alvo is not None and Path(os.path.realpath(alvo)) == AGENTS.resolve()
 
 
 def conferir_ligacao_antes() -> None:
