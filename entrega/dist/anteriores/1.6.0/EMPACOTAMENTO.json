@@ -1,0 +1,17 @@
+{
+  "versao": "1.6.0",
+  "gerado_em": "2026-10-21T05:05:40+00:00",
+  "ferramenta": {
+    "skill_creator": "C:\\Users\\<usuario>\\.claude\\plugins\\cache\\claude-plugins-official\\skill-creator\\d1adba47161a\\skills\\skill-creator",
+    "package_skill_sha256": "1a33059b0db1ef73375d46d513e5ea81369d2e8838c970597b0d52ddef8d1c0f",
+    "quick_validate_sha256": "67cf5703402013936c8fb75ad6a1afecd8841d45cc5e606b634eb05825fde365"
+  },
+  "arquivos": {
+    "fundacao-ia-multiprojetos.skill": 158,
+    "fundacao-ia-multiprojetos-completo.zip": 181
+  },
+  "sha256": {
+    "fundacao-ia-multiprojetos.skill": "eae5f9d20691dfd8fb536d89161cf9e93ce71128483b8ec63f2b0d07f042c540",
+    "fundacao-ia-multiprojetos-completo.zip": "2250c32dec85cce06551e8552fd9b176327c51767db913a090d1fcf6ee3eae23"
+  }
+}

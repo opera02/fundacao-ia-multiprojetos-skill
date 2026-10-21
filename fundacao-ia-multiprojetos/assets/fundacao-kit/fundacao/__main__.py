@@ -2,7 +2,8 @@
 
 A identidade vem do lançador (variável FUNDACAO_PRINCIPAL), nunca de um
 argumento que o modelo possa escrever. Saída em JSON; erros em stderr com
-código 2, sem conteúdo protegido. Restauração não liberada ou cópia que não confere: código 3.
+código 2, sem conteúdo protegido. Restauração não liberada, cópia que não confere, decisão que não
+confere, âncora desprotegida e tarefa não concluída: código 3.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import sys
 from pathlib import Path
 
 from . import KIT_VERSION, TEMPLATE_VERSION
-from .core import backup, components, events, memory, projects, routing
+from .core import backup, components, decisoes, events, memory, projects, routing
 from .core.auth import Policy, principal_from_env
 from .core.contracts import AccessDenied, FundacaoError
 from .core.db import connect, uri_somente_leitura
@@ -145,7 +146,12 @@ def cmd_projeto(args) -> dict:
 def cmd_tarefa(args) -> dict:
     con = _con(args.raiz)
     me = principal_from_env(con)
-    _exigir_opcoes(args, "objetivo" if args.acao == "criar" else "id")
+    if args.acao == "concluir":
+        # Só o aceite válido sobre a entrega exata, registrado e mais recente da tarefa (decisoes.concluir_tarefa).
+        _exigir_opcoes(args, "decisao")
+        return decisoes.concluir_tarefa(args.raiz, con, me, args.decisao, ancora=decisoes.resolver_ancora(args.ancora),
+                                        politica=decisoes.carregar_politica(args.raiz), projeto=args.projeto)
+    _exigir_opcoes(args, "projeto", "objetivo" if args.acao == "criar" else "id")
     coord = Coordinator(args.raiz, con, me, args.projeto)
     if args.acao == "criar":
         return {"task_id": coord.create_task(args.objetivo, args.chave)}
@@ -264,6 +270,35 @@ def cmd_backup(args) -> dict:
     return resultado
 
 
+def cmd_decisao(args) -> dict:
+    """Decisões do titular sobre entregas, assinadas com chave fora do alcance do executor e conferidas contra a
+    âncora (references/seguranca-isolamento.md §2). A âncora padrão desta máquina, se existir, é a única que vale."""
+    if args.acao == "conferir-ancora":
+        return decisoes.conferir_ancora(decisoes.resolver_ancora(args.ancora) or Path(decisoes.ANCORAS_PADRAO[0]))
+    con = _con(args.raiz)
+    me = principal_from_env(con)
+    politica = decisoes.carregar_politica(args.raiz)
+    ancora = decisoes.resolver_ancora(args.ancora)
+    if args.acao == "preparar":
+        _exigir_opcoes(args, "projeto", "tarefa", "entrega", "tipo", "motivo")
+        r = decisoes.preparar_decisao(args.raiz, con, me, projeto=args.projeto, tarefa=args.tarefa,
+                                      entrega=args.entrega, tipo=args.tipo, motivo=args.motivo,
+                                      decisao_id=args.decisao_id, ancora=ancora, politica=politica, shell=args.shell)
+        return {**r, "politica": decisoes.resumo_politica(politica)}
+    _exigir_opcoes(args, "arquivo")
+    projeto, arquivo = decisoes.pasta_da_decisao(args.raiz, args.arquivo)
+    pasta = projects.project_root(args.raiz, con, me, projeto, action="write" if args.acao == "registrar" else "read")
+    if args.acao == "comando":
+        assinante = decisoes.ler_decisao(arquivo).get("assinante", me.principal_id)
+        return {"decisao": str(arquivo), "para_o_titular": decisoes.comando_para_o_titular(
+            arquivo, assinante=assinante, ancora=ancora or decisoes.ANCORAS_PADRAO[0], shell=args.shell)}
+    r = decisoes.verificar_decisao(arquivo, pasta, ancora, politica)
+    r["politica"] = decisoes.resumo_politica(politica)
+    if args.acao == "registrar":
+        r.update(decisoes.registrar_decisao(con, me, pasta, r) if r["valida"] else {"registro": "não registrada"})
+    return r
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fundacao", description="Fundação de IA Multiprojetos (kit de referência)")
     p.add_argument("--raiz", type=Path, default=Path.cwd(), help="raiz autorizada da fundação")
@@ -273,9 +308,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("projeto"); s.add_argument("acao", choices=["criar", "listar", "drift"])
     s.add_argument("--id"); s.add_argument("--nome"); s.add_argument("--finalidade"); s.add_argument("--componentes")
     s.set_defaults(func=cmd_projeto)
-    s = sub.add_parser("tarefa"); s.add_argument("acao", choices=["criar", "ver"])
-    s.add_argument("--projeto", required=True); s.add_argument("--objetivo"); s.add_argument("--chave")
-    s.add_argument("--id"); s.set_defaults(func=cmd_tarefa)
+    s = sub.add_parser("tarefa"); s.add_argument("acao", choices=["criar", "ver", "concluir"])
+    s.add_argument("--projeto"); s.add_argument("--objetivo"); s.add_argument("--chave"); s.add_argument("--id")
+    s.add_argument("--decisao", type=Path, help="concluir: o aceite em projects/<projeto>/decisoes/")
+    s.add_argument("--ancora", type=Path, help="concluir: allowed_signers (com a âncora padrão presente, só ela vale)")
+    s.set_defaults(func=cmd_tarefa)
     s = sub.add_parser("componente"); s.add_argument("acao", choices=["listar", "habilitar", "desabilitar"])
     s.add_argument("--id"); s.set_defaults(func=cmd_componente)
     s = sub.add_parser("acl"); s.add_argument("acao", choices=["registrar", "conceder", "revogar"])
@@ -300,6 +337,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="decisão do administrador, depois de conferir de onde veio a cópia: restaura cópia sem "
                         "âncora que não consta no livro de cópias ou cujo código difere do kit; fica na trilha")
     s.set_defaults(func=cmd_backup)
+    s = sub.add_parser("decisao", help="decisões do titular sobre entregas (assinatura ssh-keygen -Y)")
+    s.add_argument("acao", choices=["preparar", "verificar", "registrar", "conferir-ancora", "comando"])
+    s.add_argument("--projeto"); s.add_argument("--tarefa"); s.add_argument("--tipo", choices=list(decisoes.TIPOS))
+    s.add_argument("--entrega", help="caminho da entrega a partir da pasta do projeto, dentro de outputs/")
+    s.add_argument("--motivo", help="as palavras do titular"); s.add_argument("--decisao-id")
+    s.add_argument("--arquivo", type=Path, help="decisão em projects/<projeto>/decisoes/")
+    s.add_argument("--ancora", type=Path, help="allowed_signers (com a âncora padrão presente, só ela vale)")
+    s.add_argument("--shell", choices=list(decisoes.SHELLS),
+                   help="shell do comando do titular (padrão: PowerShell no Windows e no WSL; bash no Linux)")
+    s.set_defaults(func=cmd_decisao)
     return p
 
 
@@ -315,9 +362,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         resultado = args.func(args)
         _out(resultado)
-        # Restauração não liberada (ex.: sem registro de retiradas) e cópia que não confere não são sucesso.
+        # Restauração não liberada (ex.: sem registro de retiradas), cópia que não confere, decisão que não confere,
+        # âncora desprotegida e tarefa não concluída não são sucesso.
         falhou = isinstance(resultado, dict) and (
-            resultado.get("released") is False or (args.comando == "backup" and resultado.get("ok") is False))
+            resultado.get("released") is False or (args.comando == "backup" and resultado.get("ok") is False)
+            or (args.comando == "decisao" and False in (resultado.get("valida"), resultado.get("protegida")))
+            or (args.comando == "tarefa" and resultado.get("concluida") is False))
         return 3 if falhou else 0
     except FundacaoError as exc:
         sys.stderr.write(json.dumps(exc.as_dict(), ensure_ascii=False, default=str) + "\n")

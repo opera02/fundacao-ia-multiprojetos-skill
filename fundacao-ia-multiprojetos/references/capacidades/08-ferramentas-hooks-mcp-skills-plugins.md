@@ -106,6 +106,9 @@ comandos de shell que atribuam ou troquem `FUNDACAO_PRINCIPAL` de forma explíci
 guarda-corpo, não barreira: nome montado em tempo de execução, a API do kit chamada direto ou
 a escrita direta em `state/` passam por ele (ver `../seguranca-isolamento.md`); o laboratório
 pode liberar com `FUNDACAO_PERMITIR_TROCA_IDENTIDADE=1` no ambiente do lançador.
+Na fundação, quem instala os hooks e os perfis no host é o titular, com
+`assets/host/windows/preparar-maquina.ps1` (e `assets/host/wsl/preparar-wsl.sh` para a sessão de dados reais
+no WSL2); ver `../seguranca-isolamento.md` §5 e `../fluxo-a-implantar.md` §Host.
 
 ## 3. MCP (R34)
 Cliente (inicia e pede) · servidor (oferece *tools*, *resources*, *prompts*) · host [Livro p60].

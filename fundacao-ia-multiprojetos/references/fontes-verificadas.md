@@ -8,7 +8,7 @@ Janela de atualidade declarada: 3 meses (metadados da skill).
 
 ## Sumário
 1 Anthropic / Claude Code · 2 OpenAI / Codex · 3 MCP · 4 Agent Skills · 5 CAG e KV cache
-· 6 SQLite e Python · 7 Segurança · 8 Itens do livro/3.0 não verificados
+· 6 SQLite e Python · 7 Segurança · 8 Itens do livro/3.0 não verificados · 9 Windows e WSL (host)
 
 ## 1. Anthropic / Claude Code
 | Fato | Situação | Fonte |
@@ -33,6 +33,12 @@ Janela de atualidade declarada: 3 meses (metadados da skill).
 | Plugins: `plugin.json` (só `name` obrigatório); `claude plugin validate [--strict]`; `marketplace.json` exige `name`, `owner`, `plugins`; `claude plugin install\|enable\|disable\|uninstall --scope user\|project\|local`; `${CLAUDE_PLUGIN_ROOT}` | confirma | code.claude.com/docs/en/plugins/... |
 | Subagentes `.claude/agents/<nome>.md` (`name`, `description`; `tools`, `model` opcionais); consomem os mesmos limites | confirma | code.claude.com/docs/en/sub-agents |
 | `claude mcp add --scope project` → `.mcp.json`; escopos local (padrão), project, user | confirma 3.0 | code.claude.com/docs/en/mcp |
+| Sandbox no Linux e no WSL2: depende de `bubblewrap` e `socat` (`sudo apt-get install bubblewrap socat`); no Ubuntu 24.04 ou mais novo, com `kernel.apparmor_restrict_unprivileged_userns` = 1, perfil do AppArmor para o `bwrap` (`/etc/apparmor.d/bwrap`, `userns`) e `sudo systemctl reload apparmor`; no WSL2, abrir programa do Windows passa por socket Unix, que só o filtro seccomp opcional bloqueia | novo (base do `assets/host/wsl/preparar-wsl.sh`) | code.claude.com/docs/en/sandboxing (conferido em 2026-10-21) |
+| Caminhos do sandbox: `/abs` e `~/` (as regras Read/Edit usam `//` para absoluto); `allowRead` reabre leitura dentro de `denyRead` (o caminho mais estreito vale); fonte excluída por `--setting-sources` não entra no sandbox (v2.1.246+); a precedência entre `allowWrite` e `denyWrite` sobrepostos não está documentada, por isso o perfil nega os outros projetos um a um | novo (base do `assets/host/wsl/settings.wsl.json`) | code.claude.com/docs/en/sandboxing (conferido em 2026-10-21) |
+| Observado na implantação real (2.1.302): `Read(./state/**)` em `permissions.deny` também nega a leitura no sandbox, e `state/` aparece vazio e gravável (tmpfs) até ganhar `allowRead` e `allowWrite` (perfis v1 a v3) | executado | implantação de referência, 2026-10-20 |
+| CLI: `claude "consulta"` abre a sessão interativa com essa primeira mensagem; `--settings <arquivo>` sobrepõe as chaves dos settings; `--setting-sources user,project,local` escolhe as fontes | confirma | code.claude.com/docs/en/cli-reference (conferido em 2026-10-21) |
+| Instalação nativa no Linux: `~/.local/bin/claude` é ligação para `~/.local/share/claude/versions/<versão>`; o instalador guarda a versão do lançador, as que estão rodando e as duas mais novas e apaga as outras; `DISABLE_AUTOUPDATER=1` só para a verificação em segundo plano (`DISABLE_UPDATES` bloqueia todas) | novo (por isso o `preparar-wsl.sh` copia a versão fixada para fora de `versions/`) | code.claude.com/docs/en/setup (conferido em 2026-10-21) |
+| Integridade: `https://downloads.claude.ai/claude-code-releases/<versão>/manifest.json` traz o SHA-256 de cada binário em `platforms.<plataforma>.checksum` e é assinado em `manifest.json.sig` pela chave de lançamento `31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE` (desde a 2.1.89); no Linux o binário não tem assinatura própria. Na implantação de referência, a 2.1.302 linux-x64 = `60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5`, conferido com a assinatura | confirma | code.claude.com/docs/en/setup; manifest.json da 2.1.302 (conferido em 2026-10-21) |
 
 ## 2. OpenAI / Codex (páginas `developers.openai.com/codex/*` redirecionam para `learn.chatgpt.com/docs/*`)
 | Fato | Situação | Fonte |
@@ -96,3 +102,9 @@ segregar conteúdo externo) — genai.owasp.org.
 - Ferramentas recomendadas pela 3.0 (DBOS, docxtpl, promptfoo, uv, restic, Kopia,
   sqlite-vec, modelos de embedding) são **recomendações de engenharia**, não fatos;
   valide no protótipo antes de adotar [3.0 §9].
+
+## 9. Windows e WSL (host)
+| Fato | Situação | Fonte |
+|---|---|---|
+| `/etc/wsl.conf`, seção `[interop]`: `enabled` (abrir programas do Windows) e `appendWindowsPath` (o PATH do Windows), ambos `true` por padrão; a mudança vale depois que a distribuição para (regra dos 8 segundos; `wsl --terminate <distribuição>` ou `wsl --shutdown`); `[automount] root` padrão `/mnt/` | confirma (base do `preparar-wsl.sh`) | learn.microsoft.com/en-us/windows/wsl/wsl-config (conferido em 2026-10-21) |
+| Observado no Windows 11 26200 (2026-10-20 e 2026-10-21): arquivo criado por administrador elevado nasce com o próprio usuário como dono, e o dono tem `WRITE_DAC` implícito; `(OI)(CI)` aplicado a um arquivo o deixa sem permissões efetivas; na pasta ProgramData, Usuários criam pastas e arquivos (`(CI)(WD,AD)`) e o CREATOR OWNER ganha controle total no que criar, por isso a herança é cortada na pasta da âncora e na de cima | executado | `assets/host/windows/preparar-maquina.ps1`; implantação de referência |

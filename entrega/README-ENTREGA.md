@@ -8,8 +8,57 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–20/10/2026 · Versão da skill: **1.5.1** (kit de referência 1.5.1) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–21/10/2026 · Versão da skill: **1.6.1** (kit de referência 1.6.1) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
+
+> **1.6.1 (21/10/2026):** correção achada pelo próprio ciclo de liberação. Na 1.6.0, a montagem da transferência
+> recusou o pacote: a varredura de segredos leu como credencial atribuída o campo com o estado da senha da chave no
+> relatório do `preparar-maquina.ps1` (falso positivo). O campo passou a se chamar `estado_da_senha`, com uma regressão
+> que usa o mesmo padrão da varredura. Na conferência antecipada do saneamento da cópia pública, exemplos e valores de
+> teste com dados desta máquina (a raiz, o usuário e caminhos do perfil), que o saneamento trocaria ou recusaria,
+> viraram valores fictícios nos scripts e nos testes do host e nos testes das decisões do kit. A 1.6.0 foi empacotada
+> (`eae5f9d2…`), mas não foi instalada nem publicada. Kit 1.6.1, porque testes do kit mudaram.
+> Resultados, em cópias, pastas e perfis descartáveis: kit 301 OK (5 pulados); scripts 135 OK (1 pulado); entrega 81
+> OK (2 pulados); ferramentas de liberação 17 OK; cenários 16/16 (111/111); 312 referências e 0 ausentes; saneamento da
+> cópia pública conferido antes da publicação (0 resíduos nos arquivos mudados desde a 1.5.1).
+> Pacote `.skill` `ac69a9c4…8795` (158 arquivos). **Instalada no perfil em 21/10/2026, às 02h28** (`atualizar --sha256`;
+> a 1.5.1 ficou em `~/.agents/skills-anteriores/`, conferida contra o pacote dela). Na mesma liberação, pela skill
+> instalada, a fundação deste computador passa para o kit 1.6.1 (backup antes e depois, ensaio numa cópia restaurada)
+> e a cópia pública vai ao GitHub; o resultado fica em `outputs/liberacao/1.6.1/LIBERACAO.json` do projeto
+> fundacao-de-ia. Registros: `fundacao-ia-multiprojetos-workspace/correcoes-1.6.1/`.
+
+> **1.6.0 (21/10/2026):** duas automações pedidas pela auditoria da implantação real deste computador (66 intervenções
+> do titular, 10 por lacunas da skill), feitas por duas sessões na mesma árvore e liberadas juntas:
+> - **Barreira de decisões assinadas no kit (kit 1.6.0):** a barreira da DECISAO-003 da fundação de referência passa a
+>   ser do kit (`fundacao/core/decisoes.py`). Aceite, pedido de correção e rejeição de uma entrega viram JSON canônico
+>   com o SHA-256 da entrega exata, assinado com `ssh-keygen -Y` no namespace `fundacao-decisao` e conferido contra a
+>   âncora `allowed_signers`, que só o administrador altera; o `ssh-keygen` é o do sistema, por caminho fixo. CLI
+>   `python -m fundacao decisao preparar|verificar|registrar|conferir-ancora|comando` e `tarefa concluir --decisao`
+>   (o kit só tinha criar e ver); recusa = código 3; o comando do titular sai no shell certo (PowerShell ou bash do
+>   WSL); política `registry/politica-decisoes.json`, com a âncora padrão como piso; a sondagem da âncora confere
+>   também as pastas acima e as ligações no caminho. Compatível com as 8 decisões já registradas na fundação deste
+>   computador (conferido só lendo).
+> - **Preparo do host em scripts versionados (`assets/host/`):** os passos manuais que mais custaram (a âncora em cinco
+>   voltas de ACL, três versões do perfil do WSL, perfis e hooks copiados à mão) viraram dois scripts que o titular roda
+>   no próprio terminal, com simulação antes. `windows/preparar-maquina.ps1`, no PowerShell comum: chave do titular
+>   pelo `ssh-keygen` do sistema (a senha é digitada só por ele; chave sem senha é recusada); âncora com dono
+>   Administradores, herança cortada e arquivo herdando da pasta, com o UAC só nessa etapa e a conferência pela conta
+>   comum, sem alterar nada; hooks e perfis (`settings.json`, `settings.wsl.json`, `settings.local.json`) gerados pelos
+>   modelos em `<raiz>/.claude`, com cópia do que trocar; `-Simular`/`-WhatIf`, `-SemUAC` e relatório JSON.
+>   `wsl/preparar-wsl.sh`, no Ubuntu: `bubblewrap` e `socat` (e o perfil do AppArmor do `bwrap` quando preciso), um só
+>   bloco `[interop]` desligado no `/etc/wsl.conf`, o Claude Code copiado e fixado por SHA-256 e o lançador
+>   `wsl/abrir-sessao.sh`, que confere binário, perfil e hooks pelo hash e abre com o prompt de retomada; `sudo` só em
+>   pacotes, AppArmor e `wsl.conf`. O perfil do WSL sai igual, em conteúdo, ao v3 provado no caso real (`state/` em
+>   `allowRead` e `allowWrite`). Conferência só de leitura nesta máquina: chave e âncora iguais e protegidas, hooks
+>   iguais; o `settings.json` ganharia `Read(~/.ssh/**)`, e o `settings.wsl.json` só muda a ordem dos projetos negados.
+> - O README público da 1.5.1 apontava os cenários para `RESULTADOS-versao-1.5.1.md`, que não chegou a ser gravado; a
+>   1.6.0 grava `avaliacoes/cenarios/RESULTADOS-versao-1.6.0.md`.
+>
+> Resultados, em cópias, pastas e perfis descartáveis: kit 301 OK (5 pulados); scripts 134 OK (1 pulado; 66 novos do
+> preparo do host, num PowerShell e num bash do Git de verdade); entrega 81 OK (2 pulados); ferramentas de liberação 17
+> OK; cenários 16/16 (111/111); 312 referências e 0 ausentes. Não executados aqui: o UAC e o `sudo` reais e o WSL de
+> verdade, que ficam com o titular (seção 9). Autorização: o pedido do titular na conversa de 2026-10-20 (DECISAO-004 da
+> fundação); nesta rodada ele iniciou as duas sessões pelos cartões de melhoria propostos, sem texto novo.
 
 > **1.5.1 (20/10/2026):** correção achada pelo próprio ciclo de liberação. Na 1.5.0, o `atualizar_fundacao.py` (pela
 > 1.5.0 já instalada) ensaiou o kit novo numa cópia restaurada da fundação deste computador e **recusou promovê-lo**:
@@ -577,6 +626,8 @@ kit mantido em 1.4.1 por decisão do titular (registros em `fundacao-ia-multipro
 | Separação de papéis com dados reais | lógica da política (o hook de identidade é guarda-corpo contornável) | rodar a sessão com outra conta do SO, sem escrita no banco, ou exigir aprovação com credencial fora do alcance do executor | `references/seguranca-isolamento.md` |
 | R34 — MCP pelo host | parcial (ensaio local OK) | decidir registrar o servidor no Claude Code/Codex | `claude mcp add --scope project fundacao -- python -m fundacao.mcp_servidor --raiz <raiz>` (conferir a sintaxe na versão instalada antes) |
 | R33/R52 — hooks nativos | lógica testada; disparo nativo pendente | aprovar a alteração de `.claude/settings.json` do projeto | bloco de configuração em `references/capacidades/08-…md` §2 |
+| Preparo do host no Windows: chave, âncora, hooks e perfis (1.6.0) | testado (simulação, `-SemUAC`, recusa sem administrador); conferido só lendo nesta máquina | o titular roda o script no PowerShell comum (UAC só se a âncora precisar) | `fundacao-ia-multiprojetos/assets/host/windows/preparar-maquina.ps1`; passos em `references/fluxo-a-implantar.md` §Host |
+| Preparo do Ubuntu do WSL2: pacotes, `wsl.conf`, Claude Code fixado e lançador (1.6.0) | testado (simulação e execução descartável sem sudo, no bash do Git); não executado no WSL de verdade | o titular roda o script no Ubuntu (sudo) e depois `wsl --terminate` no Windows | `fundacao-ia-multiprojetos/assets/host/wsl/preparar-wsl.sh`; passos em `references/fluxo-a-implantar.md` §Host |
 | R36 — plugins | pendente | aprovar instalação de plugin de teste | procedimento em `references/capacidades/08-…md` §5 |
 | R26/R27 — CAG com modelo real | parcial (mecanismo sintético OK) | escolher e autorizar um modelo local (0,5–1,5 B, licença registrada) | `python <skill>/scripts/cag_kv_demo.py --modelo <pasta> --corpus ... --testar-invalidacao` |
 | R55 — treino desligado nas contas | depende do titular | conferir nas telas das contas | checklist em `assets/templates/CHECKLIST-DADOS-REAIS.md` |

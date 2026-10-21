@@ -3,14 +3,14 @@ name: fundacao-ia-multiprojetos
 description: Implanta, adapta, verifica e mantém uma fundação técnica reutilizável para operar vários projetos com IA (núcleo com contratos, projetos isolados criados por modelo, orquestração com retomada, agentes, dois ou mais provedores, memória persistente, GOLD, RAG, CAG, hooks, MCP, skills, plugins, consumo, observabilidade, backup e restauração), seguindo o livro Fundação de IA Multiprojetos 2.0 com as correções 3.0. Use quando pedirem para criar ou estender essa fundação, criar um projeto a partir do modelo, diagnosticar e migrar um projeto existente para ela (por exemplo OpenSquad, squads de agentes ou scripts com IA), ou auditar, atualizar, desativar, restaurar ou retomar a fundação e seus projetos, mesmo sem citar o livro. Não use para redigir peças, calcular honorários avulsos, criar uma skill isolada ou só explicar conceitos sem implementar.
 license: MIT (texto integral em LICENSE.txt, na raiz desta skill)
 metadata:
-  version: "1.5.1"
+  version: "1.6.1"
   owner: "titular da fundação (usuário que define objetivos e aprova)"
   compatibility: "Kit e scripts testados no Windows 11 com Python 3.12.10; listagem no Claude Code 2.1.302 conferida até a 1.4.1. Projetada para outros hosts Agent Skills, como Codex 0.163.0 e o catálogo de skills do Chat/Work (não testados). Kit e scripts exigem Python 3.10+ (biblioteca padrão) e SQLite com FTS5. CAG real exige torch, transformers e um modelo local autorizado; MCP usa o pacote mcp 2.x (Python 3.11+) se presente. Sem rede por padrão."
   source: "Livro Fundação de IA Multiprojetos, edição 2.0 (18/10/2026), e documento 2.0 para 3.0"
-  last_verified: "2026-10-20"
+  last_verified: "2026-10-21"
   freshness_window: "3 months"
   freshness_category: "procedural"
-  verified_against: "https://code.claude.com/docs/en/skills https://code.claude.com/docs/en/hooks https://code.claude.com/docs/en/legal-and-compliance https://support.claude.com/en/articles/17154008-api-credits-for-max-and-team-plans https://learn.chatgpt.com/docs/non-interactive-mode https://learn.chatgpt.com/docs/auth https://modelcontextprotocol.io/specification/versioning https://py.sdk.modelcontextprotocol.io/ https://agentskills.io/specification https://arxiv.org/abs/2412.15605"
+  verified_against: "https://code.claude.com/docs/en/skills https://code.claude.com/docs/en/hooks https://code.claude.com/docs/en/legal-and-compliance https://support.claude.com/en/articles/17154008-api-credits-for-max-and-team-plans https://learn.chatgpt.com/docs/non-interactive-mode https://learn.chatgpt.com/docs/auth https://modelcontextprotocol.io/specification/versioning https://py.sdk.modelcontextprotocol.io/ https://agentskills.io/specification https://arxiv.org/abs/2412.15605 https://code.claude.com/docs/en/sandboxing https://code.claude.com/docs/en/setup https://code.claude.com/docs/en/cli-reference https://learn.microsoft.com/en-us/windows/wsl/wsl-config"
 ---
 
 # Fundação de IA Multiprojetos
@@ -188,7 +188,8 @@ Fundação já existente, para o kit desta skill: `python <skill>/scripts/atuali
 --raiz <raiz>` e, se puder aplicar, `aplicar --raiz <raiz> --backups <pasta em outro disco>` (backup
 antes, ensaio do kit novo numa cópia restaurada, promoção, backup depois e registro;
 `desfazer --registro <arq>` devolve o código). Detalhes: `references/fluxo-c-operar.md` C6.
-Comandos e limites: `references/fluxo-a-implantar.md` §Kit.
+Comandos e limites: `references/fluxo-a-implantar.md` §Kit. Com dados reais, aceite, correção e rejeição de
+entregas valem com a assinatura do titular: `decisao preparar` → ele assina → `decisao registrar` → `tarefa concluir`.
 
 ## 8. Mapa de referências (carregue sob demanda)
 
@@ -198,7 +199,8 @@ Comandos e limites: `references/fluxo-a-implantar.md` §Kit.
 | Decidir sozinho, perguntar ou bloquear | `references/autonomia-e-escalonamento.md` |
 | Fluxo A, B ou C | `references/fluxo-a-implantar.md`, `references/fluxo-b-adaptar.md`, `references/fluxo-c-operar.md` |
 | Capacidade específica (implementar e verificar) | `references/capacidades/`: [01 orquestração](references/capacidades/01-orquestracao.md) · [02 agentes](references/capacidades/02-agentes-subagentes.md) · [03 provedores](references/capacidades/03-provedores-modelos.md) · [04 memória](references/capacidades/04-memoria.md) · [05 GOLD](references/capacidades/05-gold.md) · [06 RAG](references/capacidades/06-rag.md) · [07 CAG e caches](references/capacidades/07-cag-caches.md) · [08 ferramentas/hooks/MCP/skills/plugins](references/capacidades/08-ferramentas-hooks-mcp-skills-plugins.md) · [09 consumo](references/capacidades/09-consumo-qualidade.md) · [10 observabilidade e conversa](references/capacidades/10-observabilidade-conversa.md) · [11 manutenção e recuperação](references/capacidades/11-manutencao-recuperacao.md) |
-| Isolamento, injeção, controles preventivos | `references/seguranca-isolamento.md` |
+| Isolamento, injeção, controles preventivos; decisões assinadas do titular e conclusão da tarefa | `references/seguranca-isolamento.md` (§2) |
+| Preparar o host (Windows e WSL2) para dados reais: chave e âncora do titular, hooks, perfis, sandbox e lançador | `references/fluxo-a-implantar.md` §Host e `references/seguranca-isolamento.md` §5 |
 | Falar com usuário leigo: paradas, perguntas, comandos, formulário e folha de decisões | `references/comunicacao-leigo.md` |
 | Antes de dados reais (sigilo, LGPD, treino) | `references/privacidade-sigilo.md` |
 | Requisitos R01–R60 e como demonstrá-los | `references/requisitos.md` |

@@ -1,0 +1,9 @@
+{
+  "schema_version": "fundacao.politica_decisoes/1",
+  "descricao": "Quais decisões do titular sobre uma entrega exigem assinatura ssh-keygen -Y conferida contra a âncora (references/seguranca-isolamento.md §2). Numa máquina com a âncora padrão, nenhum tipo fica sem assinatura; sem ela (laboratório), tipo com false vale pela identidade de quem registra, com permissão de aprovar no projeto.",
+  "tipos": {
+    "aceite": {"exige_assinatura": true},
+    "correcao": {"exige_assinatura": true},
+    "rejeicao": {"exige_assinatura": true}
+  }
+}

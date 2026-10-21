@@ -1,0 +1,91 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./secrets/**)",
+      "Read(./**/secrets/**)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/*.pfx)",
+      "Read(./**/*.p12)",
+      "Read(./**/id_rsa*)",
+      "Read(./**/*credentials*)",
+      "Read(./**/*secret*)",
+      "Read(./**/*.kdbx)",
+      "Read(./**/auth.json)",
+      "Read(./state/**)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/.codex/auth.json)",
+      "Read(~/.ssh/**)",
+      "Read(/{{PERFIL_WINDOWS}}/.claude/.credentials.json)",
+      "Read(/{{PERFIL_WINDOWS}}/.codex/auth.json)",
+      "Read(/{{PERFIL_WINDOWS}}/.ssh/**)",
+      "Edit(./.claude/**)",
+      "Edit(/{{ANCORA_BASE}}/**)",
+      "Edit(/{{SOMENTE_LEITURA}}/**)"
+    ]
+  },
+  "env": {
+    "FUNDACAO_MCP_PERMITIDAS": "",
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3",
+            "args": ["-B", "{{HOOK_CAMINHO}}"],
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "guarda_caminho: conferindo destino da escrita"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3",
+            "args": ["-B", "{{HOOK_IDENTIDADE}}"],
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "guarda_identidade: conferindo troca de identidade"
+          }
+        ]
+      }
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "allowWrite": ["{{BACKUPS}}", "{{RAIZ}}/state"],
+      "denyWrite": [
+        "{{RAIZ}}/.claude",
+        "{{RAIZ}}/projects/{{OUTROS_PROJETOS}}",
+        "{{SOMENTE_LEITURA}}",
+        "{{ANCORA_BASE}}"
+      ],
+      "denyRead": [
+        "~/.ssh",
+        "~/.claude/.credentials.json",
+        "~/.codex",
+        "{{PERFIL_WINDOWS}}/.ssh",
+        "{{PERFIL_WINDOWS}}/.claude/.credentials.json",
+        "{{PERFIL_WINDOWS}}/.codex"
+      ],
+      "allowRead": ["{{RAIZ}}/state"]
+    },
+    "network": {
+      "allowedDomains": []
+    }
+  }
+}

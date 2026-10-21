@@ -29,8 +29,15 @@ com um relatório que prende os arquivos por hash, funcionou sem perda de garant
 - **Pare antes do portão** só se: a origem divergir do manifesto do B1; uma prova negativa falhar;
   surgir divergência que a B8 não classifique; a etapa precisar de algo fora do aceite (dado real
   novo, execução não autorizada, efeito externo, custo). Pare, registre e pergunte só aquilo.
-- Etapa por etapa só se o usuário pedir. Com a barreira de decisão assinada da fundação, uma
-  assinatura por portão. Paradas e perguntas seguem `references/comunicacao-leigo.md`.
+- Etapa por etapa só se o usuário pedir. Paradas e perguntas seguem `references/comunicacao-leigo.md`.
+- **Com a barreira de decisão assinada** (dados reais; `references/seguranca-isolamento.md` §2): uma
+  assinatura por portão. A entrega do lote (o relatório que prende os arquivos por hash) fica em `outputs/`;
+  a IA roda `python -m fundacao decisao preparar --projeto <p> --tarefa <id> --entrega outputs/<relatório>
+  --tipo aceite --motivo "<palavras do titular>"`, passa ao titular os comandos de `para_o_titular` no cartão
+  do §3 de `comunicacao-leigo.md` e, quando ele responder "assinado", roda sozinha `decisao registrar --arquivo
+  <decisão>` e `tarefa concluir --decisao <decisão>`. Pedido de correção: `--tipo correcao` sobre a mesma
+  entrega, assinado e registrado; a versão corrigida sai ao lado (v2; a v1 fica) e ganha um aceite novo — o
+  aceite anterior deixa de concluir a tarefa. Rejeição: `--tipo rejeicao`.
 
 ## Sumário
 - Diagnóstico: B1 inspeção · B2 mapa de funcionamento · B3 compatibilidade

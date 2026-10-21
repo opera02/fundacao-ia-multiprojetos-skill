@@ -1,0 +1,59 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./secrets/**)",
+      "Read(./**/secrets/**)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/*.pfx)",
+      "Read(./**/*.p12)",
+      "Read(./**/id_rsa*)",
+      "Read(./**/*credentials*)",
+      "Read(./**/*secret*)",
+      "Read(./**/*.kdbx)",
+      "Read(./**/auth.json)",
+      "Read(./state/**)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/.codex/auth.json)",
+      "Read(~/.ssh/**)",
+      "Edit(./.claude/**)"
+    ]
+  },
+  "env": {
+    "FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}}",
+            "args": ["-B", "{{HOOK_CAMINHO}}"],
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "guarda_caminho: conferindo destino da escrita"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}}",
+            "args": ["-B", "{{HOOK_IDENTIDADE}}"],
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "guarda_identidade: conferindo troca de identidade"
+          }
+        ]
+      }
+    ]
+  }
+}

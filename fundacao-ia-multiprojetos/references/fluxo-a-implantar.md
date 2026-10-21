@@ -20,6 +20,7 @@ parada — `references/comunicacao-leigo.md`.
 - A6 Modelo reutilizável de projeto
 - A7 Dois projetos distintos: reutilização e isolamento
 - A8 Entrega, operação e retomada
+- §Host Preparo da máquina para dados reais (Windows e WSL2)
 - §Kit Comandos do kit de referência
 
 ---
@@ -270,6 +271,44 @@ RETOMADA da última etapa concluída é o ponto de continuidade.
 
 ---
 
+## §Host — preparo da máquina para dados reais (Windows e WSL2)
+
+**Quando:** antes de dados reais (itens 6, 7 e 11 de `assets/templates/CHECKLIST-DADOS-REAIS.md`), com o titular
+presente, porque os dois scripts gravam na área dele e pedem senha de administrador. Origem: implantação real de
+2026-10-20 (a âncora em cinco voltas, o perfil do WSL em três versões, perfis e hooks copiados à mão) [Decisão]. O
+que cada um garante e por quê: `references/seguranca-isolamento.md` §5.
+
+**Ordem** (cada passo confere antes o que já existe; repetir não duplica nada):
+1. **Executor, só leitura:** roda os dois em simulação e entrega ao titular um cartão de parada
+   (`references/comunicacao-leigo.md`) com os comandos abaixo prontos, já com os caminhos da máquina.
+2. **Titular, no PowerShell comum do Windows** (sem "Executar como administrador"; o UAC aparece só para a âncora):
+   ```
+   powershell -ExecutionPolicy Bypass -File "<skill>/assets/host/windows/preparar-maquina.ps1" -Raiz "<raiz>" -Titular <id> -Projeto <projeto> -Backups "<pasta de backup em outro disco>"
+   ```
+   Opcionais: `-SomenteLeitura "<pasta>"` (origem que a sessão só lê), `-Python <python.exe>` e `-TrocarChave`
+   (troca de chave, com cópia da âncora anterior); `-Simular` ou `-WhatIf` só mostram o plano. Se a chave ainda não
+   existir, o ssh-keygen pede a senha duas vezes: só o titular a digita e a anota fora do computador, junto com a
+   impressão digital que o script mostra no fim.
+3. **Titular, no terminal do Ubuntu** (o sudo pede a senha do Linux só para pacotes, AppArmor e `wsl.conf`):
+   ```
+   bash "<skill vista do WSL>/assets/host/wsl/preparar-wsl.sh" --raiz "<raiz vista do WSL>" --projeto <projeto> --claude-versao <versão> --claude-sha256 <hash do manifesto assinado>
+   ```
+   Sem o Claude Code no Ubuntu, o script para (código 3) e mostra o comando oficial de instalação; o login também
+   é do titular. Depois, no PowerShell do Windows: `wsl --terminate <distribuição>`.
+4. **Titular, no terminal do Ubuntu:** `bash ~/abrir-fundacao.sh` abre a sessão de dados reais (lançador gerado do
+   modelo `assets/host/wsl/abrir-sessao.sh`, com o perfil `assets/host/wsl/settings.wsl.json` já preenchido).
+5. **Executor:** repete as simulações (tudo "igual", âncora protegida e a impressão digital anotada pelo titular) e
+   registra em `evidence/host/` o relatório do script do Windows, os SHA-256 e o que ficou pendente. Simulação nunca
+   vale como execução real: sem a execução do titular, o passo fica pendente na RETOMADA.
+
+**Códigos dos dois scripts:** 0 pronto e conferido (ou simulação sem erro) · 1 parou ou há conflito · 2 uso
+incorreto (nada alterado) · 3 falta um passo do titular (no Windows, UAC recusado ou `-SemUAC`; no Ubuntu, instalar o
+Claude Code e fazer o login). O hash oficial de cada versão do Claude Code está no manifesto assinado
+(`references/fontes-verificadas.md` §1); sem `--claude-sha256`, o lançador fixa o binário atual, registrado como não
+conferido.
+
+---
+
 ## §Kit — comandos do kit de referência
 
 ```
@@ -288,6 +327,11 @@ python -m fundacao projeto criar --id juridico-lab --nome "Laboratório jurídic
 python -m fundacao acl registrar --principal operador-juridico
 python -m fundacao acl conceder --principal operador-juridico --recurso project:juridico-lab --acao-permitida read
 python -m fundacao tarefa criar --projeto juridico-lab --objetivo "..." --chave aurora-001
+python -m fundacao decisao preparar --projeto juridico-lab --tarefa <task_id> --entrega outputs/<arq> --tipo aceite --motivo "<palavras do titular>"
+#   grava projects/<p>/decisoes/<id>.json; em para_o_titular, os comandos de assinar e conferir (--shell powershell|bash)
+python -m fundacao decisao registrar --arquivo <decisão>    # confere a assinatura e registra; não confere = código 3
+python -m fundacao tarefa concluir --decisao <aceite>       # só o aceite válido, registrado e mais recente conclui
+python -m fundacao decisao conferir-ancora                  # sonda a âncora sem alterar; desprotegida = código 3
 python -m fundacao status                          # recortado pela identidade
 python -m fundacao componente listar | habilitar --id source_manifest
 python -m fundacao eventos verificar

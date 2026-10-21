@@ -39,6 +39,13 @@ com "fundação": escreva sempre "o projeto <nome>" × "a fundação".
   não uma lista para digitar.
 - Peça a saída só quando ela decidir algo; prefira que o script grave o resultado num arquivo
   que a IA lê.
+- **Assinatura de decisão** (barreira de `seguranca-isolamento.md` §2): copie os dois comandos de
+  `para_o_titular` (saída do `decisao preparar`), cada um num bloco, no shell dele — no Windows e no WSL, o
+  PowerShell comum, porque a chave e a âncora ficam no Windows. `assinar` pede a senha da chave e termina
+  com `Write signature to …sig`; `conferir` (opcional: é a prova independente) termina com
+  `Good "fundacao-decisao" signature for <titular>`. Diga em uma linha o que ele assina (tipo, entrega e o
+  início do hash) e peça só a resposta "assinado". Nunca peça a senha, a chave nem a saída; depois do
+  "assinado", registre e conclua sozinho (`decisao registrar`, `tarefa concluir`) e relate o resultado.
 
 ## 4. Linguagem
 
@@ -53,6 +60,10 @@ Ruim: "Rodou o /reset no allowed_signers como administrador? Se sim, me passe a 
 Bom: "Etapa 3 de 6 — proteção das assinaturas. Falta um passo seu (1 minuto): abra o
 PowerShell **como administrador** e rode o comando abaixo; no fim deve aparecer `protegida`.
 Depois eu sigo sozinho para a etapa 4 (backup)."
+
+Bom: "Portão 1 de 2 — análise e plano prontos (relatório com 5 arquivos presos por hash, 7d2f…). Falta
+sua assinatura do aceite (1 minuto): abra o PowerShell comum e rode o comando abaixo; ele pede a senha da
+sua chave e termina com `Write signature to …`. Responda "assinado": eu registro e sigo para o portão 2."
 
 Ruim: "B2 concluído. Posso iniciar o B3?"
 

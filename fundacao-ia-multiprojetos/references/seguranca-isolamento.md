@@ -44,7 +44,32 @@ recusa educada do modelo não prova proteção: ele pode já ter recebido o dado
   aprovar, backup/restauração, habilitar componente ou rota) exigem ainda decisão do titular
   assinada com chave fora do alcance do executor, vinculada a ação, recurso, limites, nonce e
   vigência e conferida pelo serviço antes do efeito. Sem isso, a separação de papéis continua
-  sendo lógica da política, também com dados reais — declare assim.
+  sendo lógica da política, também com dados reais — declare assim. (A assinatura das decisões do
+  titular sobre **entregas** já está no kit — item seguinte; a das operações privilegiadas segue proposta.)
+- **Decisões do titular sobre entregas: barreira de decisão assinada** [Decisão; implantação real de
+  2026-10-20, DECISAO-003 da fundação de referência; kit 1.6.0]. Com dados reais, aceite, pedido de
+  correção e rejeição de uma entrega valem só com a assinatura `ssh-keygen -Y` do titular no namespace
+  `fundacao-decisao`, conferida contra a âncora `allowed_signers` num lugar que só o administrador altera
+  (Windows: `C:\ProgramData\FundacaoIA\confianca\allowed_signers`; WSL: a mesma, por `/mnt/c/...`; Linux:
+  `/etc/fundacao-ia/confianca/allowed_signers`), com a chave privada protegida por senha que só o titular
+  sabe. Ciclo: `python -m fundacao decisao preparar --projeto <p> --tarefa <id> --entrega outputs/<arq>
+  --tipo aceite|correcao|rejeicao --motivo "<palavras do titular>"` grava `projects/<p>/decisoes/<id>.json`
+  (JSON canônico com o SHA-256 da entrega exata) e devolve em `para_o_titular` os comandos de assinar e de
+  conferir no shell dele (`--shell powershell|bash`; `decisao comando` reimprime); o titular assina no
+  PRÓPRIO terminal; `decisao verificar` confere sem gravar; `decisao registrar` grava a trilha de eventos e
+  `decisoes/registro.jsonl` (repetir responde "já registrada"); `tarefa concluir --decisao <aceite>` conclui
+  a tarefa só com o aceite válido, registrado e mais recente da tarefa no registro e na trilha. Recusa
+  (código 3): sem assinatura, outra chave, outro namespace, assinante que não é o dono da chave, decisão ou
+  entrega alterada, decisão fora de `decisoes/` ou de outro projeto. A política
+  `registry/politica-decisoes.json` diz quais tipos exigem assinatura (a distribuída: os três); onde a âncora
+  padrão existe ela é o **piso**: a política não dispensa assinatura e outra âncora (`--ancora`) é recusada.
+  O `ssh-keygen` é o do sistema, por caminho fixo (um falso posto antes no PATH não decide).
+  `decisao conferir-ancora` sonda, sem alterar, se esta conta consegue mudar a âncora, a pasta dela ou
+  qualquer pasta acima até a raiz do disco (apagar ou renomear, mudar permissões ou dono: daria para pôr outra
+  âncora no mesmo caminho) ou se há ligação no caminho; código 3 se desprotegida. **Limites:** protege as decisões, não isola projetos;
+  quem confere é o executor, então a prova independente é o titular repetir o `conferir` no próprio
+  terminal; sem a âncora padrão (laboratório), tipo dispensado pela política vale pela identidade de quem o
+  registra com `approve` no projeto — lógica da política, declare assim.
 - **Processo do provedor (rotas por CLI):** pasta temporária vazia, prompt pela entrada
   padrão (nunca na linha de comando) e ambiente mínimo — lista fixa de variáveis do
   sistema e a pasta de configuração da própria CLI; nunca `FUNDACAO_*` nem chaves de API
@@ -144,6 +169,37 @@ vale sem nova pergunta [auditoria da 1.4.1, A17; revisão de segurança da 1.4.5
   `mcp`): versão exata e hash de **todas** as dependências, instalado com `--require-hashes`
   numa venv própria (`capacidades/08-ferramentas-hooks-mcp-skills-plugins.md` §3); faixa de
   versões sem hash, não [revisão de segurança da 1.4.5, #20].
+- **Preparo do host em scripts versionados** [Decisão; implantação real de 2026-10-20: das 66 intervenções do
+  titular, 10 vieram de lacunas da skill, quase todas aqui: a âncora com a ACL errada em cinco voltas, três versões
+  do perfil do WSL, perfis e hooks copiados à mão]. O titular roda os dois no próprio terminal; a sessão nunca os
+  roda, porque eles gravam na área dele (`<raiz>/.claude`, a âncora, o sistema):
+  - `assets/host/windows/preparar-maquina.ps1` (PowerShell comum, sem "Executar como administrador"): gera a chave
+    `~/.ssh/fundacao_titular` com o `ssh-keygen` do sistema (a senha é digitada só pelo titular; chave que abre sem
+    senha é recusada) e cria a âncora da barreira (§2) com dono **Administradores**, herança cortada na pasta e na
+    pasta acima (Administradores e Sistema com controle total, Usuários com leitura) e o arquivo herdando da pasta.
+    Nunca `(OI)(CI)` em arquivo (deixou a âncora ilegível) nem o usuário como dono (o dono troca as permissões sem
+    UAC, e a sondagem só de escrita dizia "protegida"). Depois, a **conta comum** confere, sem alterar nada, dono,
+    direitos de escrita e de troca de permissões, herança e a pasta acima. Copia os hooks e gera `settings.json`
+    (Windows), `settings.wsl.json` (WSL) e `settings.local.json` (identidade) pelos modelos
+    `assets/host/windows/settings.json` e `assets/host/wsl/settings.wsl.json`, guardando antes, em
+    `.claude/anteriores/`, o que trocar; imprime a impressão digital da chave e os SHA-256 e grava o relatório em
+    `evidence/host/`.
+  - `assets/host/wsl/preparar-wsl.sh` (terminal do Ubuntu): `bubblewrap` e `socat`, o perfil do AppArmor do `bwrap`
+    quando o Ubuntu restringe namespaces, um só bloco `[interop]` desligado no `/etc/wsl.conf` (no caso real, o bloco
+    ficou repetido três vezes), o Claude Code copiado para fora da limpeza automática de versões e fixado por SHA-256
+    (o hash do manifesto assinado, por `--claude-sha256`; sem ele, registrado como não conferido) e o lançador
+    `assets/host/wsl/abrir-sessao.sh`, que confere Claude Code, perfil e hooks pelo hash, a identidade e a
+    interoperabilidade desligada antes de abrir a sessão com o prompt de retomada.
+  - Perfil do WSL: `state/` em `sandbox.filesystem.allowRead` **e** `allowWrite`, com a ferramenta Read ainda negada
+    em `state/`. A regra `Read(./state/**)` também vira `denyRead` no sandbox: sem `allowRead`, `state/` vira um
+    tmpfs vazio, e as ferramentas do kit criam ali um banco falso, com sucesso aparente; sem `allowWrite`, fica só
+    leitura. Escrita negada nos outros projetos (rode de novo o script do Windows depois de criar projeto), na área
+    do titular, na pasta da âncora e nas pastas só de leitura.
+  - **O que exige administrador é declarado e feito pelo titular:** no Windows, o UAC só para a âncora; no Ubuntu,
+    o `sudo` só para pacotes, AppArmor e `wsl.conf`. O executor roda a simulação (`-Simular`, `--simular`: só lê),
+    entrega o comando pronto e, depois que o titular rodar, confere de novo em simulação ("igual" em tudo e a âncora
+    protegida) e registra a evidência. Simulação nunca vale como execução real: o que o titular não rodou fica
+    pendente na RETOMADA. Comandos e ordem: `references/fluxo-a-implantar.md` §Host.
 
 ## 6. Limitação honesta (registre sempre)
 Num computador de usuário único, o agente executor roda com as mesmas permissões do SO
@@ -159,6 +215,9 @@ quem lê o arquivo diretamente vê tudo. Sessões de projeto negam leitura diret
 `state/` (regra de permissão do host + permissão do SO) e acessam dados só pelos serviços. O hook
 `assets/hooks/guarda_caminho.py` bloqueia **escrita** fora do projeto (consultivo, §5); leitura de
 arquivos de outro projeto só é bloqueada por permissões do SO ou sandbox do host.
+No perfil do WSL, a raiz (pasta de trabalho) continua gravável pelos comandos do sandbox, salvo os caminhos
+negados; `registry/` e o código do kit (`fundacao/`) também. Quem protege as decisões do titular é a assinatura (§2),
+não o sandbox.
 
 ## 7. Catálogo de provas negativas (use marcadores-canário fictícios)
 | Prova | Onde | Resultado esperado |
@@ -172,5 +231,7 @@ arquivos de outro projeto só é bloqueada por permissões do SO ou sandbox do h
 | Revogação após cache aquecido, leitura por ID antigo | cache | negada pela autorização atual |
 | Componente/plug-in/hook desativado | todas as rotas inventariadas | zero despachos/processos |
 | Fonte retirada | busca, cache, CAG, restauração | não reaparece |
+| Decisão sem assinatura, de outra chave, em outro namespace ou alterada; entrega alterada | `decisao registrar`, `tarefa concluir` | recusa (código 3); nada registrado; a tarefa não muda |
+| Pasta acima da âncora que esta conta apaga, renomeia ou cujas permissões muda; ligação no caminho | `decisao conferir-ancora` | não protegida (código 3), com o ponto do caminho |
 | Escrita fora do projeto (Write, Edit, `..`, MCP) | hook PreToolUse | 0 em 10 tentativas (R52) |
 | Leitura de segredo | permissões | negada; varredura limpa (R53) |
