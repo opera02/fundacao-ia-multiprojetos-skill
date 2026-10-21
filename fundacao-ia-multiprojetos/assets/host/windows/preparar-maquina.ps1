@@ -53,6 +53,12 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+# Aberto a partir de um PowerShell 7 (pwsh: terminal do Windows, GitHub Actions), o Windows PowerShell herda os
+# caminhos de módulo do 7 e não carrega Microsoft.PowerShell.Security (Get-Acl, Set-Acl): ficam só os caminhos
+# que não são do PowerShell 7 (CI pública da 1.7.1).
+if ($PSVersionTable.PSEdition -eq 'Desktop' -and $env:PSModulePath) {
+    $env:PSModulePath = (@($env:PSModulePath -split ';') | Where-Object { $_ -and $_ -notmatch '\\PowerShell\\' }) -join ';'
+}
 
 $NAMESPACE = 'fundacao-decisao'
 $SID_ADMINS = 'S-1-5-32-544'

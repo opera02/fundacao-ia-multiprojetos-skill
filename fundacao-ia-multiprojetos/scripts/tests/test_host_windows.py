@@ -66,7 +66,7 @@ def fotografia(*pastas: Path) -> dict:
 @unittest.skipUnless(POWERSHELL and TEM_SSH, "PowerShell do Windows ou OpenSSH do sistema indisponível")
 class _Base(unittest.TestCase):
     def setUp(self):
-        self.base = Path(tempfile.mkdtemp(prefix="preparar-maquina-teste-"))
+        self.base = Path(tempfile.mkdtemp(prefix="preparar-maquina-teste-")).resolve()  # nome longo (TEMP curto no GitHub)
         self.raiz = self.base / "Fundacao Teste"
         for pasta in ("registry", "projects/caso-real", "projects/lab-a"):
             (self.raiz / pasta).mkdir(parents=True)
@@ -95,18 +95,20 @@ class _Base(unittest.TestCase):
     def item(self, relatorio: dict, ident: str) -> dict:
         return next(i for i in relatorio["itens"] if i["id"] == ident)
 
-    def ps(self, codigo: str):
+    def ps(self, codigo: str, env: dict | None = None):
         """Funções do script (carregado com ponto, sem rodar o principal) num PowerShell novo."""
         arq = self.base / f"trecho-{self.n}.ps1"
         self.n += 1
         prelude = "try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }"  # saída em UTF-8
         arq.write_text(prelude + chr(10) + f". '{PS1}'" + chr(10) + codigo + chr(10), encoding="utf-8-sig")
         p = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
-                            str(arq)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+                            str(arq)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
+                           env=env)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         return json.loads(p.stdout.strip().splitlines()[-1])
 
 
+@unittest.skipIf(ELEVADO, "o script recusa rodar elevado (código 2), por desenho: este ensaio exige a conta comum")
 class Simulacao(_Base):
     def test_simulacao_mostra_o_plano_e_nao_grava_nada(self):
         antes = fotografia(self.raiz, self.chave.parent, self.base / "ProgramData")
@@ -143,6 +145,7 @@ class Simulacao(_Base):
         self.assertFalse((outra / ".claude").exists())
 
 
+@unittest.skipIf(ELEVADO, "o script recusa rodar elevado (código 2), por desenho: este ensaio exige a conta comum")
 class SemUac(_Base):
     """Modo real sem o UAC: tudo o que não exige administrador é feito; a âncora fica pendente (código 3)."""
 
@@ -227,6 +230,7 @@ class SemUac(_Base):
         self.assertEqual(self.item(rel, "settings.local.json")["acao"], "atualizar")
 
 
+@unittest.skipIf(ELEVADO, "o script recusa rodar elevado (código 2), por desenho: este ensaio exige a conta comum")
 class ChaveSemSenha(_Base):
     def test_chave_sem_senha_e_recusada_antes_de_qualquer_escrita(self):
         gerar_chave(self.chave, "")
@@ -294,6 +298,29 @@ class Funcoes(_Base):
         self.assertFalse(s["protegida"])
         self.assertTrue(s["arquivo"]["direitos"]["GENERIC_WRITE"])
         self.assertTrue(any("dono" in m for m in s["motivos"]))
+
+
+    def test_chamado_de_um_powershell_7_ainda_carrega_o_get_acl(self):
+        """Aberto a partir de um PowerShell 7 (como faz o GitHub Actions, ou um terminal do pwsh), o Windows PowerShell
+        herda os caminhos de módulo do 7 e o Get-Acl não carrega (CI pública da 1.7.1). O script limpa esses caminhos."""
+        modulo = self.base / "PowerShell" / "7" / "Modules" / "Microsoft.PowerShell.Security"
+        modulo.mkdir(parents=True)
+        (modulo / "Microsoft.PowerShell.Security.psd1").write_text(
+            "@{ ModuleVersion = '7.0.0.0'; GUID = 'a94c8c7e-9810-47c0-b8af-65089c13a35a'; PowerShellVersion = '7.0'; "
+            "CompatiblePSEditions = @('Core'); CmdletsToExport = @('Get-Acl', 'Set-Acl') }" + chr(10), encoding="utf-8")
+        env = {**os.environ, "PSModulePath": str(modulo.parent) + os.pathsep + os.environ.get("PSModulePath", "")}
+        dados = self.ps(f"@{{ dono = (Get-Acl -LiteralPath '{self.base}').Owner }} | ConvertTo-Json -Compress", env=env)
+        self.assertTrue(dados["dono"])
+
+
+@unittest.skipUnless(ELEVADO, "só num processo elevado: a recusa do script quando roda como administrador")
+class Elevado(_Base):
+    def test_rodar_elevado_e_recusado_sem_escrever(self):
+        antes = fotografia(self.raiz)
+        p, _rel = self.rodar("-SemUAC", "-Projeto", "caso-real")
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("PowerShell comum", p.stdout + p.stderr)
+        self.assertEqual(fotografia(self.raiz), antes)
 
 
 @unittest.skipIf(ELEVADO, "as provas de ACL sem administrador não valem num processo elevado")

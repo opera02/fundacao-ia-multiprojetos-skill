@@ -3,7 +3,7 @@ name: fundacao-ia-multiprojetos
 description: Implanta, adapta, verifica e mantém uma fundação técnica reutilizável para operar vários projetos com IA (núcleo com contratos, projetos isolados criados por modelo, orquestração com retomada, agentes, dois ou mais provedores, memória persistente, GOLD, RAG, CAG, hooks, MCP, skills, plugins, consumo, observabilidade, backup e restauração), seguindo o livro Fundação de IA Multiprojetos 2.0 com as correções 3.0. Use quando pedirem para criar ou estender essa fundação, criar um projeto a partir do modelo, diagnosticar e migrar um projeto existente para ela (por exemplo OpenSquad, squads de agentes ou scripts com IA), ou auditar, atualizar, desativar, restaurar ou retomar a fundação e seus projetos, mesmo sem citar o livro. Não use para redigir peças, calcular honorários avulsos, criar uma skill isolada ou só explicar conceitos sem implementar.
 license: MIT (texto integral em LICENSE.txt, na raiz desta skill)
 metadata:
-  version: "1.7.1"
+  version: "1.7.2"
   owner: "titular da fundação (usuário que define objetivos e aprova)"
   compatibility: "Kit e scripts testados no Windows 11 com Python 3.12.10; listagem no Claude Code 2.1.302 conferida até a 1.4.1. Projetada para outros hosts Agent Skills, como Codex 0.163.0 e o catálogo de skills do Chat/Work (não testados). Kit e scripts exigem Python 3.10+ (biblioteca padrão) e SQLite com FTS5. CAG real exige torch, transformers e um modelo local autorizado; MCP usa o pacote mcp 2.x (Python 3.11+) se presente. Sem rede por padrão."
   source: "Livro Fundação de IA Multiprojetos, edição 2.0 (18/10/2026), e documento 2.0 para 3.0"

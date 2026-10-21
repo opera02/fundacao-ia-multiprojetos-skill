@@ -36,13 +36,17 @@ class TestCIPublica(unittest.TestCase):
         self.assertIn('python-version: "3.12"', self.texto)
         self.assertIn("fail-fast: false", self.texto)
 
+    def test_as_verificacoes_seguintes_rodam_mesmo_depois_de_uma_falha(self):
+        """1.7.2: na primeira CI pública (1.7.1) cada trabalho parou no primeiro passo vermelho e escondeu os demais."""
+        self.assertEqual(self.texto.count("if: ${{ !cancelled() }}"), 4)
+
     def test_as_cinco_verificacoes(self):
         for trecho in ("working-directory: fundacao-ia-multiprojetos/assets/fundacao-kit",
                        "python -B -m unittest discover -s tests",
                        "python -B -m unittest discover -s scripts/tests",
                        "python -B -m unittest discover -s entrega/testes",
                        "scripts/verificar_referencias.py --raiz fundacao-ia-multiprojetos",
-                       "evals/cenarios/run_cenarios.py --saida"):
+                       "evals/cenarios/run_cenarios.py --saida", "--opcionais-ausentes-bloqueiam"):
             self.assertIn(trecho, self.texto)
 
 

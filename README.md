@@ -6,8 +6,8 @@
 
 **Uma base reutilizável para criar, adaptar e operar projetos com inteligência artificial.**
 
-[![Skill 1.7.1](https://img.shields.io/badge/skill-1.7.1-087E8B)](fundacao-ia-multiprojetos/SKILL.md)
-[![Kit 1.7.0](https://img.shields.io/badge/kit-1.7.0-176B87)](fundacao-ia-multiprojetos/assets/fundacao-kit/fundacao/__init__.py)
+[![Skill 1.7.2](https://img.shields.io/badge/skill-1.7.2-087E8B)](fundacao-ia-multiprojetos/SKILL.md)
+[![Kit 1.7.2](https://img.shields.io/badge/kit-1.7.2-176B87)](fundacao-ia-multiprojetos/assets/fundacao-kit/fundacao/__init__.py)
 [![CI validar](https://github.com/opera02/fundacao-ia-multiprojetos-skill/actions/workflows/validar.yml/badge.svg)](https://github.com/opera02/fundacao-ia-multiprojetos-skill/actions/workflows/validar.yml)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)](#requisitos)
 [![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-527A34)](LICENSE)
@@ -22,7 +22,7 @@ O repositório entrega **uma skill no padrão Agent Skills e um kit de referênc
 
 > **O que você instala:** a skill fornece o procedimento que a IA seguirá. O kit fornece código local para experimentar e implementar os contratos. Instalar a skill, implantar uma fundação e validar integrações reais são etapas distintas.
 >
-> **Versões desta entrega:** skill **1.7.1**, de **21/10/2026**, e kit **1.7.0** (quinze melhorias vindas da análise do vibe-coding-toolkit: instruções automáticas na raiz da fundação, pastas de dados fora das instruções, sessão de dados reais sem web, catraca de testes, CI pública em Windows e Ubuntu, entre outras; antes, na 1.6.1, as decisões do titular assinadas e o preparo do host em scripts versionados). A rota habilitada inicialmente no kit é a **simulada**. Consulte o [estado de verificação](#verificacao) para distinguir código disponível, testes locais e integrações ainda não ensaiadas.
+> **Versões desta entrega:** skill **1.7.2**, de **21/10/2026**, e kit **1.7.2** (quinze melhorias vindas da análise do vibe-coding-toolkit: instruções automáticas na raiz da fundação, pastas de dados fora das instruções, sessão de dados reais sem web, catraca de testes, CI pública em Windows e Ubuntu, entre outras; antes, na 1.6.1, as decisões do titular assinadas e o preparo do host em scripts versionados). A rota habilitada inicialmente no kit é a **simulada**. Consulte o [estado de verificação](#verificacao) para distinguir código disponível, testes locais e integrações ainda não ensaiadas.
 
 ## Navegação
 
@@ -222,10 +222,10 @@ Se o interpretador instalado for chamado `python3`, use esse nome nos comandos. 
 
 ### Compatibilidade registrada pelo projeto
 
-| Ambiente | Evidência da entrega 1.7.1 | O que não está demonstrado nesse registro |
+| Ambiente | Evidência da entrega 1.7.2 | O que não está demonstrado nesse registro |
 |---|---|---|
 | **Windows 11 + Python 3.12.10** | Suítes, cenários, instalação e atualização em ambientes descartáveis | Uso de dados reais e integrações reais com provedores |
-| **Claude Code 2.1.302** | Instalação registrada até a 1.7.1; descoberta no catálogo conferida até a 1.4.5 | Acionamento da 1.7.1 instalada em um pedido real |
+| **Claude Code 2.1.302** | Instalação registrada até a 1.7.2; descoberta no catálogo conferida até a 1.4.5 | Acionamento da 1.7.2 instalada em um pedido real |
 | **Codex** | Estrutura e caminhos compatíveis com a documentação do host | Uso desta skill em sessão Codex |
 | **Claude.ai** | ZIP específico preparado | Upload e execução deste pacote no serviço |
 | **Linux/macOS; Python 3.10/3.11** | Caminhos previstos no código; simulações de condições de compatibilidade | Certificação completa nessas combinações pela entrega original |
@@ -250,10 +250,10 @@ Sem Git, use **Code → Download ZIP**, extraia o conteúdo e abra o terminal na
 | Você quer… | Arquivo |
 |---|---|
 | Instalar a skill localmente | [`entrega/dist/fundacao-ia-multiprojetos.skill`](entrega/dist/fundacao-ia-multiprojetos.skill) |
-| Levar pacote, instalador e instruções para outro computador | [`fundacao-ia-multiprojetos-1.7.1.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.1.zip) |
-| Fazer upload no Claude.ai | [`fundacao-ia-multiprojetos-1.7.1-para-claude-ai.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.1-para-claude-ai.zip) |
+| Levar pacote, instalador e instruções para outro computador | [`fundacao-ia-multiprojetos-1.7.2.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.2.zip) |
+| Fazer upload no Claude.ai | [`fundacao-ia-multiprojetos-1.7.2-para-claude-ai.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.2-para-claude-ai.zip) |
 | Examinar também os cenários de avaliação | [`fundacao-ia-multiprojetos-completo.zip`](entrega/dist/fundacao-ia-multiprojetos-completo.zip) |
-| Pedir uma revisão em texto a outra IA | [`fundacao-ia-multiprojetos-1.7.1-para-revisao.md`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.1-para-revisao.md) |
+| Pedir uma revisão em texto a outra IA | [`fundacao-ia-multiprojetos-1.7.2-para-revisao.md`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.2-para-revisao.md) |
 
 O arquivo `.skill` é um ZIP com a pasta `fundacao-ia-multiprojetos/` na raiz. O pacote instalável contém **123 arquivos** e não inclui `evals/`; o completo inclui as avaliações. O arquivo `-para-revisao.md` é material de leitura, não um instalador.
 
@@ -262,20 +262,20 @@ O arquivo `.skill` é um ZIP com a pasta `fundacao-ia-multiprojetos/` na raiz. O
 Execute na raiz do repositório:
 
 ```bash
-python entrega/instalar_skill.py instalar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 86f818cbb1fc2a324ecaa8d5169e9cb69b8960b25b03964b2638f751c46f7ff9
+python entrega/instalar_skill.py instalar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 2f5ca0e7b74caacea5614225bf9e87d915580f8e09f6d56dc057091469edba5d
 ```
 
 Depois, confira a cópia:
 
 ```bash
-python entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 86f818cbb1fc2a324ecaa8d5169e9cb69b8960b25b03964b2638f751c46f7ff9
+python entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 2f5ca0e7b74caacea5614225bf9e87d915580f8e09f6d56dc057091469edba5d
 ```
 
 **Esse instalador é compartilhado:** cria a cópia em `~/.agents/skills/fundacao-ia-multiprojetos/` e uma ligação em `~/.claude/skills/fundacao-ia-multiprojetos/`. No Windows, usa junção de diretório; nos sistemas POSIX, link simbólico. Ele não instala nem autentica os aplicativos.
 
 A origem é conferida antes da extração contra o `--sha256` informado, obrigatório desde a 1.5.1; o [`SHA256SUMS.txt`](entrega/dist/SHA256SUMS.txt) ao lado só detecta corrupção, porque viaja junto com o pacote. O comando `verificar` compara os arquivos instalados com a origem e confere a ligação. **Isso comprova a cópia, não o acionamento no host.** Se a skill já existir, siga [Atualização](#manutencao).
 
-O hash acima corresponde especificamente ao pacote **1.7.1**. Desde a 1.5.1, `instalar` e `atualizar` recusam sem `--sha256`. Para outra versão, use o hash publicado junto ao pacote escolhido; não substitua um hash divergente apenas para fazer a instalação continuar.
+O hash acima corresponde especificamente ao pacote **1.7.2**. Desde a 1.5.1, `instalar` e `atualizar` recusam sem `--sha256`. Para outra versão, use o hash publicado junto ao pacote escolhido; não substitua um hash divergente apenas para fazer a instalação continuar.
 
 <details>
 <summary><strong>Alternativa: instalação manual somente no host ou no projeto escolhido</strong></summary>
@@ -302,7 +302,7 @@ Referências oficiais: [Claude Code](https://code.claude.com/docs/en/skills) e [
 
 1. Habilite **Code execution and file creation** em **Settings → Capabilities**. Em uma organização, as políticas de skills e execução de código também precisam permitir o recurso.
 2. Acesse **Customize → Skills → + → + Create skill → Upload a skill**.
-3. Envie o arquivo [`fundacao-ia-multiprojetos-1.7.1-para-claude-ai.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.1-para-claude-ai.zip).
+3. Envie o arquivo [`fundacao-ia-multiprojetos-1.7.2-para-claude-ai.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.2-para-claude-ai.zip).
 4. Habilite a skill na lista e solicite seu uso explicitamente em uma conversa.
 
 O ZIP é idêntico ao `.skill`, com extensão apropriada ao upload. O projeto preparou o arquivo, mas **não testou seu upload nem sua execução no Claude.ai**. Uma sessão na nuvem só pode atuar nos arquivos e ferramentas que realmente alcança; instalar a skill lá não concede acesso ao disco do seu computador.
@@ -651,8 +651,8 @@ A entrega registra um ensaio local de descoberta, chamada e negativa, mas a cone
 Na raiz do repositório, após obter o pacote desejado:
 
 ```bash
-python entrega/instalar_skill.py atualizar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 86f818cbb1fc2a324ecaa8d5169e9cb69b8960b25b03964b2638f751c46f7ff9
-python entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 86f818cbb1fc2a324ecaa8d5169e9cb69b8960b25b03964b2638f751c46f7ff9
+python entrega/instalar_skill.py atualizar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 2f5ca0e7b74caacea5614225bf9e87d915580f8e09f6d56dc057091469edba5d
+python entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 2f5ca0e7b74caacea5614225bf9e87d915580f8e09f6d56dc057091469edba5d
 ```
 
 A versão anterior é guardada em `~/.agents/skills-anteriores/`. A troca usa preparação, verificação e renomeações com mecanismo de retorno e recuperação de interrupção; não é descrita como uma única troca atômica. Para voltar, use `atualizar --origem` com a cópia anterior ou o pacote correspondente e confira sua integridade. **Não existe subcomando `rollback`.**
@@ -741,21 +741,21 @@ Para se aprofundar: [guia de entrega](entrega/README-ENTREGA.md) · [árvore det
 
 ## Testes, evidências e limites
 
-### Resultados registrados na entrega 1.7.1
+### Resultados registrados na entrega 1.7.2
 
 Os números abaixo são o registro histórico em **Windows 11, Python 3.12.10**. Devem ser lidos com suas condições, e não como uma certificação geral de produção.
 
 | Verificação | Resultado registrado | Alcance |
 |---|---|---|
 | Kit de referência | Suíte com **326 testes**, sem falhas e com **5 pulados** | Testes locais positivos e negativos; os pulados dependiam de links simbólicos de arquivo ou do bash do Linux/WSL |
-| Scripts da skill | **182 testes**, sem falhas e com **1 pulado** | Ferramentas locais, inclusive o preparo do host num PowerShell e num bash do Git de verdade, as instruções da raiz e a catraca da atualização |
-| Ferramentas de entrega | **89 testes**, sem falhas e com **2 pulados** | Instalação, empacotamento, regressões e a CI pública |
+| Scripts da skill | **184 testes**, sem falhas e com **1 pulado** | Ferramentas locais, inclusive o preparo do host num PowerShell e num bash do Git de verdade, as instruções da raiz e a catraca da atualização |
+| Ferramentas de entrega | **92 testes**, sem falhas e com **2 pulados** | Instalação, empacotamento, regressões e a CI pública |
 | Cenários CEN-01–CEN-16 | **16/16**, com **111/111 verificações** no ambiente registrado | Incluem condições simuladas identificadas; algumas dependem de ferramentas externas |
 | Referências da árvore | **342 conferidas, 0 ausentes** | Integridade dos caminhos internos conferidos pela ferramenta |
 | Validação estrutural | `quick_validate` válido na árvore e no pacote | Formato e estrutura; não comprova acionamento no host |
 | MCP por stdio | Descoberta, chamada, negativa e encerramento conferidos | Ensaio local com SDK disponível; não comprova a integração em cada aplicativo |
 
-Fontes: [guia de entrega](entrega/README-ENTREGA.md), [matriz de hosts](entrega/MATRIZ-HOSTS-E-VERIFICACOES.md), [avaliações](entrega/avaliacoes/AVALIACOES.md) e [cenários da versão 1.7.1](entrega/avaliacoes/cenarios/RESULTADOS-versao-1.7.1.md).
+Fontes: [guia de entrega](entrega/README-ENTREGA.md), [matriz de hosts](entrega/MATRIZ-HOSTS-E-VERIFICACOES.md), [avaliações](entrega/avaliacoes/AVALIACOES.md) e [cenários da versão 1.7.2](entrega/avaliacoes/cenarios/RESULTADOS-versao-1.7.2.md).
 
 **Conferência adicional da documentação da 1.4.5:** em Linux com Python 3.12.14, as três suítes coletaram 229 testes: **223 aprovados, 6 pulados e nenhuma falha**. Também foram conferidas 28 chamadas de CLI, incluindo negativas esperadas, instalação, atualização, criação de projeto/tarefa, backup e restauração. Esse ensaio não valida o acionamento da skill nos hosts. Ambiente, comandos e limites estão no [registro da revisão do README](docs/VERIFICACAO-README.md).
 

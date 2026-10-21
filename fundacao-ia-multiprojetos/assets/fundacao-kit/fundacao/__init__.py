@@ -9,5 +9,5 @@ Este pacote é um ponto de partida: os contratos e os testes de conformidade
 cumpra os mesmos contratos e passe nos mesmos cenários.
 """
 
-KIT_VERSION = "1.7.0"
+KIT_VERSION = "1.7.2"
 TEMPLATE_VERSION = "1.0.0"

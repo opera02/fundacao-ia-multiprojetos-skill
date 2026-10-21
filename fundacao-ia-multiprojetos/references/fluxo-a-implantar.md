@@ -285,7 +285,8 @@ que cada um garante e por quê: `references/seguranca-isolamento.md` §5.
 **Ordem** (cada passo confere antes o que já existe; repetir não duplica nada):
 1. **Executor, só leitura:** roda os dois em simulação e entrega ao titular um cartão de parada
    (`references/comunicacao-leigo.md`) com os comandos abaixo prontos, já com os caminhos da máquina.
-2. **Titular, no PowerShell comum do Windows** (sem "Executar como administrador"; o UAC aparece só para a âncora):
+2. **Titular, no PowerShell comum do Windows** (sem "Executar como administrador"; o UAC aparece só para a âncora;
+   aberto a partir de um terminal do PowerShell 7, o script descarta os caminhos de módulo do 7 [Decisão; 1.7.2]):
    ```
    powershell -ExecutionPolicy Bypass -File "<skill>/assets/host/windows/preparar-maquina.ps1" -Raiz "<raiz>" -Titular <id> -Projeto <projeto> -Backups "<pasta de backup em outro disco>"
    ```

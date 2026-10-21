@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import ntpath
 import shutil
 import subprocess
 import sys
@@ -250,7 +251,8 @@ class LinhaDeComando(unittest.TestCase):
         r = rodar("perfil-windows", "--raiz", self.raiz, "--python", sys.executable)
         self.assertEqual(r.returncode, 0, r.stderr)
         perfil = json.loads(r.stdout)
-        self.assertEqual(perfil["hooks"]["PreToolUse"][0]["hooks"][0]["command"], sys.executable)
+        # O perfil é das sessões do Windows: o caminho sai com as barras do Windows (num Linux, \usr\bin...).
+        self.assertEqual(perfil["hooks"]["PreToolUse"][0]["hooks"][0]["command"], ntpath.normpath(sys.executable))
         r = rodar("identidade", "--titular", "titular")
         self.assertEqual(json.loads(r.stdout)["env"], {"FUNDACAO_PRINCIPAL": "titular"})
 

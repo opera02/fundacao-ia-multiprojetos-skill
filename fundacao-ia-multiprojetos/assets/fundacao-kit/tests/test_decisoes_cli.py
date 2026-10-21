@@ -248,9 +248,13 @@ class TestAncoraEComando(DecisoesCliCase):
     def test_comando_reimprime_para_o_shell_pedido(self):
         arq = self.preparada()
         codigo, r, erro = self.cli("operador-lab", "decisao", "comando", "--arquivo", str(arq), "--shell", "powershell")
-        self.assertEqual(codigo, 0, erro)
-        self.assertEqual(r["para_o_titular"]["shell"], "powershell")
-        self.assertIn(decisoes.caminho_windows(arq), r["para_o_titular"]["assinar"])
+        if os.name == "nt" or os.environ.get("WSL_DISTRO_NAME", "").strip():
+            self.assertEqual(codigo, 0, erro)
+            self.assertEqual(r["para_o_titular"]["shell"], "powershell")
+            self.assertIn(decisoes.caminho_windows(arq), r["para_o_titular"]["assinar"])
+        else:  # Linux fora do WSL (a CI pública): o caminho não existe no Windows, e o comando do PowerShell é recusado
+            self.assertEqual(codigo, 2, erro)
+            self.assertIn("sem equivalente no Windows", erro)
         codigo, r, erro = self.cli("operador-engenharia", "decisao", "comando", "--arquivo", str(arq))
         self.assertEqual(codigo, 2)
         self.assertIn("E_ACCESS_DENIED", erro)

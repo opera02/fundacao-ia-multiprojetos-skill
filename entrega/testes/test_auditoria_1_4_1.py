@@ -157,12 +157,19 @@ class TestSEC01ControleNomesQueTentamSair(_Base):
 
     def test_sec01_nomes_do_relatorio_nao_escrevem_fora_da_area(self):
         ingenuos = [(Path(tempfile.gettempdir()) / "x" / n).resolve() for n in PAYLOADS_DO_RELATORIO]
-        antes = [p.exists() for p in ingenuos]
+
+        def existe(p: Path):
+            try:
+                return p.exists()
+            except PermissionError:  # pasta alheia (ex.: /root num Linux sem privilégio): ninguém escreve lá
+                return None
+
+        antes = [existe(p) for p in ingenuos]
         pacote = self.empacotar(self.origem, self.base / "pacote" / f"{NOME}.skill",
                                 {n: "conteúdo fictício" for n in PAYLOADS_DO_RELATORIO})
         p, saida = self.rodar("instalar", "--origem", pacote)
         self.assertEqual(p.returncode, 0, p.stdout[-500:] + p.stderr[-500:])
-        self.assertEqual([p.exists() for p in ingenuos], antes, "algum nome escapou da pasta de extração")
+        self.assertEqual([existe(p) for p in ingenuos], antes, "algum nome escapou da pasta de extração")
         nomes = {q.name for q in self.perfil.rglob("*") if q.is_file()}
         self.assertFalse(nomes & {".bashrc", "malicious_job.sh", "authorized_keys"}, nomes)
         self.assertEqual(sorted(q.relative_to(self.copia).as_posix() for q in self.copia.rglob("*") if q.is_file()),

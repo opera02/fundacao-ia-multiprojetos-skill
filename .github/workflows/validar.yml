@@ -34,12 +34,16 @@ jobs:
         working-directory: fundacao-ia-multiprojetos/assets/fundacao-kit
         run: python -B -m unittest discover -s tests
       - name: testes dos scripts da skill
+        if: ${{ !cancelled() }}  # roda mesmo se uma verificação anterior falhou: a CI mostra todas as falhas de uma vez
         working-directory: fundacao-ia-multiprojetos
         run: python -B -m unittest discover -s scripts/tests
       - name: testes da entrega
+        if: ${{ !cancelled() }}  # roda mesmo se uma verificação anterior falhou: a CI mostra todas as falhas de uma vez
         run: python -B -m unittest discover -s entrega/testes
       - name: referências e comandos citados
+        if: ${{ !cancelled() }}  # roda mesmo se uma verificação anterior falhou: a CI mostra todas as falhas de uma vez
         run: python -B fundacao-ia-multiprojetos/scripts/verificar_referencias.py --raiz fundacao-ia-multiprojetos
       - name: cenários
+        if: ${{ !cancelled() }}  # roda mesmo se uma verificação anterior falhou: a CI mostra todas as falhas de uma vez
         shell: bash
-        run: python -B fundacao-ia-multiprojetos/evals/cenarios/run_cenarios.py --saida "$RUNNER_TEMP/cenarios"
+        run: python -B fundacao-ia-multiprojetos/evals/cenarios/run_cenarios.py --saida "$RUNNER_TEMP/cenarios" --opcionais-ausentes-bloqueiam

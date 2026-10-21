@@ -97,11 +97,12 @@ def montar_raiz(base: Path, projeto: str = "caso-real") -> Path:
 @unittest.skipUnless(BASH, "bash do Git for Windows (ou do Linux) indisponível: lançador não testado aqui")
 class LancadorNoBash(unittest.TestCase):
     def setUp(self):
-        self.base = Path(tempfile.mkdtemp(prefix="lancador-bash-teste-"))
+        self.base = Path(tempfile.mkdtemp(prefix="lancador-bash-teste-")).resolve()  # nome longo (TEMP curto no GitHub)
         self.raiz = montar_raiz(self.base)
         self.claude = self.base / "bin" / "claude"
         self.claude.parent.mkdir()
         self.claude.write_text(FALSO, encoding="utf-8", newline="\n")
+        self.claude.chmod(0o755)  # no Linux, sem o bit de execução o bash não roda o binário falso (126)
         self.saida = self.base / "chamada.txt"
         m = ajudante()
         texto = m.lancador({
@@ -199,13 +200,14 @@ class PrepararWslNoBash(unittest.TestCase):
     """O preparo do Ubuntu num ambiente descartável: casa, wsl.conf e Claude Code falsos, sem sudo e sem rede."""
 
     def setUp(self):
-        self.base = Path(tempfile.mkdtemp(prefix="preparar-wsl-teste-"))
+        self.base = Path(tempfile.mkdtemp(prefix="preparar-wsl-teste-")).resolve()  # nome longo (TEMP curto no GitHub)
         self.raiz = montar_raiz(self.base)
         self.home = self.base / "home"
         versoes = self.home / ".local" / "share" / "claude" / "versions"
         versoes.mkdir(parents=True)
         self.binario = versoes / "2.1.302"
         self.binario.write_text(FALSO, encoding="utf-8", newline=chr(10))
+        self.binario.chmod(0o755)
         (self.home / ".claude" / "skills" / "fundacao-ia-multiprojetos").mkdir(parents=True)  # ligação já feita
         self.falsos = self.base / "bin-falso"
         self.falsos.mkdir()

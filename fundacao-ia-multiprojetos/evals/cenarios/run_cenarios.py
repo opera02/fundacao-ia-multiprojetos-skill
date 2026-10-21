@@ -50,6 +50,7 @@ class Cenario:
         self.id, self.nome, self.tipo, self.requisitos = cid, nome, tipo, requisitos
         self.checks: list[dict] = []
         self.erro: str | None = None
+        self.bloqueio: str | None = None
 
     def check(self, descricao: str, esperado, observado, passou: bool, evidencia: str = ""):
         self.checks.append({"verificacao": descricao, "esperado": str(esperado), "observado": str(observado)[:400],
@@ -61,13 +62,29 @@ class Cenario:
         self.checks.append({"verificacao": descricao, "esperado": "executada", "observado": f"PULADA: {motivo}",
                             "passou": None, "pulada": True, "evidencia": motivo[:400]})
 
+    def bloquear(self, motivo: str):
+        """Dependência opcional ausente neste ambiente (torch, transformers, mcp): o cenário não roda e fica
+        BLOQUEADO, nunca PASSOU; reprova a execução, salvo com --opcionais-ausentes-bloqueiam (só a CI pública)."""
+        self.bloqueio = motivo
+
     @property
     def passou(self) -> bool:
-        return self.erro is None and bool(self.checks) and all(c["passou"] for c in self.checks if not c.get("pulada"))
+        return (self.erro is None and self.bloqueio is None and bool(self.checks)
+                and all(c["passou"] for c in self.checks if not c.get("pulada")))
 
     def as_dict(self) -> dict:
         return {"id": self.id, "nome": self.nome, "tipo": self.tipo, "requisitos": self.requisitos,
-                "passou": self.passou, "erro": self.erro, "verificacoes": self.checks}
+                "passou": self.passou, "bloqueado": self.bloqueio, "erro": self.erro, "verificacoes": self.checks}
+
+
+def situacao(r: dict) -> str:
+    return "BLOQUEADO" if r.get("bloqueado") else ("PASSOU" if r["passou"] else "FALHOU")
+
+
+def codigo_de_saida(resultados: list[dict], opcionais_bloqueiam: bool = False) -> int:
+    """0 se todos passaram; com `opcionais_bloqueiam`, cenário bloqueado por dependência opcional não reprova."""
+    ruins = [r for r in resultados if not r["passou"] and not (opcionais_bloqueiam and r.get("bloqueado"))]
+    return 0 if not ruins else 1
 
 
 def nova_fundacao_api(root: Path):
@@ -916,7 +933,7 @@ def cen10(W: Path) -> Cenario:
     try:
         import importlib.util
         if importlib.util.find_spec("torch") is None or importlib.util.find_spec("transformers") is None:
-            c.check("dependências do CAG", "torch e transformers", "ausentes — cenário não executável aqui", False)
+            c.bloquear("torch e transformers ausentes (dependências opcionais): cenário não executável aqui")
             return c
     except Exception as exc:  # noqa: BLE001
         c.check("dependências do CAG", "importáveis", str(exc), False)
@@ -1180,7 +1197,7 @@ def cen15(W: Path) -> Cenario:
                 "real-local (SDK mcp, processo separado por stdio; sem rede)", "R34")
     import importlib.util
     if importlib.util.find_spec("mcp") is None:
-        c.check("SDK mcp presente", "instalado", "ausente — cenário bloqueado (instalar exige autorização)", False)
+        c.bloquear("SDK mcp ausente (dependência opcional; instalar exige autorização)")
         return c
     root = W / "fundacao-cen15"
     con, adm, sim = nova_fundacao_api(root)
@@ -1277,6 +1294,8 @@ def main() -> int:
     ap.add_argument("--saida", type=Path, required=True)
     ap.add_argument("--manter", action="store_true", help="não apaga as pastas temporárias")
     ap.add_argument("--so", help="lista de cenários, ex.: CEN-01,CEN-07")
+    ap.add_argument("--opcionais-ausentes-bloqueiam", action="store_true",
+                    help="cenário bloqueado por dependência opcional ausente não reprova (só a CI pública)")
     args = ap.parse_args()
     escolha = [x.strip() for x in args.so.split(",")] if args.so else list(CENARIOS)
     base = Path(tempfile.mkdtemp(prefix="fundacao-cen-"))
@@ -1294,7 +1313,7 @@ def main() -> int:
         d = cen.as_dict()
         d["duracao_s"] = round(time.time() - t0, 2)
         resultados.append(d)
-        print(f"{cid}: {'PASSOU' if cen.passou else 'FALHOU'} ({_contagem(d['verificacoes'])}) {d['erro'] or ''}", flush=True)
+        print(f"{cid}: {situacao(d)} ({_contagem(d['verificacoes'])}) {d['erro'] or d['bloqueado'] or ''}", flush=True)
     args.saida.mkdir(parents=True, exist_ok=True)
     meta = {"executado_em": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "python": sys.version.split()[0],
             "plataforma": sys.platform, "pasta_temporaria": str(base), "mantida": args.manter}
@@ -1305,12 +1324,14 @@ def main() -> int:
           "| Cenário | Tipo | Requisitos | Verificações | Resultado |", "|---|---|---|---|---|"]
     for r in resultados:
         md.append(f"| {r['id']} {r['nome']} | {r['tipo']} | {r['requisitos']} | {_contagem(r['verificacoes'])} | "
-                  f"{'PASSOU' if r['passou'] else 'FALHOU'} |")
+                  f"{situacao(r)} |")
     md += ["", "## Detalhes", ""]
     for r in resultados:
         md.append(f"### {r['id']} — {r['nome']}")
         if r["erro"]:
             md.append(f"Erro: `{r['erro']}`")
+        if r["bloqueado"]:
+            md.append(f"Bloqueado: {r['bloqueado']}")
         for c in r["verificacoes"]:
             marca = "-" if c.get("pulada") else ("x" if c["passou"] else " ")
             md.append(f"- [{marca}] {c['verificacao']} — esperado: {c['esperado']}; "
@@ -1319,7 +1340,7 @@ def main() -> int:
     (args.saida / "RESULTADOS.md").write_text("\n".join(md), encoding="utf-8", newline="\n")
     if not args.manter:
         shutil.rmtree(base, ignore_errors=True)
-    return 0 if all(r["passou"] for r in resultados) else 1
+    return codigo_de_saida(resultados, args.opcionais_ausentes_bloqueiam)
 
 
 if __name__ == "__main__":

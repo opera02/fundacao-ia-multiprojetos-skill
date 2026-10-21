@@ -8,10 +8,24 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–21/10/2026 · Versão da skill: **1.7.1** (kit de referência 1.7.0) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–21/10/2026 · Versão da skill: **1.7.2** (kit de referência 1.7.2) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
 
-> **1.7.1 (21/10/2026):** correção achada pelo próprio ciclo de liberação. A 1.7.0 foi empacotada (`593a7f01…`), mas a
+> **1.7.2 (21/10/2026):** a CI pública, conferida pela primeira vez na liberação da 1.7.1, falhou nas 10 rodadas por
+> diferenças de ambiente em testes que só tinham rodado neste computador; a 1.7.1 foi publicada, instalada e aplicada
+> à fundação, mas não declarada liberada. Correções: no Windows do GitHub, o runner é administrador e o
+> `preparar-maquina.ps1` recusa rodar elevado (por desenho) — os ensaios com a conta comum são pulados num processo
+> elevado e um teste novo confere a recusa; o Windows PowerShell aberto a partir do PowerShell 7 não carregava o
+> `Get-Acl` — o script descarta os caminhos de módulo do 7 (vale também para o titular que abrir pelo pwsh); os testes
+> do preparo usam o caminho longo da pasta temporária; no Linux, testes que supunham o Windows (decisões, perfil,
+> lançador sem bit de execução) e o teste que perguntava por `/root/.bashrc`. Os cenários que dependem de pacotes
+> opcionais (CEN-10, `torch`; CEN-15, `mcp`) ficam BLOQUEADOS onde eles faltam — nunca aprovados — e só a CI pública
+> deixa o bloqueio não reprovar; a CI passa a mostrar todas as falhas de uma vez. Kit 1.7.2 (um teste do kit mudou).
+> Resultados: Windows deste PC — kit 326 OK (5 pulados), scripts 184 OK (2 pulados: um é a recusa elevada, que só roda
+> como administrador), entrega 92 OK (2 pulados); Ubuntu do WSL — kit 326 OK, scripts 184 OK, entrega 92 OK, CEN-10 e
+> CEN-15 bloqueados; cenários neste PC 16/16 (111/111); 342 referências e 0 ausentes.
+
+> **1.7.1 (21/10/2026; publicada, instalada e aplicada, com a CI pública vermelha):** correção achada pelo próprio ciclo de liberação. A 1.7.0 foi empacotada (`593a7f01…`), mas a
 > montagem da transferência a recusou: a varredura de segredos leu como token atribuído o valor fictício de um exemplo
 > de configuração do Codex num teste do inventário do host (falso positivo, da mesma classe do que parou a 1.6.0). A
 > variável fictícia mudou de nome, e um teste novo aplica os padrões da varredura a todo o pacote (o da 1.6.1 cobria só
