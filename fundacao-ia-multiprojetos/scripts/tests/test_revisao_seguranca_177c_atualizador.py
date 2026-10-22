@@ -19,8 +19,8 @@ pilha, conteúdo que não é lista): agora isso vira `registro_nao_gravado`, e o
 Quarta passada (R177D-5): a saída 5 com `desfeito` e composição `nao_alterada` (o instalador desfez a promoção que
 falhou) conta como `nada_escrito`: sem âncora, sem tocar a raiz, com a mensagem de que ela não foi alterada.
 Comandos para colar (limite 4 do relatório): os "Para voltar" traziam só o nome do script e o caminho do registro sem
-aspas; colados no PowerShell de outra pasta, o script não era achado, e o caminho com espaço (a raiz real é
-<pasta-de-desenvolvimento>) se partia. Agora todo comando que o atualizador sugere vem com `python`, o caminho completo do
+aspas; colados no PowerShell de outra pasta, o script não era achado, e o caminho com espaço (como o da raiz do
+titular) se partia. Agora todo comando que o atualizador sugere vem com `python`, o caminho completo do
 script e os caminhos entre aspas duplas; os testes o colam como texto no PowerShell e no bash, de outra pasta.
 """
 

@@ -8,9 +8,25 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–22/10/2026 · Versão da skill: **1.7.7** (kit de referência 1.7.7) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–22/10/2026 · Versão da skill: **1.7.8** (kit de referência 1.7.7) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
 
+> **1.7.8 (22/10/2026):** o mesmo conteúdo da 1.7.7, com as três falhas da CI pública dela corrigidas. A 1.7.7 foi
+> liberada (pacote, este PC, kit 1.7.7 na fundação e GitHub), mas a CI pública reprovou os 10 jobs: (1) dois textos da
+> skill citavam a raiz real com a letra da unidade, que o saneamento da cópia pública troca por um marcador, e a cópia
+> publicada ficou diferente do pacote; (2) no Windows, o teste do orçamento do texto media o `AGENTS.md` trocando só a
+> forma dada do caminho da raiz, e no runner a pasta temporária vem pelo nome curto 8.3; (3) no Ubuntu, um caso das
+> avaliações usava o prefixo de dispositivo do Windows (`\\?\`), que só existe lá. Corrigidos: os textos não citam mais
+> o caminho, a medida troca todas as formas dele (reproduzido com a pasta temporária atrás de uma junção) e o caso do
+> prefixo roda só no Windows, com o motivo. O pacote da 1.7.7 ficou na lista dos liberados, que só cresce, e o número
+> não se reutiliza; o kit continua 1.7.7. A ferramenta de liberação passou a recusar, na pré-checagem, o saneamento que
+> mudaria arquivo do pacote, e a varrer o texto de dentro dos zips novos (os pacotes antigos da 1.6.0 e os da 1.7.7, já
+> públicos, levam dado local dentro: a decisão sobre eles fica com o titular). Revisão de segurança independente:
+> `entrega/auditoria/REVISAO-SEGURANCA-1.7.8.md`. Resultados no commit `81b232a`: no Windows, kit 418 OK (5 pulados),
+> scripts 445 OK (4 pulados), entrega 255 OK (2 pulados), ferramentas de liberação 40 OK, cenários 16/16 (113/113), 420
+> referências conferidas e 0 ausentes; no Ubuntu do WSL, como a CI pública, kit 418 OK (9 pulados), scripts 445 OK (30
+> pulados, os que só rodam no Windows) e entrega 255 OK (8 pulados).
+>
 > **1.7.7 (22/10/2026):** a pedido do titular ("Iniciar a versão 1.7.7 no projeto fundacao-de-ia. Além disso,
 > analisar a auditoria de segurança anexa, validando os achados e se forem procedentes, implementar os patches de
 > correção necessários.", "implemente melhorias seguindo o projeto harness2 do google" e "analisa, também, o projeto

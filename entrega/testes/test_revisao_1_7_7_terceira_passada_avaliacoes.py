@@ -145,9 +145,21 @@ class TestR177CB08AreaPorOutroNome(unittest.TestCase):
 class TestR177CB08RastroComPrefixo(unittest.TestCase):
     """No rastro, o caminho com o prefixo de dispositivo conta pelo lugar que designa: a leitura de outra raiz do
     gabarito (a árvore da skill com evals/) contamina e a do próprio ambiente, não. Antes, o `?` do prefixo contava
-    como curinga na raiz e todo caminho com ele contaminava; com o volume ou o GLOBALROOT depois, continua contando."""
+    como curinga na raiz e todo caminho com ele contaminava; com o volume ou o GLOBALROOT depois, continua contando.
+    O prefixo só existe no Windows: no Linux o texto não designa lugar, e a CI pública do Ubuntu reprovou o caso do
+    próprio ambiente (1.7.8); lá roda só o caso sem prefixo."""
 
+    def test_caminho_sem_prefixo_da_outra_raiz_contamina(self):
+        self._conferir(lambda dev, execucao: ((str(dev / "SKILL.md"), "contaminada"),))
+
+    @unittest.skipUnless(os.name == "nt", "o prefixo de dispositivo do Windows só designa lugar no Windows")
     def test_caminho_com_prefixo_conta_pelo_lugar_que_designa(self):
+        self._conferir(lambda dev, execucao: (
+            (PREFIXO + str(dev / "SKILL.md"), "contaminada"),
+            (PREFIXO + str(execucao / "ambiente" / "RETOMADA.md"), "sem_acesso_no_rastro"),
+            (PREFIXO + "GLOBALROOT\\Device\\HarddiskVolume3\\x.json", "contaminada")))
+
+    def _conferir(self, casos):
         ve = _modulo("ve_r177c_08", EVALS / "verificar_execucoes.py")
         with tempfile.TemporaryDirectory(prefix="r177c-08-rastro-") as td:
             t = Path(td).resolve()
@@ -160,10 +172,7 @@ class TestR177CB08RastroComPrefixo(unittest.TestCase):
             (dev / "evals").mkdir(parents=True)
             rastro = t / "rastro"
             rastro.mkdir()
-            for caminho, esperado in ((str(dev / "SKILL.md"), "contaminada"),
-                                      (PREFIXO + str(dev / "SKILL.md"), "contaminada"),
-                                      (PREFIXO + str(execucao / "ambiente" / "RETOMADA.md"), "sem_acesso_no_rastro"),
-                                      (PREFIXO + "GLOBALROOT\\Device\\HarddiskVolume3\\x.json", "contaminada")):
+            for caminho, esperado in casos(dev, execucao):
                 with self.subTest(caminho=caminho):
                     uso = {"type": "assistant", "message": {"content": [
                         {"type": "tool_use", "id": "u1", "name": "Read", "input": {"file_path": caminho}}]}}

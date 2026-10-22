@@ -24,7 +24,9 @@ FOLGA = 300  # caracteres
 # 1.7.7: os valores medidos quando a catraca entrou (corpo 17.466 caracteres, cerca de 4,4 a 5,8 mil tokens pela
 # estimativa de 3 a 4 caracteres por token, não medida com o tokenizador).
 # O AGENTS.md cita a pasta da raiz: a medida troca o caminho por `<raiz>`, para não depender da máquina (a revisão de
-# segurança da 1.7.7 viu o teste falhar com uma pasta temporária mais longa).
+# segurança da 1.7.7 viu o teste falhar com uma pasta temporária mais longa). Todas as formas dele: na CI pública do
+# Windows, a pasta temporária vem pelo nome curto 8.3 (RUNNER~1) e o AGENTS.md cita o caminho resolvido, com o nome
+# longo, que a troca não pegava (1.7.8).
 TETO = {"SKILL.md:corpo": 17466, "SKILL.md:descricao": 852, "AGENTS.md gerado": 2576}
 
 
@@ -37,8 +39,10 @@ def medir(sufixo: str = "") -> dict[str, int]:
         p = rodar_script("instrucoes_raiz.py", "gerar", "--raiz", raiz)
         if p.returncode != 0:
             raise AssertionError("instrucoes_raiz.py gerar falhou: " + (p.stdout + p.stderr)[-400:])
-        agents = (raiz / "AGENTS.md").read_text(encoding="utf-8").replace(str(raiz), "<raiz>")
-        agents = agents.replace(raiz.as_posix(), "<raiz>")
+        agents = (raiz / "AGENTS.md").read_text(encoding="utf-8")
+        formas = {str(raiz), raiz.as_posix(), str(raiz.resolve()), raiz.resolve().as_posix()}
+        for forma in sorted(formas, key=len, reverse=True):  # a mais longa antes: uma pode conter a outra
+            agents = agents.replace(forma, "<raiz>")
     finally:
         shutil.rmtree(raiz, ignore_errors=True)
     return {"SKILL.md:corpo": len(corpo), "SKILL.md:descricao": len(descricao), "AGENTS.md gerado": len(agents)}
