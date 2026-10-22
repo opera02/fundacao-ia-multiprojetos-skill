@@ -58,6 +58,37 @@ separados: tipo epistêmico × origem (humano/IA/documento) × estado — "a IA 
 10. [3.0 R5.6] Exponha `memoria.consultar`/`memoria.propor` via MCP com ACL no
     servidor para que os dois provedores usem a mesma porta.
 
+## Lições: memória de procedimento do projeto
+[Decisão; harness2, P3 — método adaptado de Harness² (arXiv:2610.14224, github.com/google-research/harness2,
+commit 1cfe254, Apache-2.0); texto próprio.] Lição é o que uma tarefa ensinou sobre **como trabalhar** no projeto.
+1. Fica numa memória do tipo `procedimento`, no escopo do **projeto**, nunca no do caso. O texto traz gatilho (a
+   forma da situação, não os fatos dela), lição (uma ação que se pode conferir), evidência e confiança (alta ·
+   média · baixa); o `source_ref` aponta a evidência (o `run_id` ou o caminho dela).
+2. Nunca leva fato do caso: nome, número, data, trecho ou conclusão ficam no caso. Lição que só se entende com um
+   fato do caso não é do projeto.
+3. No máximo uma por tarefa, e "SEM_ENTRADA" vale (`assets/templates/RELATORIO-FINAL.md` §5b). Lição apoiada só em
+   mudanças de veredito "confundido" é palpite: confiança no máximo média.
+4. Entra como **proposta**, e quem propôs não aprova (itens 8 e 9 acima).
+5. Antes de uma tarefa nova, consulte as lições aprovadas do projeto e trate cada uma como **hipótese** a reconferir
+   nessa tarefa, não como fato.
+6. Para a camada comum, só pela promoção curada do fluxo C (C7): candidato depurado e aprovação pelo hash.
+
+## Memória automática do host
+[Decisão; everything-claude-code, proposta 3 — ideia adaptada; texto próprio.] O Claude Code guarda notas que ele
+mesmo escreve numa pasta por repositório Git (`~/.claude/projects/<pasta>/memory/`); fora de um repositório, vale a
+pasta onde a sessão abriu. O índice `MEMORY.md` entra no início de toda sessão aberta ali (as primeiras 200 linhas
+ou 25 KB); a memória fica só nesta máquina e não é carregada nos subagentes, salvo numa bifurcação (*fork*) da
+conversa. Desliga com `autoMemoryEnabled: false` nas configurações ou com `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`
+[Verificado 2026-10-21; code.claude.com/docs/en/memory]. Como as sessões da fundação abrem na raiz, seja ela
+repositório Git ou não, **a memória automática é uma só para todos os projetos da raiz**.
+- Nela só entra lição de operação da fundação (como rodar, armadilha de ferramenta), sem nome, número, fato ou
+  trecho de projeto ou de caso. Lição de um projeto fica no projeto (§Lições).
+- O que ela diz é contexto, não autorização nem prova: confira no estado real antes de agir, como com a RETOMADA.
+- Lição extraída de uma sessão é proposta, nunca aprovada por quem a extraiu (item 8 acima). Ferramenta de
+  "aprendizado automático" que grava skill, regra ou memória no perfil do usuário não é adotada: valeria para todos
+  os projetos.
+- Desligá-la na sessão de dados reais é decisão do titular, no preparo do host.
+
 ## Verificação
 | Caso | Esperado |
 |---|---|

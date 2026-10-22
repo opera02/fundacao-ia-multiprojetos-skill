@@ -2,5 +2,9 @@
   "test_adaptadores_rotas.TestAdaptadoresIsolados.test_sem_login_nao_conta_como_chamada": {
     "versao": "1.7.4",
     "motivo": "avaliação E11, F-04: a falha da CLI cujo processo começou passa a contar no teto, também sem login (antes, um 401 no texto do erro tirava a chamada da conta); substituído por test_avaliacao_e11_falha_cli"
+  },
+  "test_auditoria_1_5_0_backup.TestN8AncoraExterna.test_8_sem_ancora_e_com_o_codigo_do_kit_libera_com_aviso_alto": {
+    "versao": "1.7.7",
+    "motivo": "auditoria Codex Security da 1.7.6, #2: sem âncora externa, a restauração não é mais liberada só com aviso quando o código da cópia é igual ao do kit (uma cópia forjada com o código do kit passava); substituído por test_8_sem_ancora_e_com_o_codigo_do_kit_so_libera_com_decisao_e_aviso_alto e por test_auditoria_1_7_7_ancora"
   }
 }

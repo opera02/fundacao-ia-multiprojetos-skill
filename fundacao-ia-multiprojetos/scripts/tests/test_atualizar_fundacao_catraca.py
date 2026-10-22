@@ -103,6 +103,12 @@ class TestCatracaDaAtualizacao(unittest.TestCase):
         self.assertEqual(code, 0, des)
         self.assertEqual(des["orfaos_devolvidos"], ["tests/test_antigo_retirado.py"])
         self.assertEqual(arq.read_text(encoding="utf-8"), TESTE_ANTIGO)
+        # 1.7.7: o órfão recolocado volta ao registro da instalação; sem isso, o `checar` seguinte o acusaria como
+        # executável desconhecido (inventário exato, auditoria Codex Security da 1.7.6, #8).
+        code, chk = self.atualizar("checar", "--raiz", self.raiz, script=script)
+        self.assertEqual(code, 0, chk)
+        self.assertEqual((chk["mudancas"]["retirar"], chk["mudancas"]["executaveis_a_mais"]),
+                         (["tests/test_antigo_retirado.py"], []))
 
     def test_teste_que_passa_a_ser_pulado_e_regressao(self):
         init = self.raiz / "fundacao" / "__init__.py"
@@ -114,9 +120,15 @@ class TestCatracaDaAtualizacao(unittest.TestCase):
             if item["path"] == "fundacao/__init__.py":
                 item["sha256"] = sha(init)
         reg.write_text(json.dumps(historico, ensure_ascii=False, indent=2), encoding="utf-8")
-        (self.raiz / "tests" / "test_local_pula.py").write_text(TESTE_QUE_PASSA_A_SER_PULADO, encoding="utf-8")
+        # Desde a 1.7.7, teste que o kit não instalou faz o `checar` recusar (auditoria Codex Security da 1.7.6, #8):
+        # o teste que passa a ser pulado vem no kit novo, numa cópia da skill, como um teste do próprio kit.
+        skill = self.tmp / "skill"
+        shutil.copytree(SKILL, skill, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "evals"))
+        for base in (skill / "assets" / "fundacao-kit", self.raiz):
+            (base / "tests" / "test_local_pula.py").write_text(TESTE_QUE_PASSA_A_SER_PULADO, encoding="utf-8")
         code, res = self.atualizar("aplicar", "--raiz", self.raiz, "--backups", self.backups,
-                                   "--padrao-testes", "test_local_*.py")
+                                   "--padrao-testes", "test_local_*.py",
+                                   script=skill / "scripts" / "atualizar_fundacao.py")
         self.assertEqual((code, res.get("etapa")), (1, "ensaio"), res)
         self.assertEqual(res["pulados_novos"], ["test_local_pula.TestLocal.test_so_no_kit_antigo"])
         self.assertEqual(versao_do_kit(self.raiz), "1.0.0")                   # raiz intacta

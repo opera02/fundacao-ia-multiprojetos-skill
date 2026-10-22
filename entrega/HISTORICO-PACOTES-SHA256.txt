@@ -1,0 +1,67 @@
+# Pacotes gerados pela entrega da skill fundacao-ia-multiprojetos (liberados ou só empacotados), um por linha:
+# <sha256>  <versão>/<arquivo>. A lista só cresce (revisão de segurança da 1.7.7, R177-ATU-04): o empacotar.py
+# acrescenta os pacotes novos ao promovê-los; linha antiga não muda nem sai. O entrega/verificar_pacote.py recusa pacote
+# de dist/anteriores/ fora dela, a mesma <versão>/<arquivo> com dois hashes, pacote de dist/ fora dela no modo rígido
+# e, na CI pública (--lista-so-cresce, com a história do git), linha de um commit anterior que sumiu daqui.
+# Gerada em 21/10/2026 a partir de entrega/dist (1.7.6) e de entrega/dist/anteriores (1.3.4 a 1.7.5).
+9117c2d77c2a5ad173b2c1962192c3abb81494c3d0be7483e56a0b82ae8ab452  1.3.4/fundacao-ia-multiprojetos-completo.zip
+04ca3dd8f2564111127b7da2ea3780f0a832c29668877e275a8146b51dacc64a  1.3.4/fundacao-ia-multiprojetos.skill
+d25a083cbfb9023fd278006a92fd82b56949d825da08b058da5ce541d6a09a59  1.4.0/fundacao-ia-multiprojetos-completo.zip
+f326e9cf3af3d999bc4819341d5d0d8bd5bab5e6164631552b3ffccfcebc992f  1.4.0/fundacao-ia-multiprojetos.skill
+81cd225b13fbc0e087f826471eb0bfe8eabb109e244831cf3329fc84a985fb36  1.4.1/fundacao-ia-multiprojetos-completo.zip
+bce7b510c3992fe1f6a5f6b44d777b6176d4a311de244eef0a093bfbdae65f29  1.4.1/fundacao-ia-multiprojetos.skill
+da30f050f9ac3032da12f6114fc8aaf788ddcbdbe58381ba45a2bf75f53aad75  1.4.2/fundacao-ia-multiprojetos-completo.zip
+6b61af725b1bebeb5a6456ed83a36987282c56bc7a37820bbfcb8be65468d389  1.4.2/fundacao-ia-multiprojetos.skill
+f49f0c935605302ac4936f32bd7ba7ad33bb225414cf2220b8039d202dde692e  1.4.3/fundacao-ia-multiprojetos-completo.zip
+a2382ebbbf7b65a7eb61f6f954723857600be890911a2afaf39436075575621b  1.4.3/fundacao-ia-multiprojetos.skill
+2ffbf1d2b08785bfbd8f3f51a2eec4d93cdfc9d7f087eaddbed788b71c221a10  1.4.4/fundacao-ia-multiprojetos-completo.zip
+b54b1714b466c411af49aab3c46fade3581e44f9527d04b75e501472d730401c  1.4.4/fundacao-ia-multiprojetos.skill
+5a6013276820d709e61029a0d112064e01798bca6e6c2f64f42b7323cb06d3ad  1.4.5/fundacao-ia-multiprojetos-completo.zip
+1134a4f1cea654778499091dfd52ffe3c622a13fb7e7af6d4981ed1b556a1ac9  1.4.5/fundacao-ia-multiprojetos.skill
+0606904988c1bf4521d2a0fdd692d7f28a7d22e664bce85e04ac4054d683718d  1.5.0/fundacao-ia-multiprojetos-completo.zip
+69ffe53c8ddbe3b0a219b51bcff9a24b6cc012ceba70986e1c5c24b950edf39f  1.5.0/fundacao-ia-multiprojetos.skill
+152531e604364e0715c1e384847e32149d64a1318c5aa251a04a89ea091db776  1.5.1/fundacao-ia-multiprojetos-completo.zip
+cf1c975834a3cac022351fc0c19d51a69072dcb80661f72f8fe6294e0e49d7e6  1.5.1/fundacao-ia-multiprojetos.skill
+2250c32dec85cce06551e8552fd9b176327c51767db913a090d1fcf6ee3eae23  1.6.0/fundacao-ia-multiprojetos-completo.zip
+eae5f9d20691dfd8fb536d89161cf9e93ce71128483b8ec63f2b0d07f042c540  1.6.0/fundacao-ia-multiprojetos.skill
+963ad08ead390bf38a01e9608ca933c2656fb5aeb9ccc0950143354220864063  1.6.1/fundacao-ia-multiprojetos-completo.zip
+ac69a9c4cfcb88f7a1dddfc394628bff11ccaa396123cb6c30f48ea7a4b28795  1.6.1/fundacao-ia-multiprojetos.skill
+feb53fcb939645cc10d59f15bef0c977dbdb1fc82e7a9486627f78ff7e3395b1  1.7.0/fundacao-ia-multiprojetos-completo.zip
+593a7f0184d8091551d47061abd0b13a1c1d909f99f71579ce9876cdd2231af6  1.7.0/fundacao-ia-multiprojetos.skill
+04d6b97114ff2910d2f4dd25a847f0d79a85214d0ad4da3d821984b7d55047ea  1.7.1/fundacao-ia-multiprojetos-completo.zip
+86f818cbb1fc2a324ecaa8d5169e9cb69b8960b25b03964b2638f751c46f7ff9  1.7.1/fundacao-ia-multiprojetos.skill
+e273fcf9807bde0b7481d6c6c3d233974acfd1d70e470fb973a03b984aaf2822  1.7.2/fundacao-ia-multiprojetos-completo.zip
+2f5ca0e7b74caacea5614225bf9e87d915580f8e09f6d56dc057091469edba5d  1.7.2/fundacao-ia-multiprojetos.skill
+d5f8f4b272114fc041f23320b4da52a80f096bf891b13b18b83174c423482129  1.7.3/fundacao-ia-multiprojetos-completo.zip
+2a79da6654328e8ab809cfdd2d0170ef1414f4d6581ec0a4e9e4dfd7d509648d  1.7.3/fundacao-ia-multiprojetos.skill
+70fad3a9d9fe092097516b11b6b63f3682e41d3a4c5cff63395cb6f393baa4ed  1.7.4/fundacao-ia-multiprojetos-completo.zip
+1bfc94e05a23e9689dfecca31ad79e580f76c91c912b1000c80414f09188fe61  1.7.4/fundacao-ia-multiprojetos.skill
+66ad0a3f11158bad4ab27dbf7c56b791d2bf4bc3624a010cb9b0af4f7f1b3de8  1.7.5/fundacao-ia-multiprojetos-completo.zip
+71cb4f8c2c613ea22e8bac8fdea3c66f20be6306854fc60d14a4b09edfc9ebce  1.7.5/fundacao-ia-multiprojetos.skill
+17d7bc794c0c5427ba5cef883a515abd7845a3fbe045106bf30e160d3431e08f  1.7.6/fundacao-ia-multiprojetos-completo.zip
+eadd68dab228c147d45357fcf6b978faada776ad11dfcdc80fd8661c973937de  1.7.6/fundacao-ia-multiprojetos.skill
+# Zips principais da transferência já publicados, <sha256>  <versão>/fundacao-ia-multiprojetos-<versão>.zip (segunda
+# passada da revisão de segurança da 1.7.7, R177B-B-07): prendem o LEIA-ME.txt e o instalar_skill.py que viajam com o
+# .skill (o -para-claude-ai.zip é o próprio .skill, já preso acima). Acrescentados em 21/10/2026 a partir de
+# entrega/transferencia/ (1.4.0 a 1.7.6), conferidos um a um com o git: cada zip é igual ao blob do único commit que o
+# tocou (o que trouxe a transferência da versão; 1.4.0 a 1.4.5 vieram na base 1.4.5), sem mudança depois. A liberação
+# acrescenta o da versão nova ao montar a transferência (etapa 03); o verificar_pacote.py --exigir-transferencia exige
+# o de toda versão anterior, e cada zip daqui na pasta, com este hash (transferência publicada não sai); a CI pública
+# (--exigir-transferencia-fixada) exige também o da versão de dist/ (terceira passada, R177C-B-05).
+c5b4b740e9509da987110e8580c09a7febb4eb3edfc97686d2200ae184bf8ed6  1.4.0/fundacao-ia-multiprojetos-1.4.0.zip
+e3b442162cb3f266f000631dfb8bf7c402dd56056964744582eec31bbe667821  1.4.1/fundacao-ia-multiprojetos-1.4.1.zip
+9968bceb46f2e7fb83ffe71f954cebb861e2a0fdbe1ab13182b9619050419fca  1.4.2/fundacao-ia-multiprojetos-1.4.2.zip
+0aad240f417fdebb39e054d0db130d9620ba95d71696f9cf6322119c4010e2e1  1.4.3/fundacao-ia-multiprojetos-1.4.3.zip
+387ce8b277d249c7fc5da03cb991810cbb5471c4d3b3c4466cc2f2e84bc2408e  1.4.4/fundacao-ia-multiprojetos-1.4.4.zip
+93548ea704f92ad50980d926b24a9a7e983959a624e1e307fd2b36c909c8e4e1  1.4.5/fundacao-ia-multiprojetos-1.4.5.zip
+a25318f6d63e3647564cdd178fbf8ba69b0eee5c7f8818f7bb6aca8b399f15dd  1.5.0/fundacao-ia-multiprojetos-1.5.0.zip
+7bd3b8016a60f0d8e87ae9099e42d1e879ebcf05919c77e73f7d412e3b36a730  1.5.1/fundacao-ia-multiprojetos-1.5.1.zip
+530ed786dda1b810e33325fb6dfd64fb889070c56e625c1c3ae9947116eb6dc7  1.6.1/fundacao-ia-multiprojetos-1.6.1.zip
+454fb66d93816421e4d61ae418f729ddd76aa80bcbea618b95f5ad10cc663b79  1.7.1/fundacao-ia-multiprojetos-1.7.1.zip
+aa1dd1bb83caeb1c77c9f30ad02eda7f806a0dd78902bb0d6b9c47def88159e9  1.7.2/fundacao-ia-multiprojetos-1.7.2.zip
+f1e71425cb18b037a23dbba3a27c020624ed9b7f83d05a0010b68bec035a189a  1.7.3/fundacao-ia-multiprojetos-1.7.3.zip
+dada191ae82fefecd9a801499866430ef8f28aa76144484d8556a55aaa5c7681  1.7.5/fundacao-ia-multiprojetos-1.7.5.zip
+7f9eefc34e37c8ac27339d975105c899b3b652d5b58530cbefd594a2872bc789  1.7.6/fundacao-ia-multiprojetos-1.7.6.zip
+b9dee031f09f56d19fe8e20ae7ff1dc892bc11a58d6aa9c0c18e1b0c936441de  1.7.7/fundacao-ia-multiprojetos.skill
+806393de63fccbbe2eaed58c4dea2e217fd4fef17bbd9c125745445af5982be8  1.7.7/fundacao-ia-multiprojetos-completo.zip
+3224ac43662c83ee64f4d5d14f44bbdfeb17709febe8e52b4bc0cb02b15a0cdb  1.7.7/fundacao-ia-multiprojetos-1.7.7.zip

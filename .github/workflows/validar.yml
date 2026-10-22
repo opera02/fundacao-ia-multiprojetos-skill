@@ -1,7 +1,15 @@
 # CI pública da skill fundacao-ia-multiprojetos (proposta 6 da análise do vibe-coding-toolkit, 21/10/2026).
 # A fonte fica na árvore de desenvolvimento; a sincronização da cópia pública gerencia só este arquivo em .github/.
-# As cinco verificações rodam nas duas plataformas, cinco rodadas em cada (R58, R59): suíte do kit, testes dos
-# scripts, testes da entrega, referências e comandos citados, e os cenários (sem rede, sem modelo, sem skill-creator).
+# As seis verificações rodam nas duas plataformas, cinco rodadas em cada (R58, R59): suíte do kit, testes dos
+# scripts, testes da entrega, referências e comandos citados, os cenários (sem rede, sem modelo, sem skill-creator) e,
+# desde a 1.7.7, os pacotes de entrega/dist iguais à árvore do mesmo commit, membro a membro e byte a byte: a cópia
+# pública só recebe commits de liberação (auditoria Codex Security da 1.7.6, #6). A mesma verificação confere a
+# transferência da versão (o zip para o claude.ai é o .skill; o zip principal leva o .skill e o instalador da entrega)
+# e que a lista dos pacotes (entrega/HISTORICO-PACOTES-SHA256.txt) só cresceu na história do git — por isso o checkout
+# traz a história inteira. Na liberação, a transferência vem depois do pacote: lá a conferência rígida não a exige
+# (revisão de segurança da 1.7.7, R177-ATU-04). A lista prende também o zip principal de cada transferência publicada,
+# com o LEIA-ME e o instalador dele (R177B-B-07). A CI roda depois da etapa 03 da liberação, que acrescenta a linha do
+# da versão nova: aqui ela é exigida (--exigir-transferencia-fixada), e o LEIA-ME passa também pela forma (R177C-B-05).
 # Ações fixadas por SHA de commit (tags conferidas em 21/10/2026); permissão só de leitura; nenhum segredo.
 name: validar
 on:
@@ -27,6 +35,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0  # a história inteira: a lista dos pacotes só cresce (--lista-so-cresce)
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
@@ -47,3 +56,8 @@ jobs:
         if: ${{ !cancelled() }}  # roda mesmo se uma verificação anterior falhou: a CI mostra todas as falhas de uma vez
         shell: bash
         run: python -B fundacao-ia-multiprojetos/evals/cenarios/run_cenarios.py --saida "$RUNNER_TEMP/cenarios" --opcionais-ausentes-bloqueiam
+      - name: pacotes versionados iguais à fonte
+        if: ${{ !cancelled() }}  # roda mesmo se uma verificação anterior falhou: a CI mostra todas as falhas de uma vez
+        run: >-
+          python -B entrega/verificar_pacote.py --exigir-igual-a-arvore --exigir-transferencia --lista-so-cresce
+          --exigir-transferencia-fixada

@@ -13,8 +13,11 @@ O manifesto (formato 2) grava a POLÍTICA efetiva — pastas ignoradas, padrões
 exclusões extras e texto canônico — e a verificação reconstrói o conjunto com essa mesma
 política: criar e verificar descrevem os mesmos arquivos. Mudar a política na verificação exige
 `--mudar-politica`, e a mudança aparece em `politica`, separada das mudanças nos arquivos.
-Manifesto do formato 1 (sem política gravada): os caminhos que ele lista como excluídos
-continuam excluídos, com aviso para refazê-lo.
+Manifesto do formato 1 (sem política gravada, ou `politica` nula): os caminhos que ele lista como
+excluídos continuam excluídos, com aviso para refazê-lo. Política que não é um dicionário do
+formato 2 é uso incorreto (código 2). A regra é uma só (`politica_efetiva`): o lançador do fluxo B
+a usa para saber o que o manifesto não prende [revisão de segurança da 1.7.7, segunda passada,
+R177B-B-01].
 
 --texto-canonico: para .md/.txt/.json/.py/.yaml calcula o hash após normalizar
 UTF-8, LF e NFC (o mesmo arquivo com CRLF e LF dá o mesmo hash).
@@ -53,6 +56,36 @@ def politica_padrao(extras: list[str] | None = None, canonical: bool = False) ->
             "exclusoes_extras": sorted(set(extras or [])), "texto_canonico": canonical}
 
 
+def _lista_de_textos(valor) -> bool:
+    return isinstance(valor, list) and all(isinstance(v, str) for v in valor)
+
+
+def politica_efetiva(ref) -> tuple[dict, set[str], str | None]:
+    """A política com que o `verificar` reconstrói o conjunto de `ref`, os caminhos que continuam excluídos e o aviso.
+    Formato 2: a política gravada, que tem de ser um dicionário com as listas e o `texto_canonico`. Formato 1 (sem
+    `politica`, ou com ela nula): a padrão, e o que ele lista em `excluidos` continua fora. Fora disso, ValueError."""
+    if not isinstance(ref, dict):
+        raise ValueError("o manifesto não é um objeto JSON")
+    politica = ref.get("politica")
+    if politica is None:
+        excluidos = ref.get("excluidos", [])
+        if not isinstance(excluidos, list):
+            raise ValueError("a lista de excluídos do manifesto não é uma lista")
+        antigos = {e["path"] for e in excluidos if isinstance(e, dict) and isinstance(e.get("path"), str)}
+        return politica_padrao([], ref.get("texto_canonico", False)), antigos, (
+            "manifesto do formato 1, sem política gravada: os caminhos que ele lista como excluídos continuam "
+            "excluídos; arquivos novos que caberiam numa exclusão extra aparecem como novos. Refaça-o com a versão "
+            "atual para gravar a política")
+    if (not isinstance(politica, dict) or not isinstance(politica.get("texto_canonico"), bool)
+            or not all(_lista_de_textos(politica.get(k)) for k in ("pastas_ignoradas", "padroes_de_segredo",
+                                                                    "exclusoes_extras"))
+            or not _lista_de_textos(politica.get("exclusoes_literais", []))):
+        raise ValueError("política do manifesto fora do formato 2: um dicionário com as listas de textos "
+                         "pastas_ignoradas, padroes_de_segredo e exclusoes_extras (e exclusoes_literais, se houver) e "
+                         "texto_canonico verdadeiro ou falso")
+    return politica, set(), None
+
+
 def is_secret(name: str, padroes: list[str] = SECRET_GLOBS) -> bool:
     low = name.lower()
     return any(fnmatch.fnmatch(low, g) for g in padroes)
@@ -65,7 +98,7 @@ def file_hash(path: Path, canonical: bool) -> str:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
             return hashlib.sha256(data).hexdigest()
-        text = text.lstrip("﻿").replace("\r\n", "\n").replace("\r", "\n")
+        text = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
         data = unicodedata.normalize("NFC", text).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
 
@@ -168,15 +201,10 @@ def main() -> int:
         return 0
     if args.cmd == "verificar":
         ref = json.loads(args.manifesto.read_text(encoding="utf-8"))
-        politica = ref.get("politica")
-        excluidos_antigos: set[str] = set()
-        aviso = None
-        if politica is None:  # formato 1: a política extra não foi gravada; os excluídos listados, sim
-            politica = politica_padrao([], ref.get("texto_canonico", False))
-            excluidos_antigos = {e["path"] for e in ref.get("excluidos", []) if isinstance(e, dict) and "path" in e}
-            aviso = ("manifesto do formato 1, sem política gravada: os caminhos que ele lista como excluídos continuam "
-                     "excluídos; arquivos novos que caberiam numa exclusão extra aparecem como novos. Refaça-o com "
-                     "a versão atual para gravar a política")
+        try:  # formato 1: a política extra não foi gravada; os excluídos listados, sim
+            politica, excluidos_antigos, aviso = politica_efetiva(ref)
+        except ValueError as exc:
+            return _uso(f"{args.manifesto}: {exc}")
         mudanca = None
         if args.excluir:
             if not args.mudar_politica:

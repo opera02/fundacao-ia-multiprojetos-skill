@@ -18,15 +18,11 @@ fim de linha), nunca pela linha de comando.
 leva opções fixas: no Windows, uma CLI instalada como `.cmd` passa a linha pelo cmd.exe,
 que cortaria o prompt na primeira quebra de linha e interpretaria `&`, `|` e aspas; por
 isso, numa CLI `.cmd`/`.bat`, opção com caractere especial do cmd.exe é recusada.
-Prazo: contado desde o início do processo. A CLI e todos os descendentes ficam num Job Object
-(Windows) ou num grupo de processos (POSIX): ao estourar `max_seconds` e também quando a CLI
-termina, o que restar é encerrado — inclusive órfãos que herdaram as saídas. Entrada e saídas
-correm em threads próprias: se a CLI não ler a entrada (que pode passar do buffer do pipe), a
-gravação bloqueia, mas o prazo continua valendo. Limites: a CLI entra no Job Object logo depois
-de iniciada (intervalo medido de 0,15–0,25 ms; um descendente criado nele ficaria de fora); se
-o sistema recusar o Job Object, vale o `taskkill /T`, que não alcança órfãos, e a pasta
-temporária de trabalho de um órfão vivo fica para trás; no POSIX, o grupo de processos não
-alcança descendente que crie sessão própria (`setsid`), e esse ramo não foi executado aqui.
+Prazo e teto de saída: pelo executor de `core/processo.py` (saiu daqui na 1.7.7; limites conhecidos
+descritos lá). O prazo (`max_seconds`), contado desde o início do processo, vale para a CLI e todos os
+descendentes (Job Object no Windows; grupo de processos no POSIX), também quando a CLI termina e deixa
+órfãos com as saídas. stdout acima de 32 MiB ou stderr acima de 4 MiB: a árvore é encerrada na hora e a
+chamada sai `invalid_output`, contada no teto da rota, porque a CLI começou (auditoria Codex 1.7.6, #9).
 Ambiente: o processo do provedor recebe só variáveis do sistema (lista fixa) e a pasta de
 configuração da própria CLI; nunca `FUNDACAO_*` (identidade) nem chaves de API — na rota de
 assinatura, uma chave no ambiente faria a CLI cobrar créditos de API. Variáveis a mais só
@@ -65,13 +61,12 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import tempfile
-import threading
-import time
 
 from ..core import usage as usage_mod
+from ..core.contracts import LimiteExcedido
+from ..core.processo import executar as _processo  # executor de árvore com prazo e teto (testes o substituem aqui)
 from .base import ProviderRequest, ProviderResult, Timer, build_prompt
 
 # Falta de login só pelo aviso da própria CLI, em frase inteira: "401" ou "login" soltos não bastam (E11, F-04).
@@ -98,150 +93,6 @@ def ambiente_do_provedor(extras: tuple[str, ...] | list[str] = ()) -> dict:
             if k.upper() in nomes and not k.upper().startswith("FUNDACAO_")}
 
 
-if os.name == "nt":  # estruturas do Job Object (ver _criar_trabalho)
-    import ctypes
-    from ctypes import wintypes
-
-    class _ContadoresES(ctypes.Structure):
-        _fields_ = [(n, ctypes.c_ulonglong) for n in (
-            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
-            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
-
-    class _LimitesBasicos(ctypes.Structure):
-        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
-                    ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
-                    ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
-                    ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
-                    ("SchedulingClass", wintypes.DWORD)]
-
-    class _LimitesEstendidos(ctypes.Structure):
-        _fields_ = [("BasicLimitInformation", _LimitesBasicos), ("IoInfo", _ContadoresES),
-                    ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
-                    ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
-
-
-def _criar_trabalho(proc: subprocess.Popen):
-    """Windows: põe a CLI num Job Object com KILL_ON_JOB_CLOSE. Todo descendente nasce no mesmo
-    trabalho — inclusive o que fica órfão quando a CLI termina, que o `taskkill /T` não alcança —,
-    e encerrar o trabalho encerra todos. Devolve None se o sistema recusar (cai no `taskkill`)."""
-    if os.name != "nt":
-        return None
-    try:
-        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        k32.CreateJobObjectW.restype = wintypes.HANDLE
-        k32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
-        k32.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD)
-        k32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
-        k32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
-        k32.CloseHandle.argtypes = (wintypes.HANDLE,)
-        job = k32.CreateJobObjectW(None, None)
-        if not job:
-            return None
-        info = _LimitesEstendidos()
-        info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-        if not (k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))  # 9 = estendidas
-                and k32.AssignProcessToJobObject(job, int(proc._handle))):
-            k32.CloseHandle(job)
-            return None
-        return (k32, job)
-    except (OSError, AttributeError, ValueError):
-        return None
-
-
-def _encerrar_descendentes(proc: subprocess.Popen, trabalho) -> None:
-    """Encerra a CLI e TODOS os descendentes: pelo Job Object (Windows) ou pelo grupo de processos
-    (POSIX, `start_new_session`). Sem Job Object no Windows, o `taskkill /T` alcança só a árvore viva."""
-    if trabalho is not None:
-        k32, job = trabalho
-        k32.TerminateJobObject(job, 1)
-    elif os.name == "nt":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=30)
-    else:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-    try:
-        proc.kill()
-    except OSError:
-        pass
-
-
-def _aguardar(tarefas, segundos: float) -> None:
-    """Espera as threads com um prazo único para todas (não um prazo por thread)."""
-    fim = time.monotonic() + segundos
-    for t in tarefas:
-        t.join(timeout=max(0.0, fim - time.monotonic()))
-
-
-def _processo(args: list[str], entrada: bytes, prazo: int, cwd: str, env: dict) -> subprocess.CompletedProcess:
-    """Roda a CLI com a entrada em bytes e prazo contado desde o início, valendo para a árvore.
-
-    Não usa `communicate(input, timeout)`: no Windows ele grava a entrada inteira ANTES de
-    contar o prazo, e uma CLI que não lê a entrada (com mais que o buffer do pipe) prenderia
-    a chamada sem limite. A gravação e as leituras correm em threads. No prazo, a CLI e os
-    descendentes são encerrados. Quando a CLI termina, os descendentes que ficaram (inclusive
-    órfãos que herdaram as saídas) também são encerrados, e a resposta volta sem esperá-los."""
-    extra = {} if os.name == "nt" else {"start_new_session": True}
-    limite = time.monotonic() + prazo
-    proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            cwd=cwd, env=env, **extra)
-    trabalho = _criar_trabalho(proc)
-    lidos: dict[str, bytes] = {}
-
-    def ler(nome: str, fluxo) -> None:
-        try:
-            lidos[nome] = fluxo.read()
-        except (OSError, ValueError):
-            lidos[nome] = b""
-
-    def escrever() -> None:
-        try:
-            proc.stdin.write(entrada)
-        except (OSError, ValueError):  # a CLI fechou a entrada ou já terminou
-            pass
-        finally:
-            try:
-                proc.stdin.close()
-            except (OSError, ValueError):
-                pass
-
-    leitores = [threading.Thread(target=ler, args=(n, f), daemon=True)
-                for n, f in (("out", proc.stdout), ("err", proc.stderr))]
-    escritor = threading.Thread(target=escrever, daemon=True)
-    for t in (*leitores, escritor):
-        t.start()
-    try:
-        try:
-            proc.wait(timeout=max(0.0, limite - time.monotonic()))
-        except subprocess.TimeoutExpired:
-            _encerrar_descendentes(proc, trabalho)
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                pass
-            _aguardar((*leitores, escritor), 5)
-            raise
-        # A CLI terminou: o que ela deixou rodando (e poderia segurar as saídas) é encerrado agora.
-        if trabalho is not None or os.name != "nt":
-            _encerrar_descendentes(proc, trabalho)
-        _aguardar(leitores, max(0.0, limite - time.monotonic()) + 2)
-        if any(t.is_alive() for t in leitores):  # sem Job Object, um órfão ainda segura as saídas
-            raise subprocess.TimeoutExpired(args, prazo)
-        _aguardar((escritor,), 2)
-    finally:
-        for t, fluxo in zip(leitores, (proc.stdout, proc.stderr)):
-            if not t.is_alive():  # fechar com uma leitura em curso bloquearia até o fim dela
-                try:
-                    fluxo.close()
-                except OSError:
-                    pass
-        if trabalho is not None:
-            trabalho[0].CloseHandle(trabalho[1])
-    return subprocess.CompletedProcess(args, proc.returncode, lidos.get("out", b"").decode("utf-8", "replace"),
-                                       lidos.get("err", b"").decode("utf-8", "replace"))
-
-
 def _rodar(provider_id: str, route: str, args: list[str], prompt: str, max_seconds: int,
            extras: tuple[str, ...]) -> ProviderResult | tuple[subprocess.CompletedProcess, int]:
     """Roda a CLI numa pasta temporária vazia, com o prompt pela entrada padrão.
@@ -259,6 +110,10 @@ def _rodar(provider_id: str, route: str, args: list[str], prompt: str, max_secon
         except subprocess.TimeoutExpired:
             return ProviderResult(provider_id, route, "timeout",
                                   diagnostic="tempo esgotado; reconcilie antes de repetir")
+        except LimiteExcedido as exc:  # a CLI começou (conta no teto); a árvore já foi encerrada (Codex 1.7.6, #9)
+            return ProviderResult(provider_id, route, "invalid_output", dispatched=True,
+                                  diagnostic=f"{exc} ({exc.details.get('fluxo')}, teto de "
+                                             f"{exc.details.get('teto_bytes')} bytes); nada da saída foi usado")
         except OSError as exc:  # ex.: WinError 206 (linha longa) ou executável sem permissão
             return ProviderResult(provider_id, route, "failed", dispatched=False,
                                   diagnostic=f"a CLI não pôde ser iniciada ({type(exc).__name__})")

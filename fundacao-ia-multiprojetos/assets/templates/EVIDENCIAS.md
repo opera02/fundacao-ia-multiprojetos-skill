@@ -23,3 +23,6 @@ Requisitos afetados e novo estado (matriz):
 
 ## Pendências e continuidade
 Falhas e bloqueios (impacto e condição de resolução): | Próximo passo concreto: | Como retomar:
+Lição (opcional; no máximo uma, ou SEM_ENTRADA): gatilho | lição | evidência (caso da tabela e artefato) | confiança
+(alta · média · baixa) — sem fato do caso; vai à memória do projeto como proposta
+(`references/capacidades/04-memoria.md`, §Lições).

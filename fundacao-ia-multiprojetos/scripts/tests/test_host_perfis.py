@@ -165,6 +165,153 @@ class PerfilWsl(unittest.TestCase):
         self.assertTrue(any("leitura" in p for p in self.m.conferir_perfil_wsl(v1, "/mnt/e/Fundacao Exemplo")))
 
 
+class PerfilWslConferidoPeloModelo(unittest.TestCase):
+    """Auditoria Codex Security da 1.7.6, #5: a conferência olhava só alguns indicadores do perfil (a rede, as
+    negações de credenciais e dos outros projetos, o matcher, o comando e a falha fechada dos hooks e as chaves
+    desconhecidas passavam), e o preparo do WSL fixava o hash do que passasse. Agora o perfil só passa igual ao que o
+    modelo gera com os caminhos dele e os projetos da raiz."""
+
+    RAIZ = "/mnt/e/Fundacao Exemplo"
+
+    def setUp(self):
+        self.m = carregar()
+        self.perfil = self.m.perfil_wsl(raiz=r"E:\Fundacao Exemplo", projeto="caso-real",
+                                        perfil_windows=r"C:\Perfis\titular.PC-EXEMPLO",
+                                        outros_projetos=["lab-a", "lab-b"], backups=[r"D:\Backups-Exemplo"],
+                                        somente_leitura=[r"D:\Origem Ç"], negar=["squad-peticoes"])
+
+    def conferir(self, perfil, outros=("lab-a", "lab-b"), projeto="caso-real"):
+        return self.m.conferir_perfil_wsl(perfil, self.RAIZ, projeto=projeto, outros_projetos=list(outros))
+
+    def alterado(self, mudanca) -> dict:
+        perfil = json.loads(json.dumps(self.perfil))
+        mudanca(perfil)
+        return perfil
+
+    def test_perfil_gerado_pelo_modelo_passa(self):
+        self.assertEqual(self.conferir(self.perfil), [])
+        self.assertEqual(self.m.conferir_perfil_wsl(self.perfil, self.RAIZ), [])
+
+    def test_enfraquecimentos_sao_acusados(self):
+        def fs(p):
+            return p["sandbox"]["filesystem"]
+
+        def gancho(p, i):
+            return p["hooks"]["PreToolUse"][i]["hooks"][0]
+
+        casos = {
+            "rede liberada": lambda p: p["sandbox"]["network"]["allowedDomains"].append("exemplo.invalid"),
+            "credencial do Linux legível no sandbox": lambda p: fs(p)["denyRead"].remove("~/.ssh"),
+            "credencial do Windows legível no sandbox":
+                lambda p: fs(p)["denyRead"].remove("/mnt/c/Perfis/titular.PC-EXEMPLO/.codex"),
+            "Read de credencial liberado": lambda p: p["permissions"]["deny"].remove("Read(~/.ssh/**)"),
+            "outro projeto gravável": lambda p: fs(p)["denyWrite"].remove(self.RAIZ + "/projects/lab-a"),
+            "pasta da âncora gravável": lambda p: fs(p)["denyWrite"].remove("/mnt/c/ProgramData/FundacaoIA"),
+            "matcher trocado": lambda p: p["hooks"]["PreToolUse"][0].update(matcher="Write"),
+            "falha aberta": lambda p: gancho(p, 1).update(onFailure="allow"),
+            "comando do hook trocado": lambda p: gancho(p, 0).update(command="/bin/true"),
+            "tempo do hook trocado": lambda p: gancho(p, 0).update(timeout=1),
+            "hook a mais": lambda p: p["hooks"]["PreToolUse"].append(
+                {"matcher": "Read", "hooks": [{"type": "command", "command": "/tmp/x"}]}),
+            "permissão a mais": lambda p: p["permissions"].update(allow=["Bash(curl:*)"]),
+            "chave desconhecida": lambda p: p.update(statusLine={"type": "command", "command": "/tmp/x"}),
+            "troca de identidade liberada": lambda p: p["env"].update(FUNDACAO_PERMITIR_TROCA_IDENTIDADE="1"),
+            "verdadeiro como número": lambda p: p["sandbox"].update(allowUnsandboxedCommands=0),
+        }
+        for nome, mudanca in casos.items():
+            with self.subTest(nome):
+                self.assertTrue(self.conferir(self.alterado(mudanca)))
+                if nome != "outro projeto gravável":  # sem a lista de projetos da raiz, só a estrutura é conferida
+                    self.assertTrue(self.m.conferir_perfil_wsl(self.alterado(mudanca), self.RAIZ))
+
+    def test_projeto_criado_depois_do_preparo_do_windows_e_acusado(self):
+        problemas = self.conferir(self.perfil, outros=("lab-a", "lab-b", "lab-novo"))
+        self.assertTrue(any("lab-novo" in p for p in problemas), problemas)
+        self.assertEqual(self.conferir(self.perfil, outros=("lab-a",)), [])  # negar projeto que saiu não libera nada
+
+    def test_perfil_de_outro_projeto_e_acusado(self):
+        problemas = self.conferir(self.perfil, outros=("caso-real", "lab-b"), projeto="lab-a")
+        self.assertTrue(any("lab-a" in p for p in problemas), problemas)       # o da sessão está negado
+        self.assertTrue(any("caso-real" in p for p in problemas), problemas)   # e o outro ficou gravável
+
+    def test_linha_de_comando_confere_com_os_projetos_da_raiz(self):
+        base = Path(tempfile.mkdtemp(prefix="perfil-wsl-conferido-teste-"))
+        try:
+            raiz = base / "Fundacao Exemplo"
+            for nome in ("caso-real", "lab-a"):
+                (raiz / "projects" / nome).mkdir(parents=True)
+            perfil = base / "settings.wsl.json"
+            r = rodar("perfil-wsl", "--raiz", raiz, "--projeto", "caso-real", "--perfil-windows", r"C:\Perfis\titular",
+                      "--saida", perfil)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            r = rodar("conferir-perfil-wsl", "--perfil", perfil, "--raiz", raiz, "--projeto", "caso-real")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            (raiz / "projects" / "lab-novo").mkdir()
+            r = rodar("conferir-perfil-wsl", "--perfil", perfil, "--raiz", raiz, "--projeto", "caso-real")
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("lab-novo", r.stdout)
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+
+class IdentidadeDaSessaoDeDadosReais(unittest.TestCase):
+    """Auditoria Codex Security da 1.7.6, #5: a sessão de dados reais carrega o settings.local.json
+    (--setting-sources local), e o preparo só conferia que ele existia: um hook, uma permissão, um plugin, uma
+    variável como FUNDACAO_PERMITIR_TROCA_IDENTIDADE ou outra identidade passavam. Agora ele só serve com a identidade
+    do titular (e o projeto da sessão), e o preparo do Windows com -Projeto grava só isso."""
+
+    OK = {"env": {"FUNDACAO_PRINCIPAL": "titular", "FUNDACAO_PROJECT": "caso-real"}}
+
+    def setUp(self):
+        self.m = carregar()
+
+    def test_so_a_identidade_do_titular_passa(self):
+        self.assertEqual(self.m.conferir_identidade(self.OK, "titular", "caso-real"), [])
+        self.assertEqual(self.m.conferir_identidade({"env": {"FUNDACAO_PRINCIPAL": "titular"}}, "titular", "caso-real"),
+                         [])
+        casos = {
+            "outra identidade": {"env": {"FUNDACAO_PRINCIPAL": "outra-pessoa"}},
+            "outro projeto": {"env": {"FUNDACAO_PRINCIPAL": "titular", "FUNDACAO_PROJECT": "lab-a"}},
+            "troca de identidade liberada": {"env": {"FUNDACAO_PRINCIPAL": "titular",
+                                                     "FUNDACAO_PERMITIR_TROCA_IDENTIDADE": "1"}},
+            "hook": {**self.OK, "hooks": {"PreToolUse": []}},
+            "permissão": {**self.OK, "permissions": {"allow": ["Bash(curl:*)"]}},
+            "plugin": {**self.OK, "enabledPlugins": {"exemplo@exemplo": True}},
+            "sandbox": {**self.OK, "sandbox": {"network": {"allowedDomains": ["exemplo.invalid"]}}},
+            "sem identidade": {"env": {}},
+            "env que não é objeto": {"env": ["FUNDACAO_PRINCIPAL"]},
+            "não é objeto": ["env"],
+        }
+        for nome, dados in casos.items():
+            with self.subTest(nome):
+                self.assertTrue(self.m.conferir_identidade(dados, "titular", "caso-real"))
+
+    def test_estrito_deixa_so_a_identidade_e_mantem_o_conflito(self):
+        atual = {"permissions": {"allow": ["Bash(curl:*)"]}, "env": {"OUTRA": "1", "FUNDACAO_PRINCIPAL": "titular"}}
+        self.assertEqual(self.m.identidade("titular", atual, "caso-real", estrito=True), self.OK)
+        with self.assertRaises(self.m.Conflito):
+            self.m.identidade("titular", {"env": {"FUNDACAO_PRINCIPAL": "outra-pessoa"}}, "caso-real", estrito=True)
+
+    def test_linha_de_comando_confere_sem_mostrar_valores(self):
+        base = Path(tempfile.mkdtemp(prefix="identidade-conferida-teste-"))
+        try:
+            local = base / "settings.local.json"
+            local.write_text(json.dumps(self.OK), encoding="utf-8")
+            r = rodar("conferir-identidade", "--arquivo", local, "--titular", "titular", "--projeto", "caso-real")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            local.write_text(json.dumps({"env": {**self.OK["env"], "OUTRA_CHAVE": "valor-que-nao-aparece"}}),
+                             encoding="utf-8")
+            r = rodar("conferir-identidade", "--arquivo", local, "--titular", "titular", "--projeto", "caso-real")
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("OUTRA_CHAVE", r.stdout)
+            self.assertNotIn("valor-que-nao-aparece", r.stdout)
+            r = rodar("identidade", "--titular", "titular", "--projeto", "caso-real", "--atual", local, "--estrito")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(json.loads(r.stdout), self.OK)
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+
 class Identidade(unittest.TestCase):
     def test_settings_local_entrega_a_identidade_do_titular(self):
         m = carregar()
@@ -311,7 +458,23 @@ class WslConf(unittest.TestCase):
             shutil.rmtree(base, ignore_errors=True)
 
 
-H1, H2, H3, H4 = "1" * 64, "2" * 64, "3" * 64, "4" * 64
+H1, H2, H3, H4, H5 = "1" * 64, "2" * 64, "3" * 64, "4" * 64, "5" * 64
+
+
+def raiz_preparada(base: Path) -> Path:
+    """Raiz como o preparo do Windows a deixa: hooks da skill, perfil do WSL do modelo e só a identidade."""
+    m = carregar()
+    raiz = base / "raiz"
+    (raiz / "projects" / "caso-real").mkdir(parents=True)
+    (raiz / ".claude" / "hooks").mkdir(parents=True)
+    for nome in ("guarda_caminho.py", "guarda_identidade.py"):
+        shutil.copyfile(SKILL / "assets" / "hooks" / nome, raiz / ".claude" / "hooks" / nome)
+    perfil = m.perfil_wsl(raiz=m.caminho_wsl(str(raiz)), projeto="caso-real", perfil_windows="/mnt/c/Perfis/titular",
+                          outros_projetos=[])
+    (raiz / ".claude" / "settings.wsl.json").write_text(m.texto_json(perfil), encoding="utf-8", newline="\n")
+    (raiz / ".claude" / "settings.local.json").write_text(m.texto_json(m.identidade("titular", projeto="caso-real")),
+                                                          encoding="utf-8", newline="\n")
+    return raiz
 
 
 class Lancador(unittest.TestCase):
@@ -322,7 +485,13 @@ class Lancador(unittest.TestCase):
                 "CLAUDE_BIN": "/home/titular/.local/share/fundacao-ia/claude/2.1.302/claude",
                 "CLAUDE_VERSAO": "2.1.302", "CLAUDE_SHA256": H1, "CLAUDE_ORIGEM_HASH": "manifesto assinado",
                 "PERFIL_SHA256": H2, "HOOK_CAMINHO_SHA256": H3, "HOOK_IDENTIDADE_SHA256": H4,
+                "TITULAR": "titular", "LOCAL_SHA256": H5,
                 "SKILL_MD": "/mnt/c/Perfis/titular/.claude/skills/fundacao-ia-multiprojetos/SKILL.md", **extra}
+
+    def lancar(self, raiz: Path, saida: Path, titular: str = "titular") -> subprocess.CompletedProcess:
+        return rodar("lancador", "--raiz", raiz, "--projeto", "caso-real", "--titular", titular, "--claude",
+                     "/opt/claude/claude", "--claude-versao", "2.1.302", "--claude-sha256", H1, "--origem-hash",
+                     "informado", "--skill-md", "/opt/skill/SKILL.md", "--saida", saida)
 
     def test_sem_marcadores_e_com_os_valores_fixados(self):
         texto = carregar().lancador(self.valores())
@@ -339,7 +508,8 @@ class Lancador(unittest.TestCase):
     def test_valores_invalidos_sao_recusados(self):
         m = carregar()
         for chave, ruim in (("CLAUDE_SHA256", "abc"), ("PERFIL_SHA256", "Z" * 64), ("PROJETO", "../x"),
-                            ("RAIZ", "relativo/x"), ("CLAUDE_BIN", "claude")):
+                            ("RAIZ", "relativo/x"), ("CLAUDE_BIN", "claude"), ("TITULAR", "Titular Silva"),
+                            ("LOCAL_SHA256", "abc")):
             with self.subTest(chave=chave), self.assertRaises(ValueError):
                 m.lancador(self.valores(**{chave: ruim}))
         with self.assertRaises(ValueError):
@@ -348,28 +518,66 @@ class Lancador(unittest.TestCase):
     def test_linha_de_comando_fixa_perfil_e_hooks_da_raiz(self):
         base = Path(tempfile.mkdtemp(prefix="lancador-teste-"))
         try:
-            ganchos_dir = base / "raiz" / ".claude" / "hooks"
-            ganchos_dir.mkdir(parents=True)
-            (base / "raiz" / ".claude" / "settings.wsl.json").write_text("{}\n", encoding="utf-8")
-            (ganchos_dir / "guarda_caminho.py").write_text("# a\n", encoding="utf-8")
-            (ganchos_dir / "guarda_identidade.py").write_text("# b\n", encoding="utf-8")
+            raiz = raiz_preparada(base)  # 1.7.7: o lançador só fixa perfil, hooks e identidade que conferem
+            ganchos_dir = raiz / ".claude" / "hooks"
             saida = base / "abrir-fundacao.sh"
-            r = rodar("lancador", "--raiz", base / "raiz", "--projeto", "caso-real", "--claude", "/opt/claude/claude",
-                      "--claude-versao", "2.1.302", "--claude-sha256", H1, "--origem-hash", "informado",
-                      "--skill-md", "/opt/skill/SKILL.md", "--saida", saida)
+            r = self.lancar(raiz, saida)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             texto = saida.read_text(encoding="utf-8")
             import hashlib
-            for arq in (base / "raiz" / ".claude" / "settings.wsl.json", ganchos_dir / "guarda_caminho.py",
+            for arq in (raiz / ".claude" / "settings.wsl.json", ganchos_dir / "guarda_caminho.py",
                         ganchos_dir / "guarda_identidade.py"):
                 self.assertIn(hashlib.sha256(arq.read_bytes()).hexdigest(), texto)
             (ganchos_dir / "guarda_identidade.py").unlink()
-            r = rodar("lancador", "--raiz", base / "raiz", "--projeto", "caso-real", "--claude", "/opt/claude/claude",
-                      "--claude-versao", "2.1.302", "--claude-sha256", H1, "--origem-hash", "informado",
-                      "--skill-md", "/opt/skill/SKILL.md", "--saida", base / "outro.sh")
+            r = self.lancar(raiz, base / "outro.sh")
             self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
             self.assertIn("guarda_identidade", r.stdout + r.stderr)
             self.assertFalse((base / "outro.sh").exists())
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_linha_de_comando_so_fixa_o_que_confere(self):
+        """Auditoria Codex Security da 1.7.6, #5: o lançador fixava o hash de qualquer perfil que passasse na
+        conferência parcial e nem olhava o settings.local.json. Agora confere perfil (igual ao do modelo), hooks
+        (iguais aos da skill) e identidade (só a do titular informado) nos mesmos bytes cujo hash fixa."""
+        import hashlib
+        base = Path(tempfile.mkdtemp(prefix="lancador-conferido-teste-"))
+        try:
+            raiz = raiz_preparada(base)
+            local = raiz / ".claude" / "settings.local.json"
+            r = self.lancar(raiz, base / "certo.sh")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            texto = (base / "certo.sh").read_text(encoding="utf-8")
+            self.assertIn(hashlib.sha256(local.read_bytes()).hexdigest(), texto)
+            self.assertIn("TITULAR='titular'", texto)
+
+            def perfil_com_rede():
+                arq = raiz / ".claude" / "settings.wsl.json"
+                dados = json.loads(arq.read_text(encoding="utf-8"))
+                dados["sandbox"]["network"]["allowedDomains"] = ["exemplo.invalid"]
+                arq.write_text(json.dumps(dados), encoding="utf-8")
+
+            def local_com_hook():
+                local.write_text(json.dumps({**json.loads(local.read_text(encoding="utf-8")),
+                                             "hooks": {"PreToolUse": []}}), encoding="utf-8")
+
+            def hook_alterado():
+                with open(raiz / ".claude" / "hooks" / "guarda_identidade.py", "a", encoding="utf-8") as f:
+                    f.write("# alterado\n")
+
+            casos = {"perfil": (perfil_com_rede, "titular"), "settings.local.json": (local_com_hook, "titular"),
+                     "guarda_identidade": (hook_alterado, "titular"), "outra-pessoa": (lambda: None, "outra-pessoa"),
+                     "lab-novo": (lambda: (raiz / "projects" / "lab-novo").mkdir(), "titular")}
+            for n, (trecho, (mudanca, titular)) in enumerate(casos.items()):
+                with self.subTest(trecho):
+                    shutil.rmtree(raiz)
+                    raiz_preparada(base)
+                    mudanca()
+                    saida = base / f"recusado-{n}.sh"
+                    r = self.lancar(raiz, saida, titular=titular)
+                    self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+                    self.assertIn(trecho, r.stdout)
+                    self.assertFalse(saida.exists())
         finally:
             shutil.rmtree(base, ignore_errors=True)
 

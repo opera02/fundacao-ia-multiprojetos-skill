@@ -19,8 +19,17 @@ Objetivo: | Raiz autorizada: | Dados: fictícios / reais (com checklist) | Custo
 Bloqueados → inativos → em desenvolvimento → ativos. Para cada linha: comportamento observado, versão, acesso, prova.
 
 ## 5. Mudanças realizadas
-| Arquivo/componente | Tipo (código/dados/infra) | Motivo | Reversão |
-|---|---|---|---|
+Uma linha por mudança. Veredito: ajudou · piorou · sem efeito observado · confundido. Use "confundido" quando várias
+mudanças vieram juntas ou uma execução só sustenta a diferença; ser adotada não prova que a mudança ajudou. Sem
+efeito visto, escreva "não observado" e o veredito "sem efeito observado".
+| Arquivo/componente | Tipo (código/dados/infra) | Motivo (onde se viu) | Efeito observado (onde) | Veredito | Reversão |
+|---|---|---|---|---|---|
+
+## 5b. Lição (no máximo uma) ou SEM_ENTRADA
+Gatilho (a forma da situação, sem fato do caso): | Lição (o que fazer, de um jeito conferível): | Evidência (linhas
+da tabela 5 e caminhos): | Confiança (alta · média · baixa; apoiada só em "confundido", no máximo média):
+"SEM_ENTRADA" é resposta válida. A lição vai à memória do projeto como proposta (`references/capacidades/04-memoria.md`,
+§Lições). [Decisão; harness2, P3 — método adaptado de Harness²]
 
 ## 6. Verificações
 | Cenário | Esperado | Observado | Real/simulado | Evidência |

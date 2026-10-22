@@ -62,6 +62,24 @@ A saída separa `schema_ok` (estados, campos, identificadores, `simulado` explí
 a matriz está em `<raiz>/registry/`, ou ao `--base` —, não está vazio, cita a `versao_avaliada` e,
 com a coluna opcional `sha256_evidencia`, confere o hash). "Matriz válida" não é capacidade
 demonstrada: o mérito da evidência continua com a revisão humana [Decisão; auditoria externa da 1.3.4].
+A evidência fica dentro da base: caminho absoluto, com unidade, `:` ou `..` é recusado sem ler o alvo
+(a recusa não diz se ele existe); nenhuma parte do caminho pode ser ligação (link simbólico ou junção),
+e a folha é arquivo comum ou pasta. O arquivo é lido em blocos até 50 MB; a pasta, sem atravessar
+ligação, até 500 itens, 16 níveis ou 50 MB lidos — passou do teto, a linha falha e a mensagem diz
+qual. Evidência de outro lugar se copia para `evidence/` da fundação ou do projeto [Decisão; auditoria
+Codex Security da 1.7.6, #7]. Caminho protegido — primeira parte `state`, `projects/<projeto>/data/` ou nome
+que o host nega à leitura (`.env*`, `secrets`, chaves, credenciais, `.ssh`, `.codex`) — é recusado sem ler e sem
+dizer se existe, e a pasta de evidência não abre o que é protegido: conferir versão ou hash ali seria oráculo do
+conteúdo [Decisão; revisão de segurança da 1.7.7, R177-VAL-01]. A regra vale também para o caminho inteiro,
+relativo a cada raiz de fundação acima dele (a pasta com `registry/` ou `state/state.sqlite`), e o `--base` acima
+da raiz da fundação da matriz ou dentro de caminho protegido é recusado sem ler nada: quem escolhe a base não
+escolhe o que é protegido [Decisão; segunda passada da revisão, variante do R177-VAL-01]. Fora de qualquer fundação
+também: a base cujo caminho real passa por nome que o host nega à leitura (`.ssh`, `.codex`, `secrets`...) ou por
+nome curto 8.3, em qualquer parte, é recusada antes de qualquer consulta dentro dela, e a resposta não diz se o alvo
+existe [Decisão; terceira passada da revisão, R177C-B-01]. Acima de uma raiz de fundação, só `.ssh` e `.codex`, que o
+host nega em `~/`: as outras regras dele são relativas à raiz, e a fundação na conta "Secretaria" continua aceita
+[Decisão; quarta passada da revisão, R177D-1]. Arquivo com vínculo físico (hard link, mais de um nome)
+não é lido: o outro nome pode estar fora da base [Decisão; revisão de segurança da 1.7.7, R177-VAL-02].
 
 ## 4. Registro de cada requisito [Livro p187]
 
@@ -86,6 +104,9 @@ comportamento foi observado, em qual versão, com que acesso e onde está a prov
   mecanismo reutilizado [Livro p106].
 - Concordância entre agentes não é prova: três agentes podem repetir o mesmo erro;
   vale a sustentação na fonte [Livro p51].
+- Avaliação repetida: em k execuções do mesmo caso, pass@k (passou ao menos uma vez) mede capacidade e pass^k
+  (passou em todas) mede segurança — uma falha em k já é um vazamento; execução sem nota é "não medida", nunca
+  "passou" [Decisão; everything-claude-code, proposta 4].
 
 ## 6. Princípios de arquitetura (resumo operacional)
 

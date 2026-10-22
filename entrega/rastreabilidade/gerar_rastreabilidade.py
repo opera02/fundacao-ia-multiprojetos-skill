@@ -773,6 +773,136 @@ AVALIACAO_E10_E11_174 = {
            "do destino)",
 }
 
+# Auditoria Codex Security sobre a 1.7.6 (commit público 56976cd; 21/10/2026): 12 achados procedentes, corrigidos na
+# 1.7.7 (entrega/auditoria/SCAN-SEGURANCA-1.7.6/).
+AUDITORIA_CODEX_176 = {
+    "R04": "scripts/tests/test_auditoria_1_7_6_execucao_isolada.py (#1: o código importado do B6 roda no sandbox do "
+           "plano de execução, sem ver outros projetos, state/ nem a pasta pessoal, e sem ele a execução é recusada); "
+           "scripts/tests/test_auditoria_1_7_6_validadores.py (#7: evidência de outro projeto por caminho absoluto, "
+           "`..` ou ligação é recusada sem revelar metadado do alvo)",
+    "R08": "scripts/tests/test_auditoria_1_7_6_validadores.py (#7: histórico da RETOMADA só dentro da pasta dela, sem "
+           "ligação e com teto, lido uma vez)",
+    "R32": K + "test_auditoria_1_7_6_recursos.py (#9: limites por componente; pedido, saída e arquivos com teto; "
+           "árvore de processos encerrada ao estourar); " + K + "test_auditoria_1_7_6_publicacao.py (#11: registro de "
+           "componentes gravado por publicação segura, sem seguir ligação)",
+    "R43": "scripts/tests/test_auditoria_1_7_6_validadores.py (#7: `matriz.py validar` só lê evidência dentro da "
+           "base, sem ligação, em blocos e com teto)",
+    "R45": K + "test_auditoria_1_7_7_ancora.py (#2: quem restaura é decidido pela fundação viva ou, sem ela, pela "
+           "cópia autenticada pela âncora; cópia sem âncora só libera com aceite e motivo); " + K
+           + "test_auditoria_1_7_7_preparo.py (#12: preparo privado, preso à identidade dos arquivos e conferido de "
+           "novo antes da promoção)",
+    "R46": "scripts/tests/test_auditoria_1_7_6_atualizador.py (#8: o `checar` não importa a raiz e recusa executável "
+           "desconhecido antes de qualquer importação, ensaio em cópias conferidas; #10: `desfazer` só com registro "
+           "ancorado e nas áreas de código); entrega/testes/test_auditoria_1_7_7_instalacao.py (#4: a marca da troca "
+           "interrompida guarda só identificadores e a recuperação desfaz a troca sem seguir caminho da marca)",
+    "R50": "scripts/tests/test_auditoria_1_7_6_validadores.py (#7: matriz e RETOMADA com caminhos contidos na base)",
+    "R52": "scripts/tests/test_host_windows.py (#3: o interpretador do preparo nunca vem do perfil de destino; "
+           "assinatura, ligação e permissões conferidas antes de rodar); scripts/tests/test_host_perfis.py e "
+           "test_host_wsl.py (#5: o preparo do WSL só fixa o perfil igual ao do modelo, os hooks da skill e a "
+           "identidade do titular, e o lançador confere os três)",
+    "R53": "scripts/tests/test_auditoria_1_7_6_execucao_isolada.py (#1: variável de segredo e FUNDACAO_* do pai não "
+           "chegam ao código importado); scripts/tests/test_auditoria_1_7_6_inventarios.py (#7: B1 e B3 não "
+           "atravessam ligação e param nos tetos durante a varredura)",
+    "R54": "entrega/testes/test_auditoria_1_7_7_pacote.py (#6: ferramenta de empacotamento presa por hash)",
+    "R58": "entrega/testes/test_auditoria_1_7_7_pacote.py e test_ci_publica.py (#6: a CI confere os pacotes de "
+           "entrega/dist contra a árvore do mesmo commit, membro a membro e byte a byte)",
+    "R59": "entrega/testes/test_ci_publica.py (#6: a sexta verificação roda nas duas plataformas)",
+}
+
+# Revisão de segurança independente da diferença da 1.7.7 (f1b7a19..f1bdc88): resíduos das correções acima, corrigidos
+# antes da liberação (entrega/auditoria/REVISAO-SEGURANCA-1.7.7.md).
+REVISAO_SEGURANCA_177 = {
+    "R04": "scripts/tests/test_revisao_seguranca_177_fluxo_b.py (R177-FB-01 e 02: o plano prende o código pela cópia e "
+           "pelo manifesto; entrada e pasta gravável ficam na cópia ou no projeto)",
+    "R43": "scripts/tests/test_revisao_seguranca_177_validadores.py (R177-VAL-01 e 02: caminho protegido e vínculo "
+           "físico recusados sem tocar o alvo)",
+    "R45": K + "test_revisao_1_7_7_kit.py (R177-KIT-01 a 05: livro e registro dentro da cópia não valem; a própria cópia "
+           "não é fundação viva; verificação sem atravessar ligação; anexos de state/ sem seguir ligação; aviso de "
+           "permissões do destino)",
+    "R46": "scripts/tests/test_revisao_seguranca_177_atualizador.py (R177-ATU-01 a 03: ensaio sem as cópias de código "
+           "guardadas, __pycache__ apagado na promoção, gravação na raiz sem seguir ligação; inventário do host depois "
+           "do registro)",
+    "R54": "scripts/tests/test_revisao_seguranca_177_inventario.py (R177-VAL-03 a 05: matcher inteiro com SHA-256, "
+           "conteúdo de plugin que não derruba nem trava o inventário, executável só como nome)",
+    "R58": "entrega/testes/test_revisao_seguranca_177_pacote.py (R177-ATU-04: transferência e lista dos pacotes que só "
+           "cresce); entrega/testes/test_revisao_1_7_7_gabarito_e_cegas.py e test_revisao_1_7_7_livro_e_banco.py "
+           "(R177-VAL-06 a 09)",
+}
+
+# Segunda passada da revisão de segurança da 1.7.7 (f1bdc88..4c11fed): variantes dos achados acima, corrigidas antes da
+# liberação.
+REVISAO_SEGURANCA_177B = {
+    "R04": "scripts/tests/test_revisao_seguranca_177b_fluxo_b.py (R177B-B-01 a 03: política nula do manifesto, código "
+           "de fora da cópia marcado NÃO PRESO, cópia conferida antes e depois de cada caso)",
+    "R43": "scripts/tests/test_revisao_seguranca_177b_validadores.py (variante do R177-VAL-01: o --base não tira a "
+           "proteção do caminho)",
+    "R45": K + "test_revisao_1_7_7b_kit.py (variante do R177-KIT-02: banco da cópia, vínculo físico ou ligação no "
+           "caminho do banco não valem como fundação viva)",
+    "R46": "scripts/tests/test_revisao_seguranca_177b_atualizador.py (R177B-B-05 e 06: registro do kit sem seguir "
+           "ligação, primeiro nível da raiz no inventário)",
+    "R54": "scripts/tests/test_revisao_seguranca_177b_inventario.py (R177B-A-01 e 02: matcher pelo texto cru e caminho "
+           "com NUL)",
+    "R58": "entrega/testes/test_revisao_seguranca_177b_pacote.py (R177B-B-04 e 07: transferência de ensaio na retomada "
+           "e zips de transferência presos à lista); entrega/testes/test_revisao_1_7_7_segunda_passada_avaliacoes.py "
+           "(limites do R177-VAL-06 a 09 e R177B-A-03)",
+}
+
+# Terceira passada da revisão de segurança da 1.7.7 (R177C-*): testes de cada achado, por requisito.
+REVISAO_SEGURANCA_177C = {
+    "R04": "scripts/tests/test_revisao_seguranca_177c.py (R177C-FB-01: variável que carrega código atribuída no "
+           "comando — env NOME=VALOR, env -S, código do sh -c — e o -C do env marcam o código NÃO PRESO)",
+    "R34": K + "test_revisao_1_7_7c_kit.py (R177C-B-03: pasta mcp/ sem __init__ no caminho de importação não é o "
+           "SDK, e o servidor não a importa)",
+    "R43": "scripts/tests/test_revisao_seguranca_177c_validadores.py (R177C-B-01: base da matriz, pasta da RETOMADA e "
+           "destino do histórico em pasta negada fora de qualquer fundação recusados sem oráculo)",
+    "R46": "scripts/tests/test_revisao_seguranca_177c_atualizador.py (R177C-B-03 e 04: pasta mcp/ do primeiro nível no "
+           "inventário; promoção interrompida pelo instalador com registro ancorado e comando de volta pronto)",
+    "R54": "scripts/tests/test_revisao_seguranca_177c_inventario.py e test_revisao_seguranca_177c_inventario_tipos.py "
+           "(R177C-B-02: JSON ou TOML aninhado demais ou de tipo inesperado no perfil, na raiz ou num plugin não "
+           "derruba o inventário do host; o arquivo vale como não lido, com o motivo)",
+    "R58": "entrega/testes/test_revisao_seguranca_177c_pacote.py (R177C-B-05: LEIA-ME pela forma recusa gerenciador, "
+           "programa por caminho ou extensão, outro esquema e caractere invisível; a CI exige a transferência fixada "
+           "na lista; zip publicado não sai da pasta); entrega/testes/test_revisao_1_7_7_terceira_passada_avaliacoes.py "
+           "(R177C-B-06 a 08 e R177C-T-01: lastro pela pasta da execução, fixtures inteiras e sem ligação, caminhos "
+           "comparados pelo lugar, testes com pasta temporária própria)",
+}
+
+# Conferência final da revisão de segurança da 1.7.7 (R177D-*): testes de cada achado, por requisito.
+REVISAO_SEGURANCA_177D = {
+    "R04": "scripts/tests/test_revisao_seguranca_177c.py (R177D-4: o --chdir abreviado, a opção dentro do -S e o env "
+           "atrás de outro programa marcam o código NÃO PRESO)",
+    "R43": "scripts/tests/test_revisao_seguranca_177d_validadores.py e test_revisao_seguranca_177d_retomada.py "
+           "(R177D-1 e 2: acima da raiz da fundação só conta o que o host nega lá, e a conta \"Secretaria\" é aceita; "
+           "RETOMADA de nome protegido, ligação ou vínculo físico não é lida nem reescrita)",
+    "R46": "scripts/tests/test_revisao_seguranca_177c_atualizador.py (R177D-5 e 6: a promoção que o próprio instalador "
+           "desfez para sem âncora e sem tocar a raiz; caractere invisível literal recusado nos .py da skill)",
+    "R54": "scripts/tests/test_revisao_seguranca_177d_inventario.py (R177D-3: só a parte de forma inesperada fica de "
+           "fora, e o hash do arquivo entra na comparação do verificar)",
+}
+
+# Melhorias da 1.7.7 (métodos adaptados do harness2 e do everything-claude-code; defeito anotado na 1.7.6): (origem,
+# testes) por requisito.
+MELHORIAS_177 = {
+    "R33": [("everything-claude-code, proposta 1", "scripts/tests/test_inventario_plugins.py (hooks dos plugins "
+             "inventariados; matcher que nunca casa ou casa tudo e evento fora do guarda acusados)")],
+    "R36": [("everything-claude-code, proposta 1", "scripts/tests/test_inventario_plugins.py (o que cada plugin "
+             "carrega: hooks, MCP e skills, lidos só dentro de ~/.claude/plugins/)")],
+    "R43": [("harness2, P3", "entrega/testes/test_licoes.py e scripts/tests/test_referencias_licoes.py (efeito "
+             "observado, veredito e lição com evidência por versão)")],
+    "R46": [("defeito anotado na 1.7.6", "com o kit igual, o `aplicar` regenera as instruções da raiz "
+             "(scripts/tests/test_atualizar_fundacao_instrucoes.py) e o `desfazer` devolve o registro da instalação "
+             "(scripts/tests/test_atualizar_fundacao.py)")],
+    "R58": [("harness2, P1, P2 e P4; everything-claude-code, proposta 4", "entrega/testes/test_isolamento_gabarito.py, "
+             "test_livro_avaliacoes.py, test_ensaio_contrastivo.py e test_avaliacoes_repetidas.py (avaliações da "
+             "skill com o gabarito fora do alcance do avaliado, livro-caixa das rodadas, notas cegas e pass^k nas de "
+             "segurança)"),
+            ("harness2, P5", "scripts/tests/test_orcamento_texto.py (teto que só desce para o texto sempre carregado)")],
+    "R54": [("everything-claude-code, proposta 1", "scripts/tests/test_inventario_plugins.py (hooks, MCP e skills dos "
+             "plugins, alertas de matcher e leitura contida em ~/.claude/plugins/)"),
+            ("harness2, P6", "scripts/tests/test_avisos_de_terceiros.py (origem, commit e licença de cada fonte "
+             "externa citada, com o texto da licença quando há trecho)")],
+}
+
 
 def main() -> int:
     entrega, skill = Path(sys.argv[1]), Path(sys.argv[2])
@@ -797,6 +927,18 @@ def main() -> int:
             row[5] = f"{row[5]}; 1.7.0 (análise do vibe-coding-toolkit): {ANALISE_VCT_170[rid]}"
         if rid in AVALIACAO_E10_E11_174:
             row[5] = f"{row[5]}; 1.7.4 (avaliações E10 e E11): {AVALIACAO_E10_E11_174[rid]}"
+        if rid in AUDITORIA_CODEX_176:
+            row[5] = f"{row[5]}; auditoria Codex Security da 1.7.6: {AUDITORIA_CODEX_176[rid]}"
+        for origem, testes in MELHORIAS_177.get(rid, []):
+            row[5] = f"{row[5]}; 1.7.7 ({origem}): {testes}"
+        if rid in REVISAO_SEGURANCA_177:
+            row[5] = f"{row[5]}; revisão de segurança da 1.7.7: {REVISAO_SEGURANCA_177[rid]}"
+        if rid in REVISAO_SEGURANCA_177B:
+            row[5] = f"{row[5]}; segunda passada da revisão da 1.7.7: {REVISAO_SEGURANCA_177B[rid]}"
+        if rid in REVISAO_SEGURANCA_177C:
+            row[5] = f"{row[5]}; terceira passada da revisão da 1.7.7: {REVISAO_SEGURANCA_177C[rid]}"
+        if rid in REVISAO_SEGURANCA_177D:
+            row[5] = f"{row[5]}; conferência final da revisão da 1.7.7: {REVISAO_SEGURANCA_177D[rid]}"
         R[rid] = tuple(row)
     out_dir = entrega / "rastreabilidade"
     out_dir.mkdir(parents=True, exist_ok=True)

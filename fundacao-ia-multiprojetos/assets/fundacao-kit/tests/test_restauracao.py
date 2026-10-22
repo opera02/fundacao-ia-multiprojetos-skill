@@ -3,11 +3,12 @@
 Registro de retiradas inexistente, de outra fundação, ilegível ou que não alcança a cópia não
 libera (e registro ilegível não povoa o destino); memória retirada e acesso revogado depois da
 cópia não reaparecem, e a reaplicação fica na trilha restaurada; a CLI restaura com o banco de
-origem corrompido ou perdido, autorizada pela cópia, sem criar nada na origem, inclusive com
-`#` no caminho e em pasta de rede (UNC); `init` numa fundação antiga cria a identidade do registro e
-preenche as retiradas. A verificação confere o banco da cópia contra o manifesto (hash e contagens),
-a cópia sai do modo WAL e componentes desligados depois da cópia continuam desligados. A cópia é
-conferida pela âncora guardada fora dela (sha256_manifesto e livro de cópias; varredura da 1.4.5, #8).
+origem corrompido ou perdido, autorizada pela cópia ancorada (livro de cópias ao lado do registro),
+sem criar nada na origem, inclusive com `#` no caminho e em pasta de rede (UNC); `init` numa fundação
+antiga cria a identidade do registro e preenche as retiradas. A verificação confere o banco da cópia
+contra o manifesto (hash e contagens), a cópia sai do modo WAL e componentes desligados depois da cópia
+continuam desligados. A cópia é conferida pela âncora guardada fora dela (sha256_manifesto e livro de
+cópias; varredura da 1.4.5, #8); sem âncora, só com a decisão motivada (auditoria da 1.7.6, #2).
 """
 
 from __future__ import annotations
@@ -138,7 +139,8 @@ class TestRestauracao(FoundationTestCase):
         self.assertIn("kit anterior", res["reason"])
         dest = self.pasta("dest2")
         # O manifesto editado (como numa cópia antiga) também não consta no livro de cópias (#8).
-        ok = backup.restore(snap, dest, self.log, aceitar_registro_nao_comprovado=True, aceitar_copia_sem_ancora=True)
+        ok = backup.restore(snap, dest, self.log, aceitar_registro_nao_comprovado=True,
+                            aceitar_copia_sem_ancora="cópia antiga conferida à mão (fictício)")
         self.assertTrue(ok["released"], ok)
         self.assertIn("decisão explícita", ok["ressalva"])
         fim = [e for e in self.eventos(dest) if e["kind"] == "restore_completed"]
@@ -423,7 +425,7 @@ class TestRestauracao(FoundationTestCase):
         self.assertIn("só por integridade e contagens", ver["aviso"])
         self.assertEqual(sorted(p.name for p in db.parent.iterdir()), ["state.sqlite"])
         # Cópia antiga não consta no livro de cópias (#8): restaurá-la é decisão explícita.
-        rep = backup.restore(snap, self.pasta("dest"), self.log, aceitar_copia_sem_ancora=True)
+        rep = backup.restore(snap, self.pasta("dest"), self.log, aceitar_copia_sem_ancora="cópia antiga (fictício)")
         self.assertTrue(rep["released"], rep)
         self.assertIn("contagens", rep["aviso_copia"])
 
@@ -487,7 +489,9 @@ class TestRestauracao(FoundationTestCase):
     def test_cli_ancora_da_copia(self):
         """#8 (varredura da 1.4.5): `backup criar` devolve a âncora (sha256_manifesto) e a anota no livro de
         cópias; `verificar` e `restaurar` conferem a cópia por ela; âncora errada sai com código 3 e nada é
-        copiado; sem âncora e sem livro (só o registro guardado), a restauração libera com aviso no stderr."""
+        copiado; sem âncora e sem livro (só o registro guardado), a restauração não libera (código 3) — até a
+        1.7.6 liberava com aviso (auditoria da 1.7.6, #2) — e, com `--aceitar-copia-sem-ancora "<motivo>"`,
+        libera com aviso no stderr."""
         snap = self.pasta("snap")
         p = self.cli("operador-lab", "backup", "criar", "--destino", str(snap))
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -509,6 +513,11 @@ class TestRestauracao(FoundationTestCase):
         shutil.copy2(self.log, guardado / "retiradas.jsonl")
         r = self.cli("operador-lab", "backup", "restaurar", "--origem", str(snap), "--destino", str(dest),
                      "--retiradas", str(guardado / "retiradas.jsonl"))
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertFalse(dest.exists())
+        r = self.cli("operador-lab", "backup", "restaurar", "--origem", str(snap), "--destino", str(dest),
+                     "--retiradas", str(guardado / "retiradas.jsonl"), "--aceitar-copia-sem-ancora",
+                     "desastre: só o registro foi guardado (fictício)")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["ancora"]["situacao"], "ausente")
         self.assertIn("W_COPIA_SEM_ANCORA", r.stderr)

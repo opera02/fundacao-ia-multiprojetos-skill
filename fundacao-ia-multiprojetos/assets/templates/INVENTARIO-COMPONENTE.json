@@ -14,6 +14,7 @@
   "allowed_projects": [],
   "permissions": [],
   "timeout_seconds": 10,
+  "limits": {"request_bytes": 1048576, "stdout_bytes": 4194304, "stderr_bytes": 1048576, "max_files": 1000, "file_bytes": 1073741824, "total_file_bytes": 4294967296},
   "requires_modules": [],
   "credential_reference": null,
   "cost_mode": null,
@@ -36,5 +37,5 @@
   "recovery_procedure": null,
   "responsible": null,
   "last_verified_at": null,
-  "notes": "Valores nulos = não demonstrado. Preencher este registro não instala nem autoriza o componente. credential_reference aponta o mecanismo protegido, nunca o segredo. withdrawal_procedure: componente lido pelo host (entrypoint 'host-skill:<caminho do SKILL.md>') sai em dois passos — desabilitar no registro da fundação e retirar a pasta do alcance do host, conferindo que ele não a carrega mais; só desabilitar deixa a skill ativa no host."
+  "notes": "Valores nulos = não demonstrado. limits: tetos de pedido, saída e arquivos (padrão do kit; o registro ajusta por componente; auditoria Codex 1.7.6, #9). Preencher este registro não instala nem autoriza o componente. credential_reference aponta o mecanismo protegido, nunca o segredo. withdrawal_procedure: componente lido pelo host (entrypoint 'host-skill:<caminho do SKILL.md>') sai em dois passos — desabilitar no registro da fundação e retirar a pasta do alcance do host, conferindo que ele não a carrega mais; só desabilitar deixa a skill ativa no host."
 }

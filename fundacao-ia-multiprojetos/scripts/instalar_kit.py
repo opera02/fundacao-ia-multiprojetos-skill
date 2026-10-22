@@ -32,14 +32,22 @@ inteira (código 4, nada escrito).
 - Depois da promoção, confere a composição: todos os arquivos de código do kit no destino com o
   hash da origem → `composicao: "verificada"` e `kit_version` declarada. Sem isso,
   `kit_version` fica nula e `versao_no_destino` mostra o que o `__init__.py` do destino declara.
-- Registra em `registry/kit_install.json` cada execução que escreveu algo (estado misto incluído).
+- Registra em `registry/kit_install.json` cada execução que escreveu algo (estado misto incluído), por temporário
+  imprevisível e `os.replace` (`gravacao_segura.py`): vínculo físico (hard link) no lugar não leva o registro a um
+  arquivo de fora, e ligação no caminho dele recusa no plano (código 4) ou, se aparecer depois, deixa o registro sem
+  gravar, com `registro_nao_gravado` na saída (código 3) (revisão de segurança da 1.7.7, segunda passada, R177B-B-05).
+  O histórico ilegível ou trocado (JSON ou UTF-8 inválido, aninhamento que estoura a pilha, conteúdo que não é lista)
+  também: não é lido como histórico no plano nem refeito no registro, e a saída diz por quê (terceira passada,
+  R177C-B-04): o `atualizar_fundacao.py` ancora então o registro da promoção, e o `desfazer` funciona.
 - Nunca copia bancos, caches ou segredos; não executa código do destino.
 
 Códigos: 0 instalação completa e verificada (ou simulação sem impedimento) · 2 uso incorreto ·
-3 incompleta (conflitos; nada escrito, ou estado misto por decisão) · 4 recusada por contenção ·
-5 falha durante a promoção (desfeita, ou com retorno incompleto: veja `desfeito`).
-Uso: python instalar_kit.py --destino RAIZ [--simular] [--atualizar | --manter-conflitos]
-Depois: cd RAIZ && python -m fundacao init --admin <identidade-do-titular>
+3 incompleta (conflitos; nada escrito, ou estado misto por decisão, ou registro não gravado) · 4 recusada por
+contenção · 5 falha durante a promoção (desfeita, ou com retorno incompleto: veja `desfeito`).
+Uso: python "<skill>/scripts/instalar_kit.py" --destino "<raiz>" [--simular] [--atualizar | --manter-conflitos]
+Depois: cd "<raiz>"; python -m fundacao init --admin <identidade-do-titular>
+(caminho completo entre aspas duplas e `;` entre os comandos: colados no PowerShell ou no bash, de qualquer pasta, com
+espaços no caminho, rodam como estão; o `&&` não existe no PowerShell 5.1 do Windows)
 """
 
 from __future__ import annotations
@@ -54,6 +62,11 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+AQUI = Path(__file__).resolve().parent
+if str(AQUI) not in sys.path:  # carregado por caminho (testes): o módulo vizinho também tem de ser achado
+    sys.path.append(str(AQUI))
+import gravacao_segura as gravacao  # noqa: E402  (registro sem seguir ligação nem vínculo físico; R177B-B-05)
 
 KIT = Path(__file__).resolve().parents[1] / "assets" / "fundacao-kit"
 SKIP_PARTS = {"__pycache__", ".pytest_cache"}
@@ -91,7 +104,7 @@ def instalados_antes(dest: Path) -> dict[str, str]:
     `registry/kit_install.json`), com o último hash registrado; os já retirados como órfãos saem da lista."""
     try:
         historico = json.loads((dest / "registry" / "kit_install.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):  # ilegível ou trocado: sem histórico (R177C-B-04)
         return {}
     conhecidos: dict[str, str] = {}
     for reg in historico if isinstance(historico, list) else []:
@@ -181,8 +194,8 @@ def planejar(dest: Path, atualizar: bool, carimbo: str) -> dict:
     if atualizar:
         plano["retirar"] = list(plano["orfaos"])
     for proprio in (Path("registry/kit_install.json"), Path("registry/kit_backup") / carimbo,
-                    Path("registry/kit_preparo") / carimbo):
-        if not dentro(dest, dest / proprio):
+                    Path("registry/kit_preparo") / carimbo):  # sem ligação no caminho, nem para dentro (R177B-B-05)
+        if com_ligacao(dest, proprio.as_posix()) or not dentro(dest, dest / proprio):
             plano["fora_do_destino"].append(proprio.as_posix())
     return plano
 
@@ -253,14 +266,33 @@ def promover(dest: Path, plano: dict, carimbo: str) -> tuple[str | None, list[st
     return (str(backup) if plano["substituir"] or plano["retirar"] else None), []
 
 
-def registrar(dest: Path, record: dict) -> None:
-    """Acrescenta a execução a `registry/kit_install.json`."""
-    reg = dest / "registry"
-    reg.mkdir(parents=True, exist_ok=True)
-    log = reg / "kit_install.json"
-    history = json.loads(log.read_text(encoding="utf-8")) if log.exists() else []
-    history.append(record)
-    log.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+def registrar(dest: Path, record: dict) -> str | None:
+    """Acrescenta a execução a `registry/kit_install.json` por temporário imprevisível e `os.replace`: vínculo físico
+    no lugar não leva o registro ao arquivo de fora, e ligação no caminho (posta depois do plano) recusa sem gravar
+    nada nela (R177B-B-05). Histórico ilegível ou trocado também não é gravado nem refeito, como no `desfazer`: antes,
+    a exceção derrubava o instalador depois da promoção, sem saída, e o `aplicar` não tinha plano para ancorar
+    (terceira passada, R177C-B-04). Devolve None ou o motivo de o registro não ter sido gravado."""
+    try:
+        log = gravacao.pasta_sem_ligacao(dest, CONFIGURACAO) / "kit_install.json"
+        gravacao.conferir_destino(log)  # ligação ou pasta no lugar: nem lida
+        history = json.loads(log.read_text(encoding="utf-8")) if log.exists() else []
+        if not isinstance(history, list):
+            return "registry/kit_install.json com formato inesperado (" + type(history).__name__ + ", não lista)"
+        history.append(record)
+        gravacao.publicar(log, json.dumps(history, ensure_ascii=False, indent=2).encode("utf-8"))
+    except (OSError, ValueError, RecursionError) as exc:  # GravacaoRecusada; JSON ou UTF-8 inválido; aninhamento
+        return type(exc).__name__ + ": " + str(exc)[:200]
+    return None
+
+
+def anotar_registro(record: dict, motivo: str | None) -> None:
+    """Registro não gravado: a saída (que tem o mesmo conteúdo) diz por quê e o que fazer."""
+    if motivo:
+        antes = record.get("acao_necessaria")
+        record.update(registro_nao_gravado=motivo, atualizacao_incompleta=True,
+                      acao_necessaria=(antes + "; " if antes else "") + "o destino foi alterado, mas registry/"
+                      "kit_install.json não foi gravado (ligação ou pasta no lugar dele, ou conteúdo ilegível ou "
+                      "trocado?): confira; o registro desta execução é esta saída")
 
 
 def conferir_composicao(dest: Path, orfaos: list[dict] | None = None) -> list[str]:
@@ -331,7 +363,7 @@ def main() -> int:
             record["acao_necessaria"] = ("a promoção falhou e o retorno também: o destino ficou com parte do kit "
                                          "novo. Siga cada item 'retorno incompleto' de `erros` (a versão anterior "
                                          "está em `backup_dos_substituidos`) e confira antes de repetir")
-            registrar(dest, record)  # escreveu algo que ficou no destino
+            anotar_registro(record, registrar(dest, record))  # escreveu algo que ficou no destino
         print(json.dumps(record, ensure_ascii=False, indent=2))
         return 5
     divergentes = conferir_composicao(dest, plano["orfaos"])
@@ -343,9 +375,10 @@ def main() -> int:
         atualizacao_incompleta=not verificada,
         divergentes_do_kit=divergentes,
     )
-    registrar(dest, record)
+    motivo = registrar(dest, record)
+    anotar_registro(record, motivo)
     print(json.dumps(record, ensure_ascii=False, indent=2))
-    return 0 if verificada else 3
+    return 0 if verificada and not motivo else 3
 
 
 if __name__ == "__main__":

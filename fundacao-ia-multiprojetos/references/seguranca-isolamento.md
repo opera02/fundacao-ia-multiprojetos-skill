@@ -101,7 +101,9 @@ recusa educada do modelo não prova proteção: ele pode já ter recebido o dado
   outro projeto não distingue "existe e é alheio" de "não existe".
 - Operações que copiam dados de **todos** os projetos (backup, restauração,
   exportação de eventos) exigem papel da fundação (`admin`; `audit` para exportar
-  eventos) e ganham prova negativa própria.
+  eventos) e ganham prova negativa própria. Na verificação e na restauração de uma cópia, o papel é
+  conferido na fundação viva; sem ela, na cópia autenticada pela âncora — nunca só no banco de uma
+  cópia não autenticada [Decisão; auditoria Codex Security da 1.7.6, #2].
 - A granularidade do kit nos **arquivos** é o projeto; caso tem ACL própria na memória,
   no conhecimento e nos caches. Arquivos por caso exigem pasta/ACL do SO ou serviço
   próprio — registre como limitação quando o projeto precisar disso.
@@ -117,11 +119,25 @@ recusa educada do modelo não prova proteção: ele pode já ter recebido o dado
   entradas e saídas de etapa, fontes, manifesto do componente) precisa resolver dentro da pasta
   REAL do projeto — `data/` ou `outputs/` trocadas por junção ou link para outro projeto são
   recusadas. O instalador do kit faz o mesmo com o destino, antes de escrever qualquer coisa.
+- [Decisão; auditoria Codex Security da 1.7.6, #11] **Publicação sem seguir ligação.** Nome
+  previsível numa pasta que outros escrevem pode já ser ligação para um arquivo de fora — no
+  Windows, sem privilégio, um vínculo físico (`mklink /H`). Saída e recibo de etapa e registro de
+  componentes são gravados por uma primitiva única (`assets/fundacao-kit/fundacao/core/publicacao.py`):
+  temporário de nome imprevisível na mesma pasta, criado com exclusividade, conferido, com `fsync`
+  e posto no lugar com `os.replace`; destino que é ligação ou pasta é recusado. O registro de decisões
+  (`decisoes/registro.jsonl`, acrescentado) recusa também vínculo físico e `decisoes/` fora do projeto,
+  confere que o arquivo aberto é o mesmo visto antes e depois e recusa ANTES de gravar a trilha.
+  **Limites:** no Windows, trocar uma pasta acima do destino por junção no meio da gravação (corrida)
+  ainda pode levar o arquivo, com o nome dele, para outra pasta; e quem tem a mesma conta do SO
+  escreve no arquivo de fora por conta própria — o ganho é não emprestar a gravação da fundação.
 - **Componente só do registro confiável.** O ID pedido é validado antes de montar caminho
   (travessia, caminho absoluto e separadores são recusados), o registro lido é o de
   `registry/components` e precisa declarar o mesmo `component_id`, o ponto de entrada é código da
   própria fundação (`fundacao.components`) e, se a habilitação registrou o hash dele, o código
-  continua igual — tudo antes de importar código, criar processo ou registrar despacho.
+  continua igual — tudo antes de importar código, criar processo ou registrar despacho. Pedido,
+  saída e arquivos têm teto por componente (`limits` no registro, com padrão seguro): pedido acima
+  do teto não inicia o processo, e stdout ou stderr acima dele encerra a árvore na hora
+  (`capacidades/08-ferramentas-hooks-mcp-skills-plugins.md` §1) [auditoria Codex Security da 1.7.6, #9].
 
 ## 3. Conteúdo externo é dado (injeção de prompt)
 Documento recuperado pode conter instruções maliciosas; mantenha conteúdo e autoridade
@@ -139,6 +155,24 @@ Instruções e extensões aninhadas também são conteúdo externo: `CLAUDE.md`,
 `projects/<p>/data/` ou de um projeto importado entram no contexto quando a sessão lê ou edita ali [Verificado
 2026-10-21]. O perfil do host exclui as pastas `data/` das instruções (`claudeMdExcludes`) e nega por nome as skills
 aninhadas; `scripts/instrucoes_aninhadas.py listar` as inventaria antes da leitura (capacidade 08 §6) [Decisão; 1.7.0].
+Caminho citado num registro também é dado: os validadores (`matriz.py`, `retomada.py`) só leem dentro da base — sem
+caminho absoluto, `..` nem ligação (link simbólico ou junção), só arquivo comum e com teto de bytes —, e os inventários
+do fluxo B (`instrucoes_aninhadas.py`, `sinais_compatibilidade.py`) não atravessam ligação e param nos tetos durante
+a varredura. Recusa não revela se o alvo existe [Decisão; auditoria Codex Security da 1.7.6, #7]. Dentro da base,
+os validadores também não leem o que o host nega à leitura: `state/`, `projects/<projeto>/data/` e os nomes da lista
+de negação do perfil (`.env*`, `secrets`, chaves, credenciais), comparados como o Windows compara [Decisão; revisão
+de segurança da 1.7.7, R177-VAL-01] — também no caminho inteiro, relativo a cada raiz de fundação acima dele: o
+`--base` da matriz e a pasta da RETOMADA não tiram a proteção [Decisão; segunda passada, variante do R177-VAL-01];
+nem fora de uma fundação: base, pasta da RETOMADA e destino do histórico cujo caminho real passa por nome negado
+(`.ssh`, `.codex`, `secrets`...) ou nome curto 8.3 são recusados antes de qualquer consulta dentro deles [Decisão;
+terceira passada, R177C-B-01]; acima de uma raiz de fundação vale só `.ssh` e `.codex`, que o host nega em `~/` (as
+outras regras dele são relativas à raiz: a conta "Secretaria" não é negada) [Decisão; quarta passada, R177D-1]. A
+própria RETOMADA também: nome da lista de negação (`.env`, `secrets`, `chave.pem`...) é recusado antes de ler, ela é
+lida sem seguir ligação nem vínculo físico e o `arquivar` a reescreve por troca de nome, nunca através dele [Decisão;
+quarta passada, R177D-2].
+Nem validadores nem inventários leem arquivo com vínculo físico (hard link, mais de um nome): no NTFS ele se cria sem
+privilégio e traz o conteúdo de um arquivo de fora; nos inventários, vira lacuna em `nao_lidos` [Decisão; revisão de
+segurança da 1.7.7, R177-VAL-02].
 
 ## 4. Modelo de ameaças mínimo [3.0 R11.1–R11.2]
 - **Trifeta letal:** nunca juntar dados privados + conteúdo não confiável + canal de
@@ -171,6 +205,26 @@ aninhadas; `scripts/instrucoes_aninhadas.py listar` as inventaria antes da leitu
 - **Sandbox:** no Windows nativo os comandos do Claude Code rodam **sem** sandbox; use
   WSL2 com `sandbox.failIfUnavailable: true` no perfil "dados reais"; o sandbox cobre
   comandos de shell, não ferramentas de arquivo, MCP nem hooks [Verificado 2026-10-18].
+- **Código importado (fluxo B) só pelo plano de execução** [Decisão; auditoria Codex Security da 1.7.6, #1]: rodar
+  o programa numa cópia em outra pasta não isola nada — ele herdava o ambiente (identidade, chaves), a rede e os
+  arquivos da conta, e um descendente sobrevivia ao prazo. `scripts/caracterizar.py` roda cada caso por
+  `scripts/execucao_isolada.py`, com o plano (isolamento, programa e SHA-256, comando, cópia e manifesto, entradas,
+  pasta gravável, ambiente, rede e limites) preso pelo SHA-256 que o titular aprova. O hash prende o programa, não o
+  script que ele roda: esse fica preso pelo manifesto da cópia, obrigatório com a cópia e conferido, com o programa,
+  antes e depois de cada caso (o plano lista o que o manifesto não vê e marca o código como não preso sem cópia, com
+  a pasta de trabalho fora dela, com variável que muda de onde o código é carregado ou com `{entrada}` no lugar do
+  script) [revisão de segurança da 1.7.7, R177-FB-02; segunda passada, R177B-B-01 a 03]. No WSL/Linux, o
+  bubblewrap (`--unshare-all`, `--clearenv`, sistema e `/etc` só leitura) mostra ao programa só a cópia e a
+  entrada do caso (só leitura) e a pasta do caso, com entradas e `--pasta-saida` dentro da cópia ou do projeto dela
+  [R177-FB-01]: sem rede, nada mais da pasta pessoal, da raiz da fundação, de `state/` e
+  de outros projetos, e nada montado através de ligação [Verificado 2026-10-21, bubblewrap 0.9.0 no WSL2]. Sem
+  bubblewrap (Windows nativo), recusa; `--sem-isolamento "<motivo>"` grava `isolamento: nenhum`, e o código roda
+  com toda a autoridade da conta. Nos dois modos: ambiente mínimo (sem `FUNDACAO_*`, chaves nem `PYTHON*`, salvo
+  `--variavel`), entrada padrão vazia, árvore encerrada no prazo e no fim normal (Job Object com o processo criado
+  suspenso; no Linux, grupo de processos e subreaper; no bubblewrap, o espaço de PIDs inteiro), saída com teto e
+  limites de memória, CPU, arquivo e processos. Limites: mesmo kernel e mesma conta (falha do kernel ou do
+  bubblewrap escapa); `/usr` e `/etc` legíveis; o bubblewrap dentro do sandbox do Claude Code não foi conferido — a
+  sonda decide e, se ele não abrir, o titular roda o comando no terminal do Ubuntu.
 - **Perfil de dados reais sem web** [Decisão; 1.7.0]: o perfil do WSL nega `WebFetch` e `WebSearch` (a regra sem
   padrão retira a ferramenta da sessão [Verificado 2026-10-21]); pesquisa externa roda numa sessão de laboratório,
   sem dados reais no contexto. Prova negativa: pedir uma busca na sessão de dados reais e ver a ferramenta ausente.
@@ -195,22 +249,37 @@ aninhadas; `scripts/instrucoes_aninhadas.py listar` as inventaria antes da leitu
     Nunca `(OI)(CI)` em arquivo (deixou a âncora ilegível) nem o usuário como dono (o dono troca as permissões sem
     UAC, e a sondagem só de escrita dizia "protegida"). Depois, a **conta comum** confere, sem alterar nada, dono,
     direitos de escrita e de troca de permissões, herança e a pasta acima. Copia os hooks e gera `settings.json`
-    (Windows), `settings.wsl.json` (WSL) e `settings.local.json` (identidade) pelos modelos
-    `assets/host/windows/settings.json` e `assets/host/wsl/settings.wsl.json`, guardando antes, em
+    (Windows), `settings.wsl.json` (WSL) e `settings.local.json` (identidade; com `-Projeto`, só ela e o projeto)
+    pelos modelos `assets/host/windows/settings.json` e `assets/host/wsl/settings.wsl.json`, guardando antes, em
     `.claude/anteriores/`, o que trocar; imprime a impressão digital da chave e os SHA-256 e grava o relatório em
-    `evidence/host/`.
+    `evidence/host/`. O Python que roda o ajudante e vai para os hooks do Windows vem de `-Python` ou das instalações
+    registradas do Windows e do PATH, nunca do perfil existente, que o preparo existe para refazer (um hook ali pode
+    apontar qualquer executável); antes de rodar, o script confere o python.exe: sem ligação no caminho, assinatura
+    Authenticode válida da Python Software Foundation, nenhuma escrita para grupos amplos (Todos, Usuários
+    autenticados, Usuários) no arquivo e na pasta e nenhuma troca da pasta pela de cima. Escrita dada a uma conta ou
+    grupo nominal e o SHA-256 vão para o relatório; o perfil anterior que chamava outro interpretador aparece no item
+    do `settings.json` [Decisão; auditoria Codex Security da 1.7.6, #3].
   - `assets/host/wsl/preparar-wsl.sh` (terminal do Ubuntu): `bubblewrap` e `socat`, o perfil do AppArmor do `bwrap`
     quando o Ubuntu restringe namespaces, um só bloco `[interop]` desligado no `/etc/wsl.conf` (no caso real, o bloco
     ficou repetido três vezes), o Claude Code copiado para fora da limpeza automática de versões e fixado por SHA-256
     (o hash do manifesto assinado, por `--claude-sha256`; sem ele, registrado como não conferido) e o lançador
-    `assets/host/wsl/abrir-sessao.sh`, que confere Claude Code, perfil e hooks pelo hash, a identidade, o projeto (se o
-    `settings.local.json` também o entregar, tem de ser o do lançador [revisão de segurança da 1.7.0]) e a
-    interoperabilidade desligada antes de abrir a sessão com o prompt de retomada.
+    `assets/host/wsl/abrir-sessao.sh`, que confere Claude Code, perfil, hooks e `settings.local.json` pelo hash, o
+    titular fixado, o projeto (se o `settings.local.json` também o entregar, tem de ser o do lançador [revisão de
+    segurança da 1.7.0]) e a interoperabilidade desligada antes de abrir a sessão com o prompt de retomada; variáveis
+    `FUNDACAO_*` do terminal não passam para a sessão.
+  - **O preparo do WSL só fixa o que conferiu inteiro** [Decisão; auditoria Codex Security da 1.7.6, #5: antes,
+    olhava alguns indicadores do perfil e só a existência do `settings.local.json`, e a sessão carrega esse arquivo
+    inteiro por `--setting-sources local`]. O perfil tem de ser igual ao que o modelo gera com as vagas lidas dele,
+    com cada projeto da raiz, menos o da sessão, negado: rede, negações de credenciais e de outros projetos, matcher,
+    comando, tempo e falha fechada dos hooks, permissões e chaves a mais entram na comparação. Os hooks têm de ser
+    iguais aos da skill. O `settings.local.json` só pode ter `env` com a identidade de `--titular` e o projeto: hook,
+    permissão, plugin, sandbox ou variável a mais (como `FUNDACAO_PERMITIR_TROCA_IDENTIDADE`) param o preparo. O
+    ajudante confere de novo os mesmos bytes cujo SHA-256 vai para o lançador.
   - Perfil do WSL: `state/` em `sandbox.filesystem.allowRead` **e** `allowWrite`, com a ferramenta Read ainda negada
     em `state/`. A regra `Read(./state/**)` também vira `denyRead` no sandbox: sem `allowRead`, `state/` vira um
     tmpfs vazio, e as ferramentas do kit criam ali um banco falso, com sucesso aparente; sem `allowWrite`, fica só
-    leitura. Escrita negada nos outros projetos (rode de novo o script do Windows depois de criar projeto), na área
-    do titular, na pasta da âncora e nas pastas só de leitura.
+    leitura. Escrita negada nos outros projetos (rode de novo o script do Windows depois de criar projeto; o preparo
+    do WSL acusa projeto sem a negação), na área do titular, na pasta da âncora e nas pastas só de leitura.
   - **O que exige administrador é declarado e feito pelo titular:** no Windows, o UAC só para a âncora; no Ubuntu,
     o `sudo` só para pacotes, AppArmor e `wsl.conf`. O executor roda a simulação (`-Simular`, `--simular`: só lê),
     entrega o comando pronto e, depois que o titular rodar, confere de novo em simulação ("igual" em tudo e a âncora
@@ -233,11 +302,49 @@ quem lê o arquivo diretamente vê tudo. Sessões de projeto negam leitura diret
 arquivos de outro projeto só é bloqueada por permissões do SO ou sandbox do host.
 No perfil do WSL, a raiz (pasta de trabalho) continua gravável pelos comandos do sandbox, salvo os caminhos
 negados; `registry/` e o código do kit (`fundacao/`) também. Quem protege as decisões do titular é a assinatura (§2),
-não o sandbox.
+não o sandbox. Por isso o código importado do fluxo B roda no sandbox próprio do plano de execução (§5), e não só no
+da sessão. Componente roda pelo despacho do kit com a autoridade da conta, sem sandbox: o código do legado adaptado
+no B7 vale pela revisão e pelo hash da habilitação, e a comparação do B8 (a ferramenta de execução da fundação) roda
+com plano sem isolamento [auditoria Codex Security da 1.7.6, #1].
+O preparo do host confere o que roda e o que fixa (§5), mas não é barreira contra a própria conta do titular
+[auditoria Codex Security da 1.7.6, #3 e #5]: o Python instalado só para o usuário fica numa pasta que essa conta
+grava; as vagas do perfil do WSL que só o Windows conhece (perfil do Windows, âncora, backups, pastas só de leitura,
+skills negadas) são conferidas na forma e mostradas no relatório, não na origem; e quem age com a mesma conta no
+Windows abre o Ubuntu como root (`wsl -u root`) e muda o lançador. Contra isso, só outra conta do SO.
 O `instalar_kit.py` e o `atualizar_fundacao.py` (`aplicar`, `desfazer`) conferem cada caminho, sem seguir ligação,
 antes de escrever ou retirar; como no `guarda_caminho.py`, a conferência é **consultiva**: quem puder escrever na raiz
 ao mesmo tempo e trocar um componente por junção no intervalo entre a conferência e a escrita ainda redireciona a
 operação. Rode-os sem outra sessão ou processo escrevendo na raiz [revisão de segurança da 1.7.0, VCT170-04].
+Desde a 1.7.7 o atualizador, o `instalar_kit.py` e o `instrucoes_raiz.py` também não gravam por nome previsível nem
+através de vínculo físico (hard link, que no Windows qualquer conta cria): temporário imprevisível e exclusivo com
+`os.replace` (o `registry/kit_install.json` inclusive), registro criado com exclusividade e âncora acrescentada
+conferindo o arquivo aberto (`scripts/gravacao_segura.py`, o padrão do `publicacao.py` do kit); cada uma dessas
+gravações confere de novo o destino na hora de gravar, e ligação ou vínculo físico onde gravam recusa — no `checar` e
+outra vez logo antes da promoção, depois do ensaio [revisão de segurança da 1.7.7, R177-ATU-03; segunda passada,
+R177B-B-05]. O limite acima continua: trocar uma pasta ACIMA do destino durante a gravação ainda redireciona.
+O `atualizar_fundacao.py` também não executa código da raiz antes de conferi-lo: o `checar` só lê (a cadeia de
+eventos é recalculada pelo kit da skill) e recusa executável das áreas de código que nem o kit novo nem o registro da
+instalação conhecem; o código antigo e os testes do ensaio rodam de cópias conferidas por hash, com `python -I`. O
+registro do `desfazer` só vale com a âncora em `registry/atualizacoes.jsonl` e só toca as áreas de código. As duas
+conferências se apoiam em `registry/`, que a mesma conta grava: valem contra troca acidental, arquivo plantado por
+processo de projeto e erro de operação, não contra quem já escreve na raiz como o titular [auditoria Codex Security
+da 1.7.6, #8 e #10].
+O backup e a restauração do kit prendem a conferência ao objeto do disco, não ao nome: leitura sem seguir ligação,
+identidade conferida antes de ler, preparo privado criado com exclusividade e reconferência logo antes da promoção
+(renomeação atômica); ligação no caminho da cópia ou do destino recusa. Resta o mesmo limite: quem escreve na pasta do
+destino ao mesmo tempo ainda redireciona uma escrita em andamento (a promoção é recusada, mas o escrito fica) —
+restaure numa pasta que só o titular altera [auditoria Codex Security da 1.7.6, #12]. "Pasta" aqui é a **pasta de
+cima do destino**: o destino é trocado pela pasta preparada, que no Windows herda as permissões dela, e as permissões
+próprias de um destino vazio criado antes não ficam (a resposta avisa) [revisão de segurança da 1.7.7, R177-KIT-05].
+O livro de cópias (`state/copias.jsonl`) não é âncora externa onde a sessão grava `state/`: no perfil de dados reais do
+WSL, `state/` e a pasta de backups estão em `sandbox.filesystem.allowWrite`, e quem grava as duas troca a cópia e anota
+a âncora nova no livro. A conferência pelo livro vale contra troca acidental e contra quem só alcança a pasta de
+backups, e sai com `aviso_ancora`; contra quem já grava `state/`, só o `sha256_manifesto` guardado fora (anotação,
+gerenciador de senhas, outro disco) — é ele que vale para restaurar depois de suspeita de comprometimento. Livro e
+registro dentro da própria cópia não valem [revisão de segurança da 1.7.7, R177-KIT-01]. Assinar as entradas do livro
+fica como proposta. Quem verifica e restaura é decidido pela "fundação viva" da `--raiz`: a própria cópia (igual a
+`--origem`, dentro dela ou com o manifesto de uma cópia) não vale, mas outra pasta com um banco forjado ainda passa — a
+raiz é a que o lançador entrega, e a resposta a mostra resolvida em `autorizacao.raiz` [R177-KIT-02].
 
 ## 7. Catálogo de provas negativas (use marcadores-canário fictícios)
 | Prova | Onde | Resultado esperado |

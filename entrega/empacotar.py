@@ -10,12 +10,19 @@
   dist/anteriores/<versão>/                     conjunto anterior, arquivado (nunca apagado)
 
 Ordem (auditoria F18): (1) confere a ferramenta — o skill-creator precisa ter
-`scripts/package_skill.py`; o hash dele vai para EMPACOTAMENTO.json; (2) gera os dois pacotes numa
-área de preparação dentro de `dist/`; (3) confere estrutura (SKILL.md na raiz da pasta, sem
-caminho absoluto ou `..`, sem evals/ nem bytecode no .skill), integridade dos zips e hashes;
-(4) só então arquiva o conjunto anterior em `dist/anteriores/` e promove o novo. Falha em qualquer
-passo antes da promoção deixa a distribuição anterior intacta; falha durante a promoção devolve o
-conjunto anterior ao lugar.
+`scripts/package_skill.py`, e ele e o que ele importa da mesma pasta precisam ter os SHA-256 registrados em
+FERRAMENTA_ESPERADA; divergência recusa com código 2, sem alterar nada, e a ferramenta roda de uma cópia desses
+mesmos bytes numa pasta temporária só com eles (auditoria Codex Security da 1.7.6, #6); os hashes vão para
+EMPACOTAMENTO.json; (2) gera os dois pacotes numa área de preparação dentro de `dist/`; (3) confere estrutura
+(SKILL.md na raiz da pasta, sem caminho absoluto ou `..`, sem evals/ nem bytecode no .skill), integridade dos zips
+e, com o `verificar_pacote.py` ao lado (a mesma regra da CI pública), que cada pacote é exatamente a árvore — os
+mesmos membros, byte a byte, nenhum a mais ou a menos — ANTES de gravar o SHA256SUMS.txt (#6); (4) só então
+arquiva o conjunto anterior em `dist/anteriores/` e promove o novo. Falha em qualquer passo antes da promoção deixa
+a distribuição anterior intacta; falha durante a promoção devolve o conjunto anterior ao lugar.
+Lista dos pacotes (revisão de segurança da 1.7.7, R177-ATU-04): `entrega/HISTORICO-PACOTES-SHA256.txt`, ao lado de
+`dist/`, só cresce. Antes da promoção, versão que já tem ali pacote com outro conteúdo recusa (suba a versão); depois
+dela, os dois pacotes novos são acrescentados (`<sha256>  <versão>/<arquivo>`) — a liberação faz o commit da lista com
+o `dist/`. O `verificar_pacote.py` recusa pacote de `dist/anteriores/` fora da lista.
 
 Antes de tudo, a árvore da skill é percorrida SEM seguir ligações: um link simbólico ou uma junção em
 qualquer ponto (a própria pasta da skill inclusive) recusa o empacotamento, porque o zip seguiria a
@@ -23,12 +30,13 @@ ligação e publicaria o conteúdo do alvo, por exemplo um arquivo do computador
 (varredura da 1.4.5, #1). O zip completo leva só os arquivos comuns dessa listagem.
 
 Uso: python empacotar.py --skill-creator <pasta do skill-creator> [--dist <pasta>]
-Códigos: 0 promovido · 1 falha (anterior preservado) · 2 ferramenta ausente ou uso incorreto.
+Códigos: 0 promovido · 1 falha (anterior preservado) · 2 ferramenta ausente, divergente da registrada ou uso incorreto.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -36,6 +44,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,10 +54,48 @@ SKILL = RAIZ / "fundacao-ia-multiprojetos"
 DIST = RAIZ / "entrega" / "dist"
 NOME = "fundacao-ia-multiprojetos"
 CONJUNTO = (f"{NOME}.skill", f"{NOME}-completo.zip", "SHA256SUMS.txt", "EMPACOTAMENTO.json")
+# Ferramenta registrada (auditoria Codex Security da 1.7.6, #6): o package_skill.py do skill-creator e o que ele
+# importa da mesma pasta, os mesmos desde a 1.5.0 em todas as cópias do plugin oficial. Mudou? Confira a diferença e,
+# se for legítima, registre os hashes novos aqui e reveja a regra de membros do .skill no verificar_pacote.py (o
+# titular decide).
+FERRAMENTA_ESPERADA = {
+    "scripts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scripts/package_skill.py": "1a33059b0db1ef73375d46d513e5ea81369d2e8838c970597b0d52ddef8d1c0f",
+    "scripts/quick_validate.py": "67cf5703402013936c8fb75ad6a1afecd8841d45cc5e606b634eb05825fde365",
+}
+
+
+def carregar_verificador():
+    """O `verificar_pacote.py` ao lado (a regra de membros da CI pública), carregado pelo caminho: vale como script, em
+    teste e de qualquer pasta de trabalho."""
+    spec = importlib.util.spec_from_file_location("verificar_pacote", Path(__file__).resolve().with_name(
+        "verificar_pacote.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+VERIFICADOR = carregar_verificador()
 
 
 def sha256(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def ler_ferramenta(creator: Path) -> tuple[dict[str, bytes], list[dict]]:
+    """Bytes dos arquivos registrados em FERRAMENTA_ESPERADA, lidos uma vez, e as divergências (ausente ou outro hash).
+    O que roda é uma cópia destes mesmos bytes: trocar o arquivo depois da conferência não muda o que roda."""
+    lidos, divergentes = {}, []
+    for rel, esperado in sorted(FERRAMENTA_ESPERADA.items()):
+        try:
+            dados = (creator / rel).read_bytes()
+        except OSError as e:
+            divergentes.append({"arquivo": rel, "esperado": esperado, "encontrado": f"ausente ({type(e).__name__})"})
+            continue
+        if hashlib.sha256(dados).hexdigest() != esperado:
+            divergentes.append({"arquivo": rel, "esperado": esperado, "encontrado": hashlib.sha256(dados).hexdigest()})
+        lidos[rel] = dados
+    return lidos, divergentes
 
 
 def e_ligacao(p: Path) -> bool:
@@ -124,6 +171,16 @@ def conferir_pacote(pacote: Path, *, com_evals: bool) -> list[str]:
     return problemas
 
 
+def acrescentar_ao_historico(lista: Path, versao: str, hashes: dict[str, str]) -> None:
+    """Acrescenta à lista dos pacotes (só cresce) as linhas `<sha256>  <versão>/<arquivo>` que ainda não estão nela."""
+    texto = lista.read_text(encoding="utf-8") if lista.is_file() else ""
+    novas = [f"{h}  {versao}/{n}" for n, h in hashes.items() if f"{h}  {versao}/{n}" not in
+             VERIFICADOR.linhas_do_historico(texto)]
+    if novas:
+        with open(lista, "a", encoding="utf-8", newline="\n") as f:
+            f.write(("\n" if texto and not texto.endswith("\n") else "") + "".join(linha + "\n" for linha in novas))
+
+
 def promover(dist: Path, preparo: Path, versao_anterior: str) -> Path | None:
     """Arquiva o conjunto anterior e põe o novo no lugar; se algo falhar, devolve o anterior."""
     existentes = [dist / n for n in CONJUNTO if (dist / n).exists()]
@@ -165,18 +222,33 @@ def main() -> int:
         print(json.dumps({"erro": f"skill-creator sem scripts/package_skill.py em {creator}: variante não suportada "
                                   "por este empacotador; nada foi alterado"}, ensure_ascii=False), file=sys.stderr)
         return 2
-    validador = creator / "scripts" / "quick_validate.py"
-    ferramenta = {"skill_creator": str(creator), "package_skill_sha256": sha256(pkg),
-                  "quick_validate_sha256": sha256(validador) if validador.is_file() else None}
+    lida, divergentes = ler_ferramenta(creator)
+    if divergentes:
+        print(json.dumps({"erro": "a ferramenta de empacotamento não é a registrada em FERRAMENTA_ESPERADA "
+                                  "(empacotar.py); nada foi alterado. Confira a diferença e, se a mudança for "
+                                  "legítima, registre os hashes novos (o titular decide)",
+                          "skill_creator": str(creator), "divergentes": divergentes},
+                         ensure_ascii=False), file=sys.stderr)
+        return 2
+    ferramenta = {"skill_creator": str(creator),
+                  "package_skill_sha256": FERRAMENTA_ESPERADA.get("scripts/package_skill.py"),
+                  "quick_validate_sha256": FERRAMENTA_ESPERADA.get("scripts/quick_validate.py"),
+                  "arquivos_conferidos": dict(sorted(FERRAMENTA_ESPERADA.items()))}
     dist.mkdir(parents=True, exist_ok=True)
     preparo = dist / f".preparo-{datetime.now(timezone.utc):%Y%m%dT%H%M%S%fZ}"
     preparo.mkdir()
     try:
         arquivos = arquivos_da_skill(SKILL)  # antes do package_skill, que também seguiria as ligações (#1)
-        # UTF-8 no processo filho: o package_skill imprime emojis, e o console cp1252 do Windows quebraria.
-        r = subprocess.run([sys.executable, "-B", "-m", "scripts.package_skill", str(SKILL), str(preparo)],
-                           cwd=str(creator), capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"})
+        with tempfile.TemporaryDirectory(prefix="empacotar-ferramenta-") as copia:
+            for rel, dados in lida.items():  # só os arquivos registrados, com os bytes conferidos (#6)
+                (Path(copia) / rel).parent.mkdir(parents=True, exist_ok=True)
+                (Path(copia) / rel).write_bytes(dados)
+            # A pasta de trabalho é a cópia: o `-m` a põe no começo do sys.path, e lá só há os arquivos conferidos;
+            # `-E` ignora PYTHONPATH e afins. UTF-8 no filho (`-X utf8`): o package_skill imprime emojis, e o console
+            # cp1252 do Windows quebraria.
+            r = subprocess.run([sys.executable, "-E", "-X", "utf8", "-B", "-m", "scripts.package_skill", str(SKILL),
+                                str(preparo)], cwd=copia, capture_output=True, text=True, encoding="utf-8",
+                               errors="replace")
         print((r.stdout or "").strip()[-800:])
         if r.returncode != 0:
             print((r.stderr or "")[-800:], file=sys.stderr)
@@ -191,6 +263,11 @@ def main() -> int:
         problemas = conferir_pacote(completo, com_evals=(SKILL / "evals").is_dir())
         if problemas:
             raise RuntimeError("; ".join(problemas))
+        for pacote, e_completo in ((skill_pkg, False), (completo, True)):
+            # Exatamente a árvore, antes de o SHA256SUMS.txt existir: a mesma regra da CI pública (Codex Security, #6).
+            problemas = VERIFICADOR.conferir_contra_a_arvore(pacote, SKILL, completo=e_completo)
+            if problemas:
+                raise RuntimeError(f"{pacote.name} não é a árvore da skill: " + "; ".join(problemas[:10]))
         hashes = {p.name: sha256(p) for p in (skill_pkg, completo)}
         (preparo / "SHA256SUMS.txt").write_text("".join(f"{h}  {n}\n" for n, h in hashes.items()),
                                                 encoding="utf-8", newline="\n")
@@ -202,6 +279,11 @@ def main() -> int:
         with zipfile.ZipFile(completo) as z:
             n_completo = len(z.namelist())
         versao = versao_da_skill((SKILL / "SKILL.md").read_text(encoding="utf-8"))
+        historico, _ausente = VERIFICADOR.ler_historico(dist.parent / VERIFICADOR.HISTORICO)  # ausente: vazia
+        outro = [n for n, h in hashes.items() if historico.get(f"{versao}/{n}") not in (None, h)]
+        if outro:  # a lista só cresce: o mesmo pacote de uma versão não muda de conteúdo (R177-ATU-04)
+            raise RuntimeError(f"a versão {versao} já tem pacote com outro conteúdo em {VERIFICADOR.HISTORICO} ("
+                               f"{', '.join(outro)}): suba a versão no SKILL.md antes de empacotar")
         (preparo / "EMPACOTAMENTO.json").write_text(json.dumps({
             "versao": versao, "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "ferramenta": ferramenta, "arquivos": {skill_pkg.name: n_skill, completo.name: n_completo},
@@ -221,6 +303,14 @@ def main() -> int:
         return 1
     finally:
         shutil.rmtree(preparo, ignore_errors=True)
+    try:
+        acrescentar_ao_historico(dist.parent / VERIFICADOR.HISTORICO, versao, hashes)
+    except OSError as exc:
+        linhas = [f"{h}  {versao}/{n}" for n, h in hashes.items()]
+        print(json.dumps({"erro": f"dist/ promovido, mas {VERIFICADOR.HISTORICO} não foi atualizada ({exc}): "
+                                  "acrescente estas linhas a ela", "linhas": linhas}, ensure_ascii=False),
+              file=sys.stderr)
+        return 1
     for n, h in hashes.items():
         print(f"{h}  {n}")
     print(f"{NOME}.skill: {n_skill} arquivos; {NOME}-completo.zip: {n_completo} arquivos; versão {versao}")

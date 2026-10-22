@@ -8,8 +8,76 @@
 > `transferencia/`) são os originais, byte a byte. As citações a `auditoria/…` e ao workspace neste README
 > referem-se a arquivos que só existem no projeto original.
 
-Data: 18–21/10/2026 · Versão da skill: **1.7.6** (kit de referência 1.7.4) · Licença: **MIT** desde a 1.4.3 ·
+Data: 18–22/10/2026 · Versão da skill: **1.7.7** (kit de referência 1.7.7) · Licença: **MIT** desde a 1.4.3 ·
 Ambiente de criação e teste: Windows 11, Python 3.12.10, SQLite 3.49.1 (FTS5), Claude Code 2.1.302 (registrado em 18/10).
+
+> **1.7.7 (22/10/2026):** a pedido do titular ("Iniciar a versão 1.7.7 no projeto fundacao-de-ia. Além disso,
+> analisar a auditoria de segurança anexa, validando os achados e se forem procedentes, implementar os patches de
+> correção necessários.", "implemente melhorias seguindo o projeto harness2 do google" e "analisa, também, o projeto
+> everything-claude-code [...] buscando elementos no projeto que pode ser implementado no nosso projeto"). Corrige os
+> **12 achados** da auditoria Codex Security sobre a 1.7.6 (commit público `56976cd`; guardada em
+> `entrega/auditoria/SCAN-SEGURANCA-1.7.6/`), todos procedentes depois de conferidos no código, cada um com teste que
+> falhava antes e passa depois:
+> - **#1 (alto, confirmado):** o fluxo B rodava o código importado com toda a autoridade da conta, embora o portão 1
+>   dissesse "cópia isolada". Agora todo código importado passa por `scripts/execucao_isolada.py`, com um plano preso
+>   por SHA-256 que o aceite cita (programa, comando, cópia e o manifesto dela — obrigatório —, entradas, pasta
+>   gravável, ambiente mínimo, rede e limites). No Linux/WSL o bubblewrap isola: sem rede, sem a pasta pessoal, a raiz,
+>   `state/` ou outros projetos; sem ele, a execução é recusada, salvo `--sem-isolamento` com motivo, que a folha de
+>   decisões diz em letras claras. Nos dois modos a árvore de processos morre no prazo, no fim e se o lançador morrer.
+> - **#2 e #12:** quem restaura é decidido pela fundação viva ou, sem ela, pela cópia autenticada pela âncora; sem
+>   âncora, só com `--aceitar-copia-sem-ancora "<motivo>"`. Backup e restauração num preparo privado, presos à
+>   identidade dos arquivos e conferidos de novo antes da promoção atômica.
+> - **#3 e #5:** o Python do preparo do Windows nunca vem do perfil de destino e é conferido (assinatura da Python
+>   Software Foundation, sem ligação, sem escrita para grupos amplos). O preparo do WSL compara o perfil inteiro com o
+>   que o modelo gera e fixa no lançador o hash do `settings.local.json` e o titular (opção nova `--titular`).
+> - **#4:** a marca da troca interrompida do instalador guarda só identificadores, e a recuperação desfaz a troca.
+> - **#6:** a CI pública confere os pacotes de `dist/` e a transferência contra a árvore do mesmo commit, e os pacotes
+>   antigos contra `entrega/HISTORICO-PACOTES-SHA256.txt`, que só cresce; o empacotador só roda a ferramenta do
+>   skill-creator com os hashes registrados.
+> - **#7:** matriz e RETOMADA leem só dentro da base (sem caminho absoluto, `..`, ligação, vínculo físico nem caminho
+>   protegido); os inventários do B1 e do B3 não atravessam ligação e param nos tetos durante a varredura.
+> - **#8 e #10:** o `checar` do atualizador não importa nada da raiz (inventário exato; código e testes do ensaio rodam
+>   de cópias conferidas, com `python -I`); o `desfazer` só aceita registro ancorado em `registry/atualizacoes.jsonl` e
+>   só mexe nas áreas de código.
+> - **#9 e #11:** no kit, saída de subprocesso e componentes com teto (a árvore é encerrada ao estourar) e uma
+>   publicação segura única (temporário imprevisível e exclusivo; registro de decisões sem seguir ligação nem vínculo
+>   físico).
+>
+> Também corrige os **dois defeitos anotados na 1.7.6**: `.gitattributes` na árvore de desenvolvimento (um clone no
+> Windows deixava os `.sh` em CRLF) e o `aplicar` com o kit igual regenera o `AGENTS.md` da raiz (a ferramenta de
+> liberação passa a chamá-lo também nesse caso). Na validação apareceram mais dois problemas, já corrigidos: a cadeia
+> de eventos adulterada não bloqueava a atualização, e o pacote ia sem o aviso MIT do vibe-coding-toolkit, de quem o
+> modelo de revisão de segurança foi traduzido (agora em `AVISOS-DE-TERCEIROS.md`).
+>
+> **Melhorias**, como métodos adaptados, com texto e código próprios. Do **harness2** (Google Research,
+> arXiv:2610.14224, Apache-2.0): o gabarito das avaliações fica fora do alcance do avaliado; há livro-caixa das rodadas
+> reais; ferramentas do ensaio contrastivo com notas cegas e o caso de teste E13 (rodar tem custo e fica com o titular);
+> registro por versão do efeito de cada mudança, com lições e evidência (`entrega/licoes/`); avisos de terceiros; e teto
+> que só desce para o texto sempre carregado. Do **everything-claude-code**: o inventário do host mostra o que os
+> plugins carregam (hooks, MCP e skills) e acusa matcher defeituoso; as avaliações de segurança só passam em todas as
+> repetições (pass^k); há modelo de passagem do trabalho delegado; e a memória automática do host está descrita.
+>
+> **Revisão de segurança independente** (outro contexto do mesmo provedor; `entrega/auditoria/REVISAO-SEGURANCA-1.7.7.md`,
+> diferença `f1b7a19..cd8cae1`), em três passadas e uma conferência final. A primeira (cinco revisores por área) achou
+> resíduos nas correções — entre eles, o ensaio do `aplicar` que parava por uma regressão falsa na liberação real, o
+> plano do fluxo B que prendia o interpretador e não o script e oráculos de conteúdo na matriz e na RETOMADA; a segunda,
+> variantes do que a primeira corrigiu (manifesto com política nula, código de fora da cópia sem ser citado, cópia
+> trocada entre os casos); a terceira, pontos de baixa severidade (`env PYTHONPATH=...` no plano, pasta de segredo
+> fora da fundação, inventário derrubado por JSON aninhado ou de tipo inesperado, pasta `mcp/` sem `__init__` na raiz,
+> promoção interrompida sem registro ancorado, LEIA-ME com comando, lastro e fixtures das avaliações); e a conferência
+> final, duas regressões de severidade média nas correções da terceira (a matriz recusava a fundação numa conta como
+> "Secretaria", e o `verificar` do inventário ficava cego com uma parte malformada) e quatro pontos baixos. Todos
+> corrigidos antes da liberação, com teste que falhava antes e passa depois. Ficam como limites declarados os da mesma
+> conta do SO, a assinatura do Python conferida pelo nome (fixar o thumbprint é decisão do titular), o Python só da
+> Microsoft Store, que o preparo do Windows recusa, e a RETOMADA dentro de área protegida, que revela só existência e
+> tamanho (correção na próxima versão).
+>
+> **Para o titular:** refazer o preparo do host nos dois lados (o comando do WSL ganhou `--titular`); guardar fora do
+> backup o `sha256_manifesto` de cada cópia, porque sem a fundação viva é ele que autoriza a restauração; e o B6 no WSL
+> passa a exigir o plano e o manifesto da cópia. Kit 1.7.7. Resultados no Windows deste PC, no commit `cd8cae1`: kit
+> 418 OK (5 pulados), scripts 445 OK (4 pulados: os 2 de antes e 2 com o bubblewrap de verdade, que passaram no WSL2
+> com o mesmo código, junto dos 49 testes do plano de execução), entrega 254 OK (2 pulados), ferramentas de liberação
+> 38 OK; cenários 16/16 (113/113); 420 referências conferidas, 0 ausentes.
 
 > **1.7.6 (21/10/2026):** trata, no texto do fluxo B e no cenário executável dele, a ressalva da nova execução da
 > E10, sem nova execução da E10. O executor tinha comparado o legado com o golden pela fundação com um script
@@ -459,6 +527,7 @@ O que sustenta cada afirmação:
 | `transferencia/fundacao-ia-multiprojetos-1.4.5-para-revisao.md` | Os 123 arquivos do pacote, o instalador e o LEIA-ME em texto UTF-8, com o SHA-256 de cada um, para revisão por IA de chat. Não serve para instalar (`0d38243a…4609`) |
 | `transferencia/…-1.4.2*`, `…-1.4.1*` e `…-1.4.0.zip` | Anteriores: 1.4.2 (zip `9968bceb…9fca`; claude.ai `6b61af72…d389`; revisão `18fc0355…f69f`), 1.4.1 (`e3b44216…7821`; claude.ai `bce7b510…5f29`) e 1.4.0 (`c5b4b740…8ed6`) |
 | `instalar_skill.py` · `empacotar.py` · `gerar_arvore.py` | Instalar/atualizar/verificar/remover · gerar os pacotes · gerar a árvore |
+| `verificar_pacote.py` · `licoes.py` | Conferir `dist/` e a transferência contra a árvore, membro a membro, e a lista dos pacotes liberados, que só cresce (a CI pública usa `--exigir-igual-a-arvore --exigir-transferencia --lista-so-cresce --exigir-transferencia-fixada`; 1.7.7) · validar as mudanças de cada versão e gerar o índice das lições (`licoes/`; 1.7.7) |
 
 ## 2. Instalação
 
@@ -505,8 +574,10 @@ sem alterar nada. A troca é feita por renomeação: a cópia nova é preparada 
 conferida e só então posta no lugar — a anterior vai para `~/.agents/skills-anteriores/` e a preparada
 entra no lugar dela (duas renomeações, com uma marca entre elas). Uma falha antes da troca não altera
 nada; uma exceção na troca ou na ligação devolve a versão anterior e descarta a cópia preparada; se o
-processo cair entre as duas renomeações, o próximo `instalar` ou `atualizar` conclui a troca com a cópia
-preparada, e `verificar` avisa enquanto isso não acontecer (1.4.3, AF-02; se a marca da troca estiver ilegível,
+processo cair entre as duas renomeações, o próximo `instalar` ou `atualizar` desfaz a troca — a anterior volta ao
+lugar, a cópia preparada é descartada — e instala o pacote do comando; a marca guarda só identificadores e é
+conferida antes de qualquer movimento (auditoria Codex Security da 1.7.6, #4); `verificar` avisa enquanto isso não
+acontecer (1.4.3, AF-02; se a marca da troca estiver ilegível,
 as cópias preparadas que sobrarem em `skills-preparo/` são removidas e relatadas — 1.4.4, CF-04). **Neste computador a
 instalação já foi feita** (1.3.0 às 22h41 de 18/10/2026, atualizada até a 1.4.5 às 22h16 de 19/10; ver
 `ambiente/instalacao-2026-10-18.json`): o primeiro comando agora recusaria, e o segundo serve para

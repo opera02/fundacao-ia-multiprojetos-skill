@@ -7,7 +7,8 @@ os pacotes das dependências declaradas (auditoria A08; varredura #25).
 executa-o em subprocesso com timeout real (no Windows não é possível
 interromper com segurança uma função no mesmo processo). O prazo vale para a
 árvore de processos: descendentes do componente são encerrados no prazo e
-quando ele termina (auditoria A06).
+quando ele termina (auditoria A06). Pedido, saída e arquivos têm teto por componente
+(`limits` no registro, padrão em `core/limites.py`; auditoria Codex 1.7.6, #9).
 """
 
 from __future__ import annotations
@@ -21,17 +22,19 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ..adapters.cli import _processo
 from . import events
 from .auth import Policy, Principal, resource_project
 from .canon import sha256_file
 from .contracts import (
-    SCHEMAS, ComponentDisabled, DependencyUnavailable, FundacaoError, NotFound, PathEscape,
+    SCHEMAS, ComponentDisabled, DependencyUnavailable, FundacaoError, LimiteExcedido, NotFound, PathEscape,
     ValidationError, require_fields,
 )
 from .db import transaction, utcnow
+from .limites import limites_do_componente
 from .paths import contained, validate_id
+from .processo import executar
 from .projects import project_root
+from .publicacao import publicar
 
 REGISTRY_FIELDS = (
     "schema_version", "component_id", "version", "kind", "enabled", "entrypoint",
@@ -60,6 +63,7 @@ def validate_entry(entry: dict) -> dict:
         raise ValidationError("allowed_projects deve ser lista")
     if not isinstance(entry.get("timeout_seconds"), int) or entry["timeout_seconds"] <= 0:
         raise ValidationError("timeout_seconds deve ser inteiro positivo")
+    limites_do_componente(entry)  # `limits` com nome desconhecido ou valor inválido: registro inválido
     return entry
 
 
@@ -195,9 +199,8 @@ def set_enabled(root: Path, con: sqlite3.Connection, admin: Principal, component
             enqueue_protected(con, {
                 "entity_type": "component_disable", "entity_id": f"componente:{component_id}",
                 "component_id": component_id, "decided_by": admin.principal_id, "decided_at": utcnow()})
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(entry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    # Temporário imprevisível e exclusivo: o `<id>.tmp` previsível podia ser ligação plantada (Codex 1.7.6, #11).
+    publicar(path, (json.dumps(entry, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
     if not enabled:
         flush_outbox(con, Path(root) / "state" / "retiradas.jsonl")
     avisos = host_warnings(root, entry)
@@ -289,7 +292,13 @@ def dispatch(root: Path, con: sqlite3.Connection, principal: Principal, project_
         _record(con, entry, project_id, principal.principal_id, "denied_dependency")
         raise DependencyUnavailable("dependência ausente", component_id=component_id, missing=missing)
     module, func = entry["entrypoint"].split(":", 1)
-    request = {"project_id": project_id, "project_dir": str(proj_dir), "payload": payload}
+    limites = limites_do_componente(entry)  # vão no pedido: o componente que lê arquivos recusa antes de ler (#9)
+    pedido = json.dumps({"project_id": project_id, "project_dir": str(proj_dir), "payload": payload,
+                         "limits": limites}).encode("utf-8")
+    if len(pedido) > limites["request_bytes"]:
+        _record(con, entry, project_id, principal.principal_id, "denied_limit")
+        raise LimiteExcedido("pedido acima do teto do componente; nada foi iniciado", component_id=component_id,
+                             bytes=len(pedido), teto_bytes=limites["request_bytes"])
     # Ambiente mínimo: sem chaves nem tokens; só o que bibliotecas comuns exigem para rodar
     # (perfil, temporários e localidade — no Windows, torch/transformers precisam de USERNAME/USERPROFILE).
     env = {k: v for k, v in os.environ.items() if k in (
@@ -303,20 +312,27 @@ def dispatch(root: Path, con: sqlite3.Connection, principal: Principal, project_
     env["PYTHONIOENCODING"] = "utf-8"
     _record(con, entry, project_id, principal.principal_id, "executed")
     try:
-        # O executor de árvore dos adaptadores (adapters/cli.py): o prazo vale para o componente E para
-        # os descendentes (Job Object no Windows; grupo de processos nos demais), e o que o componente
-        # deixar rodando ao terminar também é encerrado (auditoria A06). Limites documentados lá.
-        proc = _processo([sys.executable, "-m", "fundacao.core.runner", module, func],
-                         json.dumps(request).encode("utf-8"), entry["timeout_seconds"],
-                         str(Path(root).resolve()), env)
+        # O executor de árvore (core/processo.py): o prazo vale para o componente E para os descendentes (Job
+        # Object no Windows; grupo de processos nos demais), o que o componente deixar rodando ao terminar também
+        # é encerrado (auditoria A06), e stdout ou stderr acima do teto encerra a árvore na hora (#9).
+        proc = executar([sys.executable, "-m", "fundacao.core.runner", module, func], pedido,
+                        entry["timeout_seconds"], str(Path(root).resolve()), env,
+                        tetos=(limites["stdout_bytes"], limites["stderr_bytes"]))
     except subprocess.TimeoutExpired:
         events.emit(con, "component_timeout", project_id=project_id, subject=principal.principal_id,
                     payload={"component_id": component_id})
         raise FundacaoError("tempo limite do componente excedido", component_id=component_id) from None
+    except LimiteExcedido as exc:
+        events.emit(con, "component_limit", project_id=project_id, subject=principal.principal_id,
+                    payload={"component_id": component_id, **exc.details})
+        raise LimiteExcedido(str(exc), component_id=component_id, **exc.details) from None
     if proc.returncode != 0:
         raise FundacaoError("componente falhou", component_id=component_id,
                             stderr=proc.stderr.strip()[-400:])
-    result = json.loads(proc.stdout)
+    try:
+        result = json.loads(proc.stdout)  # o resultado decodificado vem do stdout, já limitado pelo teto
+    except (ValueError, RecursionError):  # JSON ilegível ou aninhado demais: falha do componente
+        raise FundacaoError("resultado do componente ilegível (JSON)", component_id=component_id) from None
     events.emit(con, "component_executed", project_id=project_id, subject=principal.principal_id,
                 payload={"component_id": component_id, "version": entry["version"]})
     return {"component_id": component_id, "version": entry["version"], "result": result}

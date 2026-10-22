@@ -31,7 +31,7 @@ Cada achado: afirmação → registro concreto que a sustenta → nível de evid
 3.
 
 ## 5. Hipóteses e teste decisivo
-| Hipótese | Por que importa | Teste decisivo (em cópia isolada) |
+| Hipótese | Por que importa | Teste decisivo (roda no B6, pelo plano de execução) |
 |---|---|---|
 
 ## 6. Lacunas e bloqueios

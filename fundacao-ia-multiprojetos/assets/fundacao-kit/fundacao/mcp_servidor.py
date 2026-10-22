@@ -5,7 +5,9 @@ camada de autorização da fundação.
   ou pela configuração do host), nunca de argumento de ferramenta.
 - Cada chamada autoriza ANTES de ler (negativa registrada como `access_denied`); a
   resposta de recurso alheio não traz conteúdo.
-- Sem o pacote `mcp` (SDK Python 2.x) o servidor não inicia: bloqueio explícito.
+- Sem o pacote `mcp` (SDK Python 2.x) o servidor não inicia: bloqueio explícito. Uma pasta `mcp/` sem `__init__`
+  no caminho de importação (a raiz, no uso normal) não é o SDK: conta como ausente e não é importada (revisão de
+  segurança da 1.7.7, terceira passada, R177C-B-03).
 
 Uso (transporte stdio):  python -m fundacao.mcp_servidor --raiz <raiz-da-fundacao>
 Ferramentas: listar_projetos(), listar_documentos(projeto), buscar(projeto, consulta).
@@ -14,6 +16,7 @@ Ferramentas: listar_projetos(), listar_documentos(projeto), buscar(projeto, cons
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -21,7 +24,29 @@ from pathlib import Path
 from . import KIT_VERSION
 
 
+def _pacote_de_namespace(spec) -> bool:
+    """Pacote de namespace (pasta sem `__init__`): sem origem (ou com a marca "namespace" de versões antigas do
+    Python), sem carregador ou com o carregador de namespace, que o Python põe ao carregá-lo."""
+    return spec.origin in (None, "namespace") or spec.loader is None \
+        or type(spec.loader).__name__ in ("NamespaceLoader", "_NamespaceLoader")
+
+
+def sdk_do_mcp_instalado() -> bool:
+    """O SDK do MCP está instalado como pacote comum? Sem pacote comum `mcp` no caminho de importação, o Python monta
+    um pacote de namespace com a pasta `mcp/` que achar (a da raiz, no uso normal, com ela como pasta atual), e
+    importar `mcp.server` rodaria o `server/__init__.py` dela: namespace conta como SDK ausente. A consulta não executa
+    nada (`find_spec` de nome de primeiro nível só lê as pastas do caminho); já carregado sem `__spec__` (o dublê dos
+    testes, posto pelo próprio processo), vale o que está carregado (R177C-B-03)."""
+    try:
+        spec = importlib.util.find_spec("mcp")
+    except ValueError:  # em sys.modules sem __spec__: nada vem do disco
+        return True
+    return spec is not None and not _pacote_de_namespace(spec)
+
+
 def criar_servidor(raiz: Path):
+    if not sdk_do_mcp_instalado():  # o `main` mostra "pacote mcp ausente"; nada da pasta `mcp/` roda (R177C-B-03)
+        raise ImportError("SDK do MCP ausente: nenhum pacote comum mcp no caminho de importação")
     from mcp.server import MCPServer
     from mcp.server.mcpserver.exceptions import ToolError
 

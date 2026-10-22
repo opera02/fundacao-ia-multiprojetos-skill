@@ -26,6 +26,11 @@ quando só multiplica mensagens, tempo e consumo.
    (registrar ausência, nunca preencher com narrativa plausível) [Livro p48]. Leva também a
    lista de **armadilhas já conhecidas**, copiada na íntegra em cada instrução (cada subagente só
    vê a sua) e acrescida ao longo do trabalho [análise do vibe-coding-toolkit, 21/10/2026].
+   O formato de entrega é a **passagem** (`assets/templates/PASSAGEM.md`): arquivos tocados com caminho real e
+   SHA-256, o que foi real e o que foi simulado, o que não foi feito e as armadilhas novas, que entram na lista
+   acima. O coordenador confere os arquivos e os hashes antes de registrar [Decisão; everything-claude-code,
+   proposta 5 — ideia adaptada; caso: na nova execução da E10, a comparação usou um script temporário da sessão e a
+   RETOMADA citou outro arquivo].
 2. **Papéis didáticos:** extrator (fatos explícitos + referência) · conferente
    (entradas ausentes + motivo) · consolidador (achados compatíveis, mantendo origem) ·
    revisor (confere o relatório **nas fontes originais**, não só no resumo) [Livro p48].
@@ -65,6 +70,7 @@ Regras:
 | Paralelismo | horários/eventos de início e fim com sobreposição real (dois arquivos no fim não provam) [Livro p50] |
 | Duas tarefas que gravam no mesmo banco ou arquivo | rodam em série (ou com recurso isolado), e o registro mostra a ordem |
 | Saída incompleta / executor indisponível | consolidado não esconde a falta |
+| Passagem que cita arquivo ausente, da pasta temporária da sessão ou com SHA-256 diferente do disco | o coordenador não registra e devolve ao executor |
 | Fonte de outro projeto | negativa antes da leitura |
 | Gabarito do teste | fica fora do contexto do revisor |
 | Utilidade | comparação com versão sequencial equivalente (tempo, tentativas, defeitos); sem ganho → fluxo simples [Livro p50] |

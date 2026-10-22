@@ -41,7 +41,11 @@ repetir efeitos já confirmados.
    gravada sem confirmação só é reconciliada se o banco reservou a saída daquela geração
    da posse e os bytes conferem; o recibo na pasta do projeto é registro, não prova. Saída
    concluída que sumiu ou mudou: a etapa e as derivadas são refeitas [auditoria sobre a
-   1.4.1, A04; varredura da 1.4.5, #14].
+   1.4.1, A04; varredura da 1.4.5, #14]. Saída e recibo vão para o lugar por um temporário
+   de nome imprevisível na mesma pasta, criado com exclusividade e trocado com `os.replace`:
+   ligação plantada num nome previsível da pasta do projeto (link simbólico, junção ou vínculo
+   físico) não recebe a gravação, e destino que virou ligação ou pasta é recusado [Decisão;
+   auditoria Codex Security da 1.7.6, #11].
 6. **Limites:** tentativas por etapa, prazo de posse (*lease*) para detectar
    trabalhador abandonado, orçamento de chamadas e de tempo; erros permanentes
    (login ausente, entrada inválida, permissão negada) não são repetidos [Livro p47].
@@ -61,6 +65,7 @@ repetir efeitos já confirmados.
 | Interrupção após extração (estado confirmado) | retomada pelo mesmo `run_id` não reexecuta a extração |
 | Saída gravada sem confirmação | reconciliação pela reserva no banco e pelos bytes, sem reexecutar; recibo forjado não confirma |
 | Saída concluída alterada ou removida | etapa e derivadas refeitas |
+| Ligação plantada na pasta de saídas | a publicação não grava através dela; destino que é ligação é recusado |
 | Fonte alterada | invalida só as etapas derivadas daquela entrada |
 | Dependência falhou | etapas dependentes não iniciam |
 | Erro transitório | repete até o limite e para |
@@ -86,4 +91,5 @@ desconhecidos para testar interrupção (use modo de teste) [Livro p44–47].
 `fundacao/core/tasks.py` (`Coordinator`, `StepDef`, `Budget`, `NeedsHuman`,
 `TransientError`, `PermanentError`, modo `interrupt=(etapa,'before_commit'|'after_commit')`).
 Testes: `tests/test_orquestracao.py` (13 casos) e `tests/test_auditoria_1_5_0_execucao.py`
-(saídas conferidas, posse, prazo, autorização na transação).
+(saídas conferidas, posse, prazo, autorização na transação); publicação sem seguir ligação:
+`tests/test_auditoria_1_7_6_publicacao.py`.

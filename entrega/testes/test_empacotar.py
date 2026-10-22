@@ -49,6 +49,11 @@ class TestF18Empacotamento(unittest.TestCase):
         (self.creator / "scripts" / "package_skill.py").write_text("# dublê fictício\n", encoding="utf-8")
         self.mod = carregar_modulo()
         self.mod.DIST, self.mod.SKILL = self.dist, self.skill
+        # Desde a 1.7.7 o empacotador só roda a ferramenta registrada (Codex Security da 1.7.6, #6): o dublê é
+        # registrado aqui, para estes testes chegarem ao passo que nomeiam (a recusa da divergente está em
+        # test_auditoria_1_7_7_pacote.py).
+        self.mod.FERRAMENTA_ESPERADA = {"scripts/package_skill.py": hashlib.sha256(
+            (self.creator / "scripts" / "package_skill.py").read_bytes()).hexdigest()}
 
     def tearDown(self):
         shutil.rmtree(self.base, ignore_errors=True)
@@ -82,6 +87,19 @@ class TestF18Empacotamento(unittest.TestCase):
             return subprocess.CompletedProcess(cmd, 0, "pacote fictício gerado", "")
         return efeito
 
+    @staticmethod
+    def gerar_da_arvore(cmd, **kw):
+        """Dublê fiel do package_skill: o .skill com os arquivos da árvore (cmd[-2]), sem evals/ na raiz. Desde a 1.7.7
+        o pacote gerado tem de ser exatamente a árvore (#6); o pacote avulso de `gerar_pacote` seria recusado antes da
+        promoção, e os testes da promoção deixariam de exercitá-la."""
+        skill, destino = Path(cmd[-2]), Path(cmd[-1])
+        with zipfile.ZipFile(destino / f"{NOME}.skill", "w", zipfile.ZIP_DEFLATED) as z:
+            for p in sorted(skill.rglob("*")):
+                rel = p.relative_to(skill.parent)
+                if p.is_file() and rel.parts[1] != "evals":
+                    z.write(p, rel.as_posix())
+        return subprocess.CompletedProcess(cmd, 0, "pacote fictício gerado", "")
+
     def test_f18_falha_do_empacotador_preserva_a_distribuicao_anterior(self):
         self.assertNotEqual(self.rodar(self.falha), 0)
         self.preservada()
@@ -110,13 +128,13 @@ class TestF18Empacotamento(unittest.TestCase):
             return original(de, para)
 
         with mock.patch.object(self.mod.shutil, "move", side_effect=move_que_falha):
-            rc = self.rodar(self.gerar_pacote({f"{NOME}/SKILL.md": "---\nname: x\n---\n"}))
+            rc = self.rodar(self.gerar_da_arvore)
         self.assertEqual(rc, 1)
         self.preservada()
         self.assertFalse(any(p.name.startswith(".preparo-") for p in self.dist.iterdir()))
 
     def test_f18_sucesso_promove_conjunto_coerente_e_arquiva_o_anterior(self):
-        rc = self.rodar(self.gerar_pacote({f"{NOME}/SKILL.md": "---\nname: x\n---\n"}))
+        rc = self.rodar(self.gerar_da_arvore)
         self.assertEqual(rc, 0)
         somas = {}
         for linha in (self.dist / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines():

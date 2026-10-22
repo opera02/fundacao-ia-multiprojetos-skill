@@ -16,8 +16,12 @@ O que faz, nesta ordem, conferindo antes o que já existe (rodar de novo não re
  3. Hooks guarda_caminho.py e guarda_identidade.py da skill em <raiz>\.claude\hooks.
  4. <raiz>\.claude\settings.json (sessões do Windows) e, com -Projeto, <raiz>\.claude\settings.wsl.json (sessão
     de dados reais no WSL2), gerados pelos modelos da skill; <raiz>\.claude\settings.local.json com a identidade e,
-    com -Projeto, o projeto autenticado das sessões (FUNDACAO_PROJECT). -NegarSkill nome1,nome2 nega por nome, nos
-    dois perfis, skills aninhadas em pastas de dados (scripts/instrucoes_aninhadas.py lista quais).
+    com -Projeto, o projeto autenticado das sessões (FUNDACAO_PROJECT) e nada mais, porque a sessão de dados reais
+    carrega o arquivo inteiro. -NegarSkill nome1,nome2 nega por nome, nos dois perfis, skills aninhadas em pastas de
+    dados (scripts/instrucoes_aninhadas.py lista quais).
+O Python que roda o ajudante e os hooks do Windows é o de -Python ou, sem ele, o das instalações registradas do
+Windows e do PATH, nunca o do perfil existente; antes de rodar, o script confere que é o python.exe do instalador
+oficial (assinatura da Python Software Foundation), sem ligação no caminho e sem escrita para outras contas comuns.
 Arquivo trocado vai antes para <raiz>\.claude\anteriores\<data>. Imprime a impressão digital da chave e os SHA-256
 e grava um relatório JSON (-Relatorio; no modo real, padrão em <raiz>\evidence\host).
 
@@ -76,6 +80,14 @@ $DIREITOS_PASTA = [ordered]@{ WRITE_DAC = 0x40000; WRITE_OWNER = 0x80000; DELETE
 # os genéricos de escrita e de controle total.
 $MASCARA_ESCRITA = [int64](0x2 -bor 0x4 -bor 0x10 -bor 0x100 -bor 0x40 -bor 0x10000 -bor 0x40000 -bor 0x80000) -bor
     [int64]0x10000000 -bor [int64]0x40000000
+# Na pasta acima da instalação do Python, o que troca a pasta dela: apagar filhos, trocar permissões ou dono, tudo.
+$MASCARA_TROCA = [int64](0x40 -bor 0x40000 -bor 0x80000) -bor [int64]0x10000000
+$SID_INSTALADOR = 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'  # TrustedInstaller
+# Escrita para um destes é escrita para qualquer outra conta comum: Todos, Usuários autenticados, Usuários, Interativo,
+# Convidados, Anônimo, Local, Logon no console, Rede, Esta organização, Conta local e pacotes de aplicativos.
+$SIDS_AMPLOS = @('S-1-1-0', 'S-1-5-11', 'S-1-5-32-545', 'S-1-5-4', 'S-1-5-32-546', 'S-1-5-7', 'S-1-2-0', 'S-1-2-1',
+                 'S-1-5-2', 'S-1-5-15', 'S-1-5-113', 'S-1-15-2-1', 'S-1-15-2-2')
+$ASSINANTE_PYTHON = 'Python Software Foundation'
 
 # ------------------------------------------------------------------ programas externos
 function ConvertTo-ArgumentoNativo([string] $Texto) {
@@ -326,29 +338,124 @@ function Get-SshKeygen {
     $null
 }
 
-function Find-Python([string] $Indicado, [string] $SettingsAtual) {
-    if ($Indicado) {
-        if (Test-Path -LiteralPath $Indicado -PathType Leaf) { return (Resolve-Path -LiteralPath $Indicado).Path }
-        return $null
-    }
-    if ($SettingsAtual -and (Test-Path -LiteralPath $SettingsAtual -PathType Leaf)) {
-        try {
-            $j = [IO.File]::ReadAllText($SettingsAtual) | ConvertFrom-Json
-            foreach ($g in @($j.hooks.PreToolUse)) {
-                foreach ($h in @($g.hooks)) {
-                    if ($h.command -like '*python*.exe' -and (Test-Path -LiteralPath $h.command -PathType Leaf)) { return $h.command }
+function Get-NomeDaConta([string] $Sid) {
+    try { (New-Object System.Security.Principal.SecurityIdentifier($Sid)).Translate([System.Security.Principal.NTAccount]).Value } catch { $Sid }
+}
+
+function Test-Interpretador([string] $Caminho) {
+    # O python.exe que roda o ajudante e, pelo perfil gerado, os hooks das sessões do Windows [Decisão; auditoria Codex
+    # Security da 1.7.6, #3]: caminho absoluto local, sem ligação, o próprio python.exe, assinatura Authenticode válida
+    # da Python Software Foundation e nenhuma escrita para grupos amplos (qualquer conta comum) no arquivo, na pasta
+    # dele e, para trocar a pasta, na de cima; dono só esta conta, Administradores, Sistema ou TrustedInstaller.
+    # Escrita dada a uma conta ou grupo nominal vai para Avisos. Só confere: nada é executado aqui.
+    $motivos = New-Object System.Collections.Generic.List[string]
+    $avisos = New-Object System.Collections.Generic.List[string]
+    $r = [ordered]@{ Caminho = $Caminho; Origem = $null; Motivos = $null; Avisos = $null; Assinante = $null; Sha256 = $null }
+    try {
+        if (-not $Caminho -or -not [IO.Path]::IsPathRooted($Caminho) -or $Caminho.StartsWith('\\')) {
+            $motivos.Add("caminho absoluto num disco local esperado: $Caminho")
+        } elseif (-not (Test-Path -LiteralPath $Caminho -PathType Leaf)) {
+            $motivos.Add("arquivo ausente: $Caminho")
+        } else {
+            $r.Caminho = [IO.Path]::GetFullPath($Caminho)
+            if ([IO.Path]::GetFileName($r.Caminho) -ne 'python.exe') { $motivos.Add("não é o python.exe: $($r.Caminho)") }
+            $p = $r.Caminho
+            while ($p) {
+                if ((Get-Item -LiteralPath $p -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    $motivos.Add("ligação (link simbólico ou junção) no caminho: $p")
+                }
+                $p = Split-Path -Parent $p
+            }
+            $a = Get-AuthenticodeSignature -LiteralPath $r.Caminho
+            if ($a.SignerCertificate) {
+                $r.Assinante = $a.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+            }
+            if ($a.Status -ne 'Valid') {
+                $motivos.Add("assinatura Authenticode $($a.Status): o python.exe do instalador oficial (python.org) é assinado pela $ASSINANTE_PYTHON")
+            } elseif ($r.Assinante -cne $ASSINANTE_PYTHON) {
+                $motivos.Add("assinatura de $($r.Assinante), não da $ASSINANTE_PYTHON")
+            }
+            $confiaveis = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, $SID_ADMINS, $SID_SISTEMA, $SID_INSTALADOR)
+            $pasta = Split-Path -Parent $r.Caminho
+            foreach ($par in @(@($r.Caminho, $MASCARA_ESCRITA), @($pasta, $MASCARA_ESCRITA), @((Split-Path -Parent $pasta), $MASCARA_TROCA))) {
+                $alvo, $mascara = $par
+                if (-not $alvo) { continue }
+                $acl = Get-Acl -LiteralPath $alvo
+                $dono = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+                if ($confiaveis -notcontains $dono) { $motivos.Add("o dono de $alvo é outra conta ($(Get-NomeDaConta $dono)): o dono troca as permissões") }
+                foreach ($regra in @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))) {
+                    $sid = $regra.IdentityReference.Value
+                    if ($regra.AccessControlType -ne 'Allow' -or ($regra.PropagationFlags -band [System.Security.AccessControl.PropagationFlags]::InheritOnly) -or
+                        (([int64]$regra.FileSystemRights -band $mascara) -eq 0) -or $confiaveis -contains $sid -or @('S-1-3-0', 'S-1-3-4') -contains $sid) { continue }
+                    if ($SIDS_AMPLOS -contains $sid -or $sid -match '^S-1-5-21-[0-9-]+-513$') {
+                        $motivos.Add("qualquer conta comum pode alterar $alvo ($(Get-NomeDaConta $sid), $sid)")
+                    } else {
+                        $avisos.Add("escrita dada a $(Get-NomeDaConta $sid) ($sid) em $alvo")
+                    }
                 }
             }
-        } catch { }
+            $r.Sha256 = Get-Sha256Arquivo $r.Caminho
+        }
+    } catch {
+        $motivos.Add("não consegui conferir $($Caminho): $($_.Exception.Message)")
+    }
+    $r.Motivos = $motivos.ToArray()
+    $r.Avisos = $avisos.ToArray()
+    [pscustomobject]$r
+}
+
+function Get-CandidatosPython {
+    # Instalações registradas pelo instalador oficial (PEP 514; HKLM antes de HKCU, versão mais nova primeiro) e, por
+    # último, o PATH sem os atalhos da Microsoft Store. O perfil de destino (.claude) não indica o interpretador: o
+    # preparo existe para refazê-lo, e um hook ali pode apontar qualquer executável [auditoria Codex Security, #3].
+    $saida = New-Object System.Collections.Generic.List[object]
+    foreach ($par in @(@('HKLM:\SOFTWARE\Python\PythonCore', 'registro do Windows (HKLM)'),
+                       @('HKLM:\SOFTWARE\WOW6432Node\Python\PythonCore', 'registro do Windows (HKLM)'),
+                       @('HKCU:\SOFTWARE\Python\PythonCore', 'registro do Windows (HKCU)'))) {
+        $chave, $origem = $par
+        $versoes = @(Get-ChildItem -LiteralPath $chave -ErrorAction SilentlyContinue | Sort-Object -Descending -Property {
+            $m = [regex]::Match($_.PSChildName, '^(\d+)\.(\d+)')
+            if ($m.Success) { [version]($m.Groups[1].Value + '.' + $m.Groups[2].Value) } else { [version]'0.0' } })
+        foreach ($v in $versoes) {
+            $k = $v.OpenSubKey('InstallPath')
+            if (-not $k) { continue }
+            $exe = [string]$k.GetValue('ExecutablePath')
+            if (-not $exe -and $k.GetValue('')) { $exe = Join-Path ([string]$k.GetValue('')) 'python.exe' }
+            $k.Close()
+            if ($exe) { $saida.Add([pscustomobject]@{ Caminho = $exe; Origem = $origem }) }
+        }
     }
     foreach ($c in @(Get-Command python.exe -CommandType Application -All -ErrorAction SilentlyContinue)) {
-        if ($c.Source -notlike '*\WindowsApps\*') { return $c.Source }
+        if ($c.Source -notlike '*\WindowsApps\*') { $saida.Add([pscustomobject]@{ Caminho = $c.Source; Origem = 'PATH' }) }
     }
-    $null
+    $saida.ToArray()
+}
+
+function Find-Python([string] $Indicado) {
+    # Com -Python, só ele, conferido; sem, o primeiro candidato que passa na conferência. Nenhum candidato: $null.
+    if ($Indicado) {
+        $t = Test-Interpretador $Indicado
+        $t.Origem = 'informado (-Python)'
+        return $t
+    }
+    $vistos = @{}
+    $recusados = New-Object System.Collections.Generic.List[string]
+    foreach ($c in @(Get-CandidatosPython)) {
+        if ($vistos.ContainsKey($c.Caminho.ToLowerInvariant())) { continue }
+        $vistos[$c.Caminho.ToLowerInvariant()] = $true
+        $t = Test-Interpretador $c.Caminho
+        $t.Origem = $c.Origem
+        if ($t.Motivos.Count -eq 0) { return $t }
+        $recusados.Add($t.Caminho + ': ' + ($t.Motivos -join '; '))
+    }
+    if ($recusados.Count -eq 0) { return $null }
+    [pscustomobject]@{ Caminho = $null; Origem = 'nenhum candidato passou'; Motivos = $recusados.ToArray(); Avisos = @()
+                       Assinante = $null; Sha256 = $null }
 }
 
 function Invoke-Ajudante([string] $Py, [string[]] $Argumentos) {
-    Invoke-Nativo -Exe $Py -Argumentos (@('-B', $AJUDANTE) + @($Argumentos))
+    # -I: sem PYTHONPATH, PYTHONHOME e site do usuário (o interpretador conferido roda só o ajudante da skill).
+    Invoke-Nativo -Exe $Py -Argumentos (@('-I', '-B', $AJUDANTE) + @($Argumentos))
 }
 
 # ------------------------------------------------------------------ etapa do administrador (depois do UAC)
@@ -413,6 +520,16 @@ function Invoke-EtapaAncora {
 }
 
 # ------------------------------------------------------------------ arquivos em <raiz>\.claude
+function Get-ComandosDosHooks([string] $Perfil) {
+    # Só leitura, para o relatório: os comandos dos hooks de um perfil existente.
+    if (-not (Test-Path -LiteralPath $Perfil -PathType Leaf)) { return @() }
+    try {
+        $j = [IO.File]::ReadAllText($Perfil) | ConvertFrom-Json
+        @(foreach ($g in @($j.hooks.PreToolUse)) { foreach ($h in @($g.hooks)) { [string]$h.command } }) |
+            Where-Object { $_ } | Select-Object -Unique
+    } catch { @() }
+}
+
 function Set-ArquivoGerado {
     # Igual = nada muda; diferente = cópia do atual em .claude\anteriores\<data> antes de trocar.
     param([string] $Id, [string] $Destino, [byte[]] $Bytes, [string] $Anteriores, [string] $Relativo, [bool] $Sim)
@@ -528,12 +645,23 @@ function Invoke-Preparo {
     if (-not $ssh) {
         return (Complete-Preparo $rel 2 'falta o Cliente OpenSSH do Windows (Configurações > Sistema > Recursos opcionais > Cliente OpenSSH)' $sim $carimbo)
     }
-    $py = Find-Python $Python (Join-Path $Raiz '.claude\settings.json')
-    if (-not $py) { return (Complete-Preparo $rel 2 'Python não encontrado: informe -Python com o caminho do python.exe' $sim $carimbo) }
+    # O interpretador sai de -Python ou das instalações registradas e do PATH, conferido antes de rodar; nunca do
+    # .claude\settings.json existente, que este preparo refaz [auditoria Codex Security da 1.7.6, #3].
+    $interp = Find-Python $Python
+    if (-not $interp -or -not $interp.Caminho -or @($interp.Motivos).Count -gt 0) {
+        $rel.python_conferencia = $interp
+        if ($Python) { $msg = 'o python.exe de -Python não serve: ' + (@($interp.Motivos) -join '; ') }
+        elseif ($interp) { $msg = 'nenhum Python confiável nas instalações registradas nem no PATH (o perfil atual não conta): ' + (@($interp.Motivos) -join ' | ') }
+        else { $msg = 'Python não encontrado nas instalações registradas nem no PATH (o perfil atual não conta)' }
+        return (Complete-Preparo $rel 2 ($msg + '. Informe -Python com o python.exe do instalador oficial (python.org), assinado pela Python Software Foundation') $sim $carimbo)
+    }
+    $py = $interp.Caminho
     $faltam = @(@($HOOKS | ForEach-Object { Join-Path $SKILL ('assets\hooks\' + $_) }) + $AJUDANTE |
                 Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
     if ($faltam.Count -gt 0) { return (Complete-Preparo $rel 2 ('arquivos da skill ausentes: ' + ($faltam -join ', ')) $sim $carimbo) }
     $rel.python = $py
+    $rel.python_conferencia = [ordered]@{ origem = $interp.Origem; assinante = $interp.Assinante; sha256 = $interp.Sha256
+                                          avisos = @($interp.Avisos) }
 
     # 1. Chave do titular
     $pub = $Chave + '.pub'
@@ -684,6 +812,8 @@ function Invoke-Preparo {
         foreach ($s in @($SomenteLeitura)) { if ($s) { $wsl += @('--somente-leitura', $s) } }
         $perfis += @{ id = 'settings.wsl.json'; args = ($wsl + $negar) }
     }
+    # Só para o relatório: os interpretadores que o perfil anterior chamava nos hooks (nunca escolhidos nem executados).
+    $hooksAnteriores = @(Get-ComandosDosHooks (Join-Path $claude 'settings.json') | Where-Object { $_ -ne $py })
     foreach ($perfil in $perfis) {
         $r = Invoke-Ajudante $py $perfil.args
         if ($r.Codigo -ne 0) {
@@ -691,14 +821,21 @@ function Invoke-Preparo {
                 acao = 'erro'; sha256 = $null; anterior = $null; detalhe = ('o gerador de perfis recusou: ' + ($r.Saida + $r.Erro).Trim()) })
             continue
         }
-        [void]$rel.itens.Add((Set-ArquivoGerado -Id $perfil.id -Destino (Join-Path $claude $perfil.id) -Bytes $utf8.GetBytes($r.Saida) `
-            -Anteriores $anteriores -Relativo $perfil.id -Sim $sim))
+        $item = Set-ArquivoGerado -Id $perfil.id -Destino (Join-Path $claude $perfil.id) -Bytes $utf8.GetBytes($r.Saida) `
+            -Anteriores $anteriores -Relativo $perfil.id -Sim $sim
+        if ($perfil.id -eq 'settings.json' -and $hooksAnteriores.Count -gt 0 -and $item.acao -ne 'igual') {
+            $item.detalhe = 'o perfil anterior chamava nos hooks outro interpretador (' + ($hooksAnteriores -join ', ') +
+                '), que não foi usado nem executado; o novo chama ' + $py
+        }
+        [void]$rel.itens.Add($item)
     }
-    # Identidade das sessões: só acrescenta; outra identidade já gravada é decisão do titular (conflito).
+    # Identidade das sessões: só acrescenta; outra identidade já gravada é decisão do titular (conflito). Com -Projeto,
+    # a sessão de dados reais do WSL carrega o arquivo inteiro: fica só a identidade e o projeto (--estrito; o anterior
+    # vai para .claude\anteriores) [auditoria Codex Security da 1.7.6, #5].
     $local = Join-Path $claude 'settings.local.json'
     $argsLocal = @('identidade', '--titular', $Titular)
     if (Test-Path -LiteralPath $local -PathType Leaf) { $argsLocal += @('--atual', $local) }
-    if ($Projeto) { $argsLocal += @('--projeto', $Projeto) }  # FUNDACAO_PROJECT: o guarda_caminho.py exige
+    if ($Projeto) { $argsLocal += @('--projeto', $Projeto, '--estrito') }  # FUNDACAO_PROJECT: o guarda_caminho.py exige
     $r = Invoke-Ajudante $py $argsLocal
     if ($r.Codigo -eq 0 -and (Test-Path -LiteralPath $local -PathType Leaf) -and
         ((ConvertTo-Json -Compress -Depth 20 -InputObject ([IO.File]::ReadAllText($local) | ConvertFrom-Json)) -eq
@@ -706,8 +843,12 @@ function Invoke-Preparo {
         [void]$rel.itens.Add([pscustomobject][ordered]@{ id = 'settings.local.json'; caminho = $local; exige_admin = $false; acao = 'igual'
             sha256 = (Get-Sha256Arquivo $local); anterior = $null; detalhe = $null })
     } elseif ($r.Codigo -eq 0) {
-        [void]$rel.itens.Add((Set-ArquivoGerado -Id 'settings.local.json' -Destino $local -Bytes $utf8.GetBytes($r.Saida) `
-            -Anteriores $anteriores -Relativo 'settings.local.json' -Sim $sim))
+        $item = Set-ArquivoGerado -Id 'settings.local.json' -Destino $local -Bytes $utf8.GetBytes($r.Saida) `
+            -Anteriores $anteriores -Relativo 'settings.local.json' -Sim $sim
+        if ($Projeto -and $item.acao -eq 'atualizar') {
+            $item.detalhe = 'só a identidade e o projeto: a sessão de dados reais do WSL carrega este arquivo inteiro'
+        }
+        [void]$rel.itens.Add($item)
     } else {
         $acao = 'erro'
         if ($r.Codigo -eq 1) { $acao = 'conflito' }

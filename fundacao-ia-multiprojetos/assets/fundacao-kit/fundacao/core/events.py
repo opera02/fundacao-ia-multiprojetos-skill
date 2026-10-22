@@ -16,6 +16,7 @@ from .canon import canonical_json, sha256_json
 from .contracts import SCHEMAS
 from .db import transaction, utcnow
 from .ids import new_id
+from .publicacao import anexar
 
 GENESIS = "0" * 64
 
@@ -81,17 +82,20 @@ def verify_chain(con: sqlite3.Connection) -> tuple[bool, int | None]:
 
 
 def export_jsonl(con: sqlite3.Connection, path: Path) -> int:
-    """Exporta eventos ainda não exportados (idempotente)."""
+    """Exporta eventos ainda não exportados (idempotente). As linhas vão juntas por `publicacao.anexar`: destino que
+    é ligação ou vínculo físico recusa sem gravar e sem marcar nada como exportado (revisão de segurança da 1.7.7,
+    R177-KIT-04: com `open("a")`, os eventos iam para o arquivo de fora)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = con.execute("SELECT * FROM event WHERE exported = 0 ORDER BY seq").fetchall()
     if not rows:
         return 0
-    with path.open("a", encoding="utf-8", newline="\n") as fh:
-        for row in rows:
-            record = {k: row[k] for k in row.keys() if k not in ("payload_json", "exported")}
-            record["payload"] = json.loads(row["payload_json"])
-            fh.write(canonical_json(record) + "\n")
+    linhas = []
+    for row in rows:
+        record = {k: row[k] for k in row.keys() if k not in ("payload_json", "exported")}
+        record["payload"] = json.loads(row["payload_json"])
+        linhas.append(canonical_json(record) + "\n")
+    anexar(path, "".join(linhas).encode("utf-8"))
     with transaction(con):
         con.execute("UPDATE event SET exported = 1 WHERE seq <= ?", (rows[-1]["seq"],))
     return len(rows)

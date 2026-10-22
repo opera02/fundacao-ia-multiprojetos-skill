@@ -43,9 +43,14 @@ FORA das pastas de skills (~/.agents/skills-preparo/), conferida contra o pacote
 lugar — a anterior vai para ~/.agents/skills-anteriores/ e a preparada entra no lugar dela (DUAS
 renomeações, com uma marca de troca entre elas). Uma falha antes disso não altera nada; uma exceção na
 troca ou na ligação devolve a versão anterior e descarta a cópia preparada; se o processo cair entre as
-duas renomeações, o próximo `instalar` ou `atualizar` conclui a troca com a cópia preparada (já
-conferida), e o `verificar` avisa enquanto isso não acontecer (auditoria final da 1.4.2, AF-02); se a
-marca da troca estiver ilegível, as cópias preparadas que sobrarem em skills-preparo são removidas e
+duas renomeações, o próximo `instalar` ou `atualizar` desfaz a troca — a versão anterior volta ao lugar e a
+cópia preparada é descartada — e segue com o pacote dele, conferido; o `verificar` avisa enquanto isso não
+acontecer (auditoria final da 1.4.2, AF-02). A marca guarda só o NOME das duas pastas (o que o instalador dá às
+cópias), nunca um caminho: a recuperação monta os caminhos sob skills-preparo e skills-anteriores e, sem mover
+nem apagar nada, recusa marca de outro formato, destino que não seja o fixo, nome fora do padrão das cópias,
+pasta que seja ligação ou junção (as duas áreas inclusive) e versão anterior cujo `name` ou hash da árvore não
+sejam os gravados na marca; a cópia preparada nunca vira a skill a partir da marca (auditoria Codex Security da
+1.7.6, #4). Se a marca estiver ilegível, as cópias preparadas que sobrarem em skills-preparo são removidas e
 relatadas em `passos`, em vez de ficarem órfãs (conferência da 1.4.3, CF-04). Se o RETORNO à versão anterior
 também falhar, a recusa diz isso e onde ela ficou (`versao_anterior_em`), em vez de dizer que ela voltou (A01).
 Ligação em conflito é recusada antes de copiar. A origem precisa declarar `name: fundacao-ia-multiprojetos`
@@ -87,6 +92,10 @@ CLAUDE = Path.home() / ".claude" / "skills" / NOME
 ANTERIORES = Path.home() / ".agents" / "skills-anteriores"  # versões substituídas por atualizar
 PREPARO = Path.home() / ".agents" / "skills-preparo"  # cópia nova em preparo: fora das pastas que os hosts leem
 TROCA = PREPARO / "troca-em-andamento.json"  # marca gravada entre as duas renomeações da troca (AF-02)
+# Marca desde a 1.7.7: o nome das pastas no formato de `caminho_livre`, nunca um caminho (Codex Security da 1.7.6, #4).
+VERSAO_DA_MARCA = 2
+ID_DE_COPIA = re.compile(re.escape(NOME) + r"-[0-9]{8}-[0-9]{6}(?:-[0-9]+)?")
+LIMITE_MARCA = 64 * 1024  # a marca legítima tem poucas centenas de bytes
 PADROES_IGNORADOS = ("__pycache__", "*.pyc", "evals")
 IGNORAR = shutil.ignore_patterns(*PADROES_IGNORADOS)
 OPCAO_PASTA_DEV = "--pasta-de-desenvolvimento-nao-verificada"  # origem sem hash: só desenvolvimento (#2)
@@ -116,6 +125,12 @@ def referencia_de(pasta: Path) -> dict[str, str]:
             for p in sorted(pasta.rglob("*"))
             if p.is_file() and not any(fnmatch.fnmatch(parte, padrao) for parte in p.relative_to(pasta).parts
                                        for padrao in PADROES_IGNORADOS)}
+
+
+def hash_da_arvore(pasta: Path) -> str:
+    """Um SHA-256 para a árvore inteira: o da lista ordenada (caminho, hash) de `hashes`. Vai na marca da troca, para a
+    versão anterior só voltar ao lugar se for a mesma que saiu dele (auditoria Codex Security da 1.7.6, #4)."""
+    return hashlib.sha256(json.dumps(sorted(hashes(pasta).items())).encode("utf-8")).hexdigest()
 
 
 def ler_pacote(origem: Path) -> bytes:
@@ -361,12 +376,19 @@ def verificar(referencia: dict[str, str] | None = None) -> dict:
         b = hashes(AGENTS)
         res["arquivos"] = len(b)
         res["divergentes"] = sorted(k for k in set(referencia) | set(b) if referencia.get(k) != b.get(k))
-    if TROCA.is_file():
-        # Queda entre as duas renomeações da última troca: só instalar/atualizar concluem (AF-02).
-        res["troca_interrompida"] = {"marca": str(TROCA),
-                                     "acao": "rode `instalar` ou `atualizar` para concluir a troca com a cópia preparada"}
+    if os.path.lexists(TROCA):
+        # Queda entre as duas renomeações da última troca: só instalar/atualizar a resolvem (AF-02), e só com a marca
+        # conferida; `marca_valida: false` diz que a recuperação vai recusá-la, e por quê (Codex Security da 1.7.6, #4).
+        troca = {"marca": str(TROCA), "marca_valida": True,
+                 "acao": "rode `instalar` ou `atualizar` com o pacote e o --sha256: a troca interrompida é desfeita "
+                         "(a versão anterior volta ao lugar) e o pacote é instalado"}
+        try:
+            examinar_marca()
+        except Recusa as r:
+            troca.update(marca_valida=False, motivo=r.dados["motivo"], acao=r.dados["erro"])
+        res["troca_interrompida"] = troca
     res["ok"] = all(res[k] for k in ("copia_existe", "ligacao_ok", "skill_md_legivel_pela_ligacao")) and \
-        not res.get("divergentes") and not TROCA.is_file()
+        not res.get("divergentes") and not os.path.lexists(TROCA)
     res["informativo"] = {"sqlite": sqlite3.sqlite_version, "fts5_unicode61_remove_diacritics_2": fts5_do_kit(),
                           "nota": "o kit da fundação precisa desse FTS5; não entra em ok"}
     return res
@@ -448,8 +470,11 @@ def promover(preparo: Path) -> Path | None:
         ANTERIORES.mkdir(parents=True, exist_ok=True)
         # Fora da pasta de skills: lá, a cópia anterior (mesmo name no SKILL.md) seria lida como outra skill.
         anterior = caminho_livre(ANTERIORES / f"{NOME}-{time.strftime('%Y%m%d-%H%M%S')}")
-    TROCA.write_text(json.dumps({"preparo": str(preparo), "anterior": str(anterior) if anterior else None,
-                                 "destino": str(AGENTS), "inicio": time.strftime("%Y-%m-%dT%H:%M:%S")},
+    # Só os NOMES das duas pastas e o hash da árvore que sai do lugar, nunca um caminho (Codex Security da 1.7.6, #4).
+    arvore = hash_da_arvore(AGENTS) if anterior is not None and not e_ligacao(AGENTS) else None
+    TROCA.write_text(json.dumps({"versao_marca": VERSAO_DA_MARCA, "preparo": preparo.name,
+                                 "anterior": anterior.name if anterior else None, "destino": str(AGENTS),
+                                 "arvore_anterior": arvore, "inicio": time.strftime("%Y-%m-%dT%H:%M:%S")},
                                 ensure_ascii=False), encoding="utf-8")
     try:
         if anterior is not None:
@@ -462,8 +487,9 @@ def promover(preparo: Path) -> Path | None:
                 os.replace(anterior, AGENTS)  # devolve a anterior ao lugar
             except OSError as falha:
                 raise Recusa("a troca falhou e a versão anterior NÃO voltou ao lugar; nada foi apagado. Rode "
-                             "`atualizar` de novo para concluir a troca com a cópia preparada (já conferida), ou "
-                             f"devolva a anterior à mão para {AGENTS}",
+                             "`atualizar` de novo com o pacote e o --sha256 (a troca interrompida é desfeita: a "
+                             "anterior volta ao lugar e o pacote é instalado), ou devolva a anterior à mão para "
+                             f"{AGENTS}",
                              versao_anterior_em=str(anterior), copia_preparada_em=str(preparo),
                              causa=f"{type(erro).__name__}: {erro}",
                              erro_do_retorno=f"{type(falha).__name__}: {falha}") from erro
@@ -475,41 +501,101 @@ def promover(preparo: Path) -> Path | None:
     return anterior
 
 
-def concluir_troca_interrompida() -> dict | None:
-    """Queda do processo entre as duas renomeações da troca anterior: conclui a troca com a cópia
-    preparada (já conferida contra o pacote) ou, sem ela, devolve a anterior. Devolve o que fez.
-
-    Marca ilegível (JSON inválido ou sem `preparo`): a cópia preparada não pode ser identificada; as pastas
-    `<nome>-*` que sobrarem em skills-preparo — nenhum host as lê — são removidas e relatadas, em vez de
-    ficarem órfãs até um `remover` (conferência da 1.4.3, CF-04)."""
-    if not TROCA.is_file():
-        return None
+def ler_marca() -> dict:
+    """Conteúdo da marca da troca, ou {} se ilegível (JSON inválido, não objeto ou maior que LIMITE_MARCA)."""
     try:
-        marca = json.loads(TROCA.read_text(encoding="utf-8"))
-        if not isinstance(marca, dict):
-            raise ValueError("marca não é objeto")
+        with open(TROCA, "rb") as f:
+            dados = f.read(LIMITE_MARCA + 1)
+        marca = json.loads(dados.decode("utf-8")) if len(dados) <= LIMITE_MARCA else None
     except (OSError, ValueError):
-        marca = {}
-    legivel = bool(marca.get("preparo"))
-    preparo = Path(marca["preparo"]) if legivel else None
-    anterior = Path(marca["anterior"]) if marca.get("anterior") else None
-    if not os.path.lexists(AGENTS) and preparo is not None and preparo.is_dir():
-        AGENTS.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(preparo, AGENTS)
-        acao = "troca concluída com a cópia preparada"
-    elif os.path.lexists(AGENTS):
-        acao = "a cópia instalada já estava no lugar"
-        if preparo is not None and preparo.is_dir():
-            shutil.rmtree(preparo, ignore_errors=True)
-            acao += "; cópia preparada descartada"
-    elif anterior is not None and anterior.is_dir():
-        os.replace(anterior, AGENTS)
-        acao = "cópia preparada ausente: versão anterior devolvida ao lugar"
-    else:
-        acao = "nada a recuperar (sem cópia preparada nem anterior)"
+        return {}
+    return marca if isinstance(marca, dict) else {}
+
+
+def marca_invalida(motivo: str, marca: dict) -> Recusa:
+    return Recusa(f"a marca da troca interrompida ({TROCA}) não é deste instalador ou foi alterada ({motivo}); "
+                  f"nada foi movido nem apagado. Confira as pastas em {PREPARO} e em {ANTERIORES}; se a marca não for "
+                  "de uma troca deste instalador, apague-a e rode o comando de novo", motivo=motivo, marca=marca)
+
+
+def examinar_marca() -> tuple[dict, Path | None, Path | None]:
+    """Confere a marca INTEIRA antes de qualquer movimento e devolve o conteúdo dela e as pastas que ela indica (cópia
+    preparada e versão anterior), montadas sob as áreas fixas; marca ilegível devolve as pastas como None. Os valores
+    da marca só são comparados como texto: nenhum vira caminho antes de passar no formato. Recusa (auditoria Codex
+    Security da 1.7.6, #4): a marca ou uma das áreas ser ligação (link simbólico ou junção), conferido antes de ler a
+    marca; versão da marca, destino ou hash da árvore anterior diferentes do que este instalador grava; `preparo` ou
+    `anterior` que não sejam o nome de uma cópia (caminho, `..`, separador, outro prefixo ou formato); pasta indicada
+    que exista e não seja pasta comum."""
+    for caminho in (PREPARO, ANTERIORES, TROCA):
+        if e_ligacao(caminho):
+            raise marca_invalida(f"{caminho.name} é ligação (link simbólico ou junção)", {})
+    if not TROCA.is_file():
+        raise marca_invalida(f"{TROCA.name} não é arquivo comum", {})
+    marca = ler_marca()
+    if not marca.get("preparo"):
+        return marca, None, None  # ilegível: a cópia preparada não pode ser identificada (CF-04)
+    if marca.get("versao_marca") != VERSAO_DA_MARCA:
+        raise marca_invalida(f"versao_marca {marca.get('versao_marca')!r}; este instalador grava {VERSAO_DA_MARCA}",
+                             marca)
+    destino = marca.get("destino")
+    if not isinstance(destino, str) or os.path.normcase(destino) != os.path.normcase(str(AGENTS)):
+        raise marca_invalida(f"destino {destino!r} não é {AGENTS}", marca)
+    pastas = {}
+    for campo, raiz in (("preparo", PREPARO), ("anterior", ANTERIORES)):
+        valor = marca.get(campo)
+        if campo == "anterior" and valor is None:
+            pastas[campo] = None
+            continue
+        if not isinstance(valor, str) or not ID_DE_COPIA.fullmatch(valor):
+            raise marca_invalida(f"{campo} {valor!r} não é o nome de uma cópia deste instalador", marca)
+        pasta = raiz / valor
+        if os.path.lexists(pasta) and (e_ligacao(pasta) or not pasta.is_dir()):
+            raise marca_invalida(f"{campo} {valor!r} não é pasta comum (é ligação, junção ou arquivo)", marca)
+        pastas[campo] = pasta
+    if pastas["anterior"] is not None and not re.fullmatch(r"[0-9a-f]{64}", str(marca.get("arvore_anterior"))):
+        raise marca_invalida("sem o hash da árvore da versão anterior", marca)
+    return marca, pastas["preparo"], pastas["anterior"]
+
+
+def concluir_troca_interrompida() -> dict | None:
+    """Queda do processo entre as duas renomeações da troca anterior: DESFAZ a troca — a versão anterior volta ao lugar
+    e a cópia preparada é descartada — e o comando segue com o pacote dele, conferido. Devolve o que fez.
+
+    A marca é conferida inteira antes de qualquer movimento (`examinar_marca`), e a versão anterior só volta ao lugar
+    se declarar `name: fundacao-ia-multiprojetos` e tiver o hash de árvore gravado na marca; a cópia preparada nunca
+    vira a skill a partir da marca. Qualquer divergência recusa sem mover nem apagar nada, e a marca fica para o
+    titular conferir (auditoria Codex Security da 1.7.6, #4).
+
+    Marca ilegível (JSON inválido ou sem `preparo`): a cópia preparada não pode ser identificada; as pastas `<nome>-*`
+    que sobrarem em skills-preparo — nenhum host as lê — são removidas e relatadas, em vez de ficarem órfãs até um
+    `remover` (conferência da 1.4.3, CF-04). A versão anterior, se havia, continua guardada em skills-anteriores."""
+    if not os.path.lexists(TROCA):
+        return None
+    marca, preparo, anterior = examinar_marca()
     orfas, nao_removidas = [], []
-    if not legivel:
-        acao = f"marca de troca ilegível; {acao}"
+    if marca.get("preparo"):
+        if not os.path.lexists(AGENTS) and anterior is not None and anterior.is_dir():
+            if nome_declarado(anterior) != NOME or hash_da_arvore(anterior) != marca["arvore_anterior"]:
+                raise marca_invalida("a versão anterior não é a que saiu do lugar: o name ou o hash da árvore mudou",
+                                     marca)
+            AGENTS.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(anterior, AGENTS)
+            acao = "a versão anterior voltou ao lugar"
+        elif os.path.lexists(AGENTS):
+            acao = "a cópia instalada já estava no lugar"
+        elif anterior is not None:
+            acao = "a versão anterior indicada na marca não existe mais; nada a devolver"
+        else:
+            acao = "nada a devolver (era a primeira instalação)"
+        if preparo is not None and os.path.lexists(preparo):
+            try:
+                apagar_arvore(preparo)  # pasta comum sob skills-preparo, com o nome que o instalador dá às cópias
+                acao += "; cópia preparada descartada"
+            except OSError as e:
+                nao_removidas.append(f"{preparo.name}: {type(e).__name__}: {e}")
+    else:
+        acao = "marca de troca ilegível; " + ("a cópia instalada já estava no lugar" if os.path.lexists(AGENTS) else
+                                              "a versão anterior, se havia, continua em skills-anteriores")
         for sobra in sorted(PREPARO.glob(f"{NOME}-*")):
             if not sobra.is_dir() or e_ligacao(sobra):
                 continue

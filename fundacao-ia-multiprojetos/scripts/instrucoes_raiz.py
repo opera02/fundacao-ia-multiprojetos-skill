@@ -13,6 +13,10 @@ entre os marcadores da fundação é regenerado; o que estiver fora dele (o trec
 AGENTS.md escrito à mão (sem os marcadores) não é sobrescrito: conflito, código 3, salvo `--adotar`, que o
 guarda inteiro no trecho do titular.
 CLAUDE.md ausente vira `@AGENTS.md`; existente ganha a linha `@AGENTS.md` no começo, se faltar, e mantém o resto.
+Gravação sem seguir ligação nem vínculo físico (revisão de segurança da 1.7.7, R177-ATU-03): temporário de nome
+imprevisível, criado com exclusividade e posto no lugar com `os.replace` (antes, `.AGENTS.md.tmp` tinha nome previsível
+e um vínculo físico ali levava o texto gerado a um arquivo de fora); AGENTS.md ou CLAUDE.md que é ligação ou pasta
+recusa, código 1, sem ler nem gravar nada.
 Os arquivos orientam; os limites continuam nos hooks e nas permissões. As chamadas aos provedores rodam numa pasta
 temporária vazia (adapters/cli.py) e não carregam estes arquivos.
 """
@@ -26,6 +30,11 @@ import re
 import sys
 from pathlib import Path
 
+AQUI = Path(__file__).resolve().parent
+if str(AQUI) not in sys.path:  # carregado por caminho (testes): o módulo vizinho também tem de ser achado
+    sys.path.append(str(AQUI))
+import gravacao_segura as gravacao  # noqa: E402  (sem seguir ligação nem vínculo físico; R177-ATU-03)
+
 SKILL = Path(__file__).resolve().parents[1]
 MODELO = SKILL / "assets" / "templates" / "AGENTS-RAIZ.md"
 INICIO = "<!-- fundacao: início do trecho gerado pela skill; regenere com scripts/instrucoes_raiz.py gerar -->"
@@ -38,6 +47,10 @@ LIMITE_DE_LINHAS = 200  # recomendação do Claude Code por arquivo de instruç�
 
 class Conflito(Exception):
     pass
+
+
+class Recusa(Exception):
+    """AGENTS.md ou CLAUDE.md da raiz é ligação ou pasta: nada é lido nem gravado por ele (R177-ATU-03)."""
 
 
 def versao_da_skill() -> str:
@@ -76,13 +89,16 @@ def claude_md(atual: str | None) -> str:
 
 
 def ler(p: Path) -> str | None:
+    try:
+        gravacao.conferir_destino(p)
+    except gravacao.GravacaoRecusada:
+        raise Recusa(p.name + " na raiz é ligação (link simbólico ou junção) ou pasta: nada foi lido nem alterado; "
+                     "troque-o por um arquivo comum e repita") from None
     return p.read_text(encoding="utf-8") if p.is_file() else None
 
 
 def gravar(p: Path, texto: str) -> None:
-    tmp = p.with_name("." + p.name + ".tmp")
-    tmp.write_text(texto, encoding="utf-8", newline="\n")
-    tmp.replace(p)
+    gravacao.publicar(p, texto.encode("utf-8"))  # temporário imprevisível e exclusivo, depois os.replace
 
 
 def gerar(raiz: Path, simular: bool = False, adotar: bool = False) -> dict:
@@ -101,7 +117,10 @@ def gerar(raiz: Path, simular: bool = False, adotar: bool = False) -> dict:
 
 def conferir(raiz: Path) -> dict:
     problemas = []
-    a_atual, c_atual = ler(raiz / "AGENTS.md"), ler(raiz / "CLAUDE.md")
+    try:
+        a_atual, c_atual = ler(raiz / "AGENTS.md"), ler(raiz / "CLAUDE.md")
+    except Recusa as exc:
+        return {"raiz": str(raiz), "ok": False, "problemas": [str(exc)]}
     if a_atual is None:
         problemas.append("AGENTS.md ausente na raiz")
     elif INICIO not in a_atual or FIM not in a_atual:
@@ -135,6 +154,9 @@ def main(argv: list | None = None) -> int:
     except Conflito as exc:
         print(json.dumps({"ok": False, "conflito": str(exc)}, ensure_ascii=False))
         return 3
+    except (Recusa, gravacao.GravacaoRecusada) as exc:  # ligação no destino, ou que apareceu durante a gravação
+        print(json.dumps({"ok": False, "erro": str(exc)}, ensure_ascii=False))
+        return 1
     print(json.dumps({"ok": True, **res}, ensure_ascii=False, indent=1))
     return 0
 

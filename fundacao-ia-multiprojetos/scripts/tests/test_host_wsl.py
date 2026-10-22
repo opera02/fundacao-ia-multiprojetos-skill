@@ -66,6 +66,8 @@ def sha(caminho: Path) -> str:
 FALSO = ("#!/usr/bin/env bash\n"
          'for a in "$@"; do echo "ARG:$a"; done > "$SAIDA_FALSA"\n'
          'echo "PROJETO:${FUNDACAO_PROJECT:-}" >> "$SAIDA_FALSA"\n'
+         'echo "PRINCIPAL:${FUNDACAO_PRINCIPAL:-}" >> "$SAIDA_FALSA"\n'
+         'echo "TROCA:${FUNDACAO_PERMITIR_TROCA_IDENTIDADE:-}" >> "$SAIDA_FALSA"\n'
          'echo "PWD:$(pwd)" >> "$SAIDA_FALSA"\n')
 
 
@@ -104,22 +106,26 @@ class LancadorNoBash(unittest.TestCase):
         self.claude.write_text(FALSO, encoding="utf-8", newline="\n")
         self.claude.chmod(0o755)  # no Linux, sem o bit de execução o bash não roda o binário falso (126)
         self.saida = self.base / "chamada.txt"
-        m = ajudante()
-        texto = m.lancador({
+        self.lancador = self.base / "abrir-fundacao.sh"
+        self.gerar_lancador()
+
+    def gerar_lancador(self, titular: str = "titular"):
+        """O que o preparar-wsl.sh fixa: hashes do Claude Code, do perfil, dos hooks e do settings.local.json atuais."""
+        texto = ajudante().lancador({
             "RAIZ": posix(self.raiz), "PROJETO": "caso-real", "CLAUDE_BIN": posix(self.claude),
             "CLAUDE_VERSAO": "2.1.302", "CLAUDE_SHA256": sha(self.claude), "CLAUDE_ORIGEM_HASH": "informado",
             "PERFIL_SHA256": sha(self.raiz / ".claude" / "settings.wsl.json"),
             "HOOK_CAMINHO_SHA256": sha(self.raiz / ".claude" / "hooks" / "guarda_caminho.py"),
             "HOOK_IDENTIDADE_SHA256": sha(self.raiz / ".claude" / "hooks" / "guarda_identidade.py"),
+            "TITULAR": titular, "LOCAL_SHA256": sha(self.raiz / ".claude" / "settings.local.json"),
             "SKILL_MD": "/mnt/c/Perfis/titular/.claude/skills/fundacao-ia-multiprojetos/SKILL.md"})
-        self.lancador = self.base / "abrir-fundacao.sh"
         self.lancador.write_text(texto, encoding="utf-8", newline="\n")
 
     def tearDown(self):
         shutil.rmtree(self.base, ignore_errors=True)
 
-    def abrir(self):
-        return rodar_bash(self.lancador, env_extra={"SAIDA_FALSA": posix(self.saida)})
+    def abrir(self, **env):
+        return rodar_bash(self.lancador, env_extra={"SAIDA_FALSA": posix(self.saida), **env})
 
     def test_abre_com_o_perfil_fixado_o_projeto_e_o_prompt_de_retomada(self):
         r = self.abrir()
@@ -170,11 +176,56 @@ class LancadorNoBash(unittest.TestCase):
         for projeto, abre in (("outro-projeto", False), ("caso-real", True)):
             with self.subTest(projeto=projeto):
                 local.write_text(m.texto_json(m.identidade("titular", projeto=projeto)), encoding="utf-8", newline="\n")
+                self.gerar_lancador()  # 1.7.7: o hash do settings.local.json também é fixado no preparo
                 r = self.abrir()
                 self.assertEqual(r.returncode == 0, abre, r.stdout + r.stderr)
                 if not abre:
                     self.assertIn("projeto", r.stderr)
                     self.assertFalse(self.saida.exists())
+
+    def test_settings_local_alterado_depois_do_preparo_nao_abre(self):
+        """Auditoria Codex Security da 1.7.6, #5: o lançador só conferia que o settings.local.json existia, e a
+        sessão o carrega (--setting-sources local). Outra identidade, a troca de identidade liberada ou um hook
+        acrescentado depois do preparo: a sessão não abre."""
+        local = self.raiz / ".claude" / "settings.local.json"
+        original = local.read_bytes()
+        casos = {"outra identidade": {"env": {"FUNDACAO_PRINCIPAL": "outra-pessoa"}},
+                 "troca liberada": {"env": {"FUNDACAO_PRINCIPAL": "titular",
+                                            "FUNDACAO_PERMITIR_TROCA_IDENTIDADE": "1"}},
+                 "hook": {"env": {"FUNDACAO_PRINCIPAL": "titular"},
+                          "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command",
+                                                                                   "command": "/tmp/x"}]}]}}}
+        for nome, dados in casos.items():
+            with self.subTest(nome):
+                local.write_text(json.dumps(dados), encoding="utf-8", newline="\n")
+                r = self.abrir()
+                local.write_bytes(original)
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("settings.local.json", r.stderr)
+                self.assertFalse(self.saida.exists())
+        self.assertEqual(self.abrir().returncode, 0)
+
+    def test_identidade_diferente_da_fixada_no_lancador_nao_abre(self):
+        """O lançador fixa o titular: um settings.local.json com outra identidade não abre nem com o hash dele."""
+        m = ajudante()
+        (self.raiz / ".claude" / "settings.local.json").write_text(m.texto_json(m.identidade("outra-pessoa")),
+                                                                   encoding="utf-8", newline="\n")
+        self.gerar_lancador(titular="titular")
+        r = self.abrir()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("identidade", r.stderr)
+        self.assertFalse(self.saida.exists())
+
+    def test_variaveis_da_fundacao_do_terminal_nao_passam_para_a_sessao(self):
+        """A identidade vem do settings.local.json conferido e o projeto, do lançador: FUNDACAO_* herdadas do
+        terminal (inclusive FUNDACAO_PERMITIR_TROCA_IDENTIDADE) não chegam à sessão."""
+        r = self.abrir(FUNDACAO_PERMITIR_TROCA_IDENTIDADE="1", FUNDACAO_PRINCIPAL="outra-pessoa",
+                       FUNDACAO_PROJECT="outro-projeto", FUNDACAO_MCP_ESCRITA_PERMITIDA="mcp__*")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        linhas = self.saida.read_text(encoding="utf-8").splitlines()
+        self.assertIn("TROCA:", linhas)
+        self.assertIn("PRINCIPAL:", linhas)  # o falso não lê o settings.local.json; o Claude Code o aplica
+        self.assertIn("PROJETO:caso-real", linhas)
 
     def test_modelo_do_lancador_e_bash_valido_com_fim_de_linha_lf(self):
         self.assertNotIn(b"\r", LANCADOR.read_bytes())
@@ -225,9 +276,9 @@ class PrepararWslNoBash(unittest.TestCase):
         env = {"HOME": posix(self.home), "PATH": str(self.falsos) + os.pathsep + os.environ.get("PATH", "")}
         if wsl:
             env["WSL_DISTRO_NAME"] = "Ensaio"
-        return rodar_bash(PREPARAR, "--raiz", posix(self.raiz), "--projeto", "caso-real", "--wsl-conf",
-                          posix(self.conf), "--python", posix(Path(sys.executable)), "--claude-versao", "2.1.302",
-                          *args, env_extra=env)
+        return rodar_bash(PREPARAR, "--raiz", posix(self.raiz), "--projeto", "caso-real", "--titular", "titular",
+                          "--wsl-conf", posix(self.conf), "--python", posix(Path(sys.executable)), "--claude-versao",
+                          "2.1.302", *args, env_extra=env)
 
     def test_simulacao_mostra_o_plano_e_nao_grava_nada(self):
         antes = fotografia(self.home, self.raiz, self.conf)
@@ -274,6 +325,61 @@ class PrepararWslNoBash(unittest.TestCase):
         self.assertEqual(len(list(self.base.glob("wsl.conf.anterior-*"))), 1)
         self.assertNotIn("[criar]", r2.stdout)
         self.assertNotIn("[atualizar]", r2.stdout)
+
+    def test_so_fixa_o_que_confere(self):
+        """Auditoria Codex Security da 1.7.6, #5: o preparo conferia só alguns indicadores do perfil, nada do conteúdo
+        dos hooks e só a existência do settings.local.json, e fixava no lançador o hash do que encontrasse. Cada
+        mudança abaixo, feita antes do preparo, para o script (código 1) sem gravar o lançador."""
+        perfil = self.raiz / ".claude" / "settings.wsl.json"
+        local = self.raiz / ".claude" / "settings.local.json"
+        hook = self.raiz / ".claude" / "hooks" / "guarda_identidade.py"
+
+        def rede_liberada():
+            dados = json.loads(perfil.read_text(encoding="utf-8"))
+            dados["sandbox"]["network"]["allowedDomains"] = ["exemplo.invalid"]
+            perfil.write_text(json.dumps(dados), encoding="utf-8", newline="\n")
+
+        def matcher_trocado():
+            dados = json.loads(perfil.read_text(encoding="utf-8"))
+            dados["hooks"]["PreToolUse"][1]["matcher"] = "PowerShell"
+            perfil.write_text(json.dumps(dados), encoding="utf-8", newline="\n")
+
+        casos = {  # nome: (mudança, argumentos a mais, item com [erro], trecho da mensagem)
+            "rede liberada": (rede_liberada, (), "perfil", "allowedDomains"),
+            "matcher trocado": (matcher_trocado, (), "perfil", "matcher"),
+            "projeto criado depois do perfil": (lambda: (self.raiz / "projects" / "lab-novo").mkdir(), (), "perfil",
+                                                "lab-novo"),
+            "hook diferente do da skill": (lambda: hook.write_bytes(hook.read_bytes() + b"# alterado\n"), (),
+                                           "hook guarda_identidade.py", "skill"),
+            "troca de identidade liberada": (lambda: local.write_text(json.dumps(
+                {"env": {"FUNDACAO_PRINCIPAL": "titular", "FUNDACAO_PERMITIR_TROCA_IDENTIDADE": "1"}}),
+                encoding="utf-8", newline="\n"), (), "identidade", "FUNDACAO_PERMITIR_TROCA_IDENTIDADE"),
+            "outro titular": (lambda: None, ("--titular", "outra-pessoa"), "identidade", "outra-pessoa"),
+        }
+        originais = {p: p.read_bytes() for p in (perfil, local, hook)}
+        lancador = self.home / "abrir-fundacao.sh"
+        for nome, (mudanca, extra, item, trecho) in casos.items():
+            with self.subTest(nome):
+                mudanca()
+                r = self.preparar("--claude-sha256", sha(self.binario), *extra, wsl=True, pacotes=True)
+                for p, conteudo in originais.items():
+                    p.write_bytes(conteudo)
+                shutil.rmtree(self.raiz / "projects" / "lab-novo", ignore_errors=True)
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                erros = [l for l in r.stdout.splitlines() if l.strip().startswith(f"[erro] {item}:")]
+                self.assertTrue(erros and trecho in erros[0], r.stdout)
+                self.assertFalse(lancador.exists())
+        r = self.preparar("--claude-sha256", sha(self.binario), wsl=True, pacotes=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        texto = lancador.read_text(encoding="utf-8")
+        self.assertIn(sha(local), texto)
+        self.assertIn("TITULAR='titular'", texto)
+
+    def test_titular_e_obrigatorio(self):
+        r = rodar_bash(PREPARAR, "--raiz", posix(self.raiz), "--projeto", "caso-real", "--simular",
+                       env_extra={"HOME": posix(self.home)})
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("--titular", r.stdout + r.stderr)
 
     def test_script_bash_valido_com_fim_de_linha_lf(self):
         self.assertNotIn(b"\r", PREPARAR.read_bytes())

@@ -1,7 +1,8 @@
 """CI pública (proposta 6 da análise do vibe-coding-toolkit, 21/10/2026): o workflow da cópia pública roda as cinco
 verificações nas duas plataformas, cinco rodadas em cada (R58, R59), com as ações fixadas por SHA de commit, permissão
-só de leitura, nenhum segredo e sem credencial guardada no clone. Lê o arquivo como texto (a biblioteca padrão não
-tem YAML)."""
+só de leitura, nenhum segredo e sem credencial guardada no clone; desde a 1.7.7, uma sexta confere os pacotes de
+entrega/dist contra a árvore do mesmo commit (auditoria Codex Security da 1.7.6, #6). Lê o arquivo como texto (a
+biblioteca padrão não tem YAML)."""
 
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ class TestCIPublica(unittest.TestCase):
 
     def test_as_verificacoes_seguintes_rodam_mesmo_depois_de_uma_falha(self):
         """1.7.2: na primeira CI pública (1.7.1) cada trabalho parou no primeiro passo vermelho e escondeu os demais."""
-        self.assertEqual(self.texto.count("if: ${{ !cancelled() }}"), 4)
+        self.assertEqual(self.texto.count("if: ${{ !cancelled() }}"), 5)  # 4 até a 1.7.6; a 5.ª, a dos pacotes (#6)
 
     def test_as_cinco_verificacoes(self):
         for trecho in ("working-directory: fundacao-ia-multiprojetos/assets/fundacao-kit",
@@ -48,6 +49,11 @@ class TestCIPublica(unittest.TestCase):
                        "scripts/verificar_referencias.py --raiz fundacao-ia-multiprojetos",
                        "evals/cenarios/run_cenarios.py --saida", "--opcionais-ausentes-bloqueiam"):
             self.assertIn(trecho, self.texto)
+
+    def test_os_pacotes_versionados_sao_conferidos_contra_a_arvore(self):
+        """Auditoria Codex Security da 1.7.6, #6: na 1.7.6 a CI nunca comparava o .skill e o completo com a fonte; um
+        pacote adulterado, com o SHA256SUMS.txt do mesmo commit ajustado, passava."""
+        self.assertIn("python -B entrega/verificar_pacote.py --exigir-igual-a-arvore", self.texto)
 
 
 if __name__ == "__main__":

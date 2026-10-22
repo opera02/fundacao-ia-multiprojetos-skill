@@ -22,20 +22,66 @@ projetos → desabilitar (contador de chamadas prova que o ponto de entrada não
 atingido) → atualizar em separado (0.1.0 → 0.2.0 com campo opcional) → voltar à versão
 anterior preservando evidências [Livro p53–54]. Desligar deve valer por **todas** as
 rotas (MCP, plugin, hook, fila, agendador) [Livro p55]. Modelo:
-`assets/templates/INVENTARIO-COMPONENTE.json`. Kit: `fundacao/core/components.py`.
+`assets/templates/INVENTARIO-COMPONENTE.json`. Kit: `fundacao/core/components.py` (tetos:
+`fundacao/core/limites.py`; testes do teto: `tests/test_auditoria_1_7_6_recursos.py`).
 [Decisão; auditoria externa da 1.3.4] No kit, o despacho aceita só o registro confiável: ID
 validado antes de montar caminho, arquivo de `registry/components/<id>.json` (contido no
 registro) que declare o mesmo `component_id`, ponto de entrada em `fundacao.components.<modulo>`
 e, se a habilitação gravou `entrypoint_sha256`, o mesmo código aprovado. Componente lido pelo
 host (`entrypoint: "host-skill:<caminho do SKILL.md>"`) não é executado pelo kit; desabilitá-lo no
 registro **não** o desliga no host, e o comando avisa enquanto o arquivo existir (ver §4).
+[Decisão; auditoria Codex Security da 1.7.6, #9] **Teto de recursos por componente.** Prazo e
+autorização não limitam memória: um filho escreve gigabytes antes do prazo. O registro pode declarar
+`limits` — `request_bytes` (pedido serializado), `stdout_bytes` (o resultado em JSON), `stderr_bytes`,
+`max_files`, `file_bytes` e `total_file_bytes`; o que não declara vale pelo padrão (1 MiB, 4 MiB, 1 MiB,
+1000, 1 GiB e 4 GiB; `assets/fundacao-kit/fundacao/core/limites.py`). Nome desconhecido ou valor que não
+seja inteiro positivo torna o registro inválido. Pedido acima do teto é recusado antes de iniciar o
+processo (`E_LIMITE_EXCEDIDO`; despacho `denied_limit`). stdout ou stderr acima do teto: o executor
+(`assets/fundacao-kit/fundacao/core/processo.py`) lê em blocos, encerra a árvore na hora e registra
+`component_limit`. Os tetos de arquivo vão no pedido: o `source_manifest` 0.2.0 recusa identificadores
+demais antes de ler, lê o repetido uma vez e recusa pelo tamanho no disco, sem abrir, o arquivo acima do
+teto ou que passaria do teto somado; a leitura é em blocos. Habilitar e desabilitar regravam o registro
+pela publicação segura (#11; `references/seguranca-isolamento.md` §2). Limite: a memória do próprio
+processo do componente não tem teto do sistema.
 **Ecossistema do host** (R54) [Decisão; 1.7.0]: `python <skill>/scripts/inventariar_host.py gravar --saida
 <raiz>/registry/inventario-host.json --raiz <raiz>` registra, só lendo e sem rede, as skills do perfil e da raiz
 (ligação, `name`, versão, SHA-256, primeira linha da licença e nomes repetidos em pastas diferentes), plugins (id,
 versão, escopo e se há projeto, sem o caminho dele, que pode trazer nome de cliente), catálogos, hooks e servidores
 MCP — destes, só nome, tipo, o nome do executável (nunca caminho nem argumentos, mesmo num `command` em texto único,
-que pode trazer token) ou o host da URL; nunca `env`, `headers` nem dados da conta. O `atualizar_fundacao.py aplicar`
-termina com `verificar`, sem bloquear.
+que pode trazer token; o que não tem forma de nome, como `$env:NOME='valor';`, sai nulo [Decisão; revisão de
+segurança da 1.7.7, R177-VAL-05]) ou o host da URL (URL malformada: host nulo); nunca `env`, `headers` nem dados da
+conta. O `atualizar_fundacao.py aplicar` termina com `verificar`, sem bloquear.
+**Plugins por dentro** [Decisão; everything-claude-code, proposta 1]: no esquema `fundacao.inventario-host/2`, o
+inventário lê também o que cada plugin carrega (`scripts/inventario_plugins.py`). Lê só dentro de `~/.claude/plugins/`:
+o `installPath` de cada instalação e as pastas de `synced/` (plugins sincronizados do claude.ai). Não segue ligação nem
+`..`, e os tetos de profundidade, entradas e bytes valem durante a varredura. Instalação fora dessa pasta vai para
+`plugins_nao_lidos`, sem o caminho. Hooks de `hooks/hooks.json` e do campo `hooks` do manifesto entram com a origem
+`plugin:<id>|<escopo>`: evento, matcher (a cópia de exibição, de até 200 caracteres e com caractere de controle e
+surrogate trocados por espaço, e o SHA-256 do inteiro cru, que é o avaliado e o comparado [Decisão; revisão de
+segurança da 1.7.7, R177-VAL-03; o cru, na segunda passada, R177B-A-01]), tipo, executável e SHA-256 dos scripts da
+pasta do plugin. Servidores MCP de `.mcp.json` e `mcpServers` seguem as regras acima. Das skills, só a quantidade e os
+caracteres de `description`: base de uma estimativa do contexto fixo (caracteres ÷ 4; não é medida — o `/context` do
+Claude Code mede). Alertas de todos os hooks (`scripts/alertas_hooks.py`, regra no §2): `matcher_nunca_casa`,
+`matcher_casa_tudo`, `matcher_indeterminado` (expressão que não pôde ser avaliada: o `re` do Python não a compila,
+passou de 5 s num subprocesso — retrocesso exponencial — ou tem mais de 4096 caracteres; confira à mão [Decisão;
+revisão de segurança da 1.7.7, R177-VAL-04]; também o matcher com caractere de controle ou surrogate, que a cópia
+mostra como espaço, quando a avaliação não diz `matcher_casa_tudo` [Decisão; segunda passada, R177B-A-01]) e
+`evento_fora_do_guarda` — hook do perfil ou de plugin em evento que não é o PreToolUse dos guardas; roda fora do
+sandbox, com o que o host lhe entregar. Conteúdo de plugin não derruba nem trava o inventário: URL malformada dá host
+nulo, surrogate solto vira espaço no que é exibido e caminho com NUL vai para `plugins_nao_lidos`, sem o texto
+[R177B-A-02]; JSON com mais de 100 níveis de lista e objeto (ou que estoura o limite de recursão do leitor) vai para
+`plugins_nao_lidos` com o motivo e, no perfil e na raiz (também o TOML do Codex), vale como o ilegível [R177C-B-02].
+A forma de cada arquivo (do plugin, do perfil e da raiz) é conferida num lugar só, `FORMAS` em
+`scripts/inventario_plugins.py`: fora dela — lista no topo, `"hooks": [..]`, matcher, comando ou `args` que não são
+texto, `permissions` que não é objeto — o arquivo vale como ilegível, com o motivo, em `plugins_nao_lidos` ou em
+`arquivos_nao_lidos` (perfil e raiz), sem reproduzir chave livre (a de um projeto é um caminho), e o inventário relido
+de forma inesperada faz o `verificar` sair com 1 e o motivo [R177C-B-02, tipo inesperado]. Só a parte fora da forma
+fica de fora (o grupo, o hook, o servidor, o evento ou a chave da raiz); o resto é lido, com os alertas, e o registro
+de "não lido" guarda o SHA-256 do arquivo, que entra na comparação do `verificar`: qualquer mudança nele aparece
+[R177D-3].
+O `verificar` acusa hook acrescentado. Sobre um inventário do esquema 1, ele
+mostra uma vez o que o esquema 2 passou a ver: confira e regrave. Ficam de fora: plugins em pastas de skills,
+`--plugin-dir`, configurações gerenciadas, hooks no frontmatter de skills e agentes e pacotes `.mcpb`.
 
 ## 2. Hooks (R33, R52)
 **Donos diferentes** [Livro p56]: Git (`pre-commit`), Claude Code (eventos do produto),
@@ -49,8 +95,14 @@ Fatos conferidos [Verificado 2026-10-18]:
   `permissionDecisionReason` (campos `decision`/`reason` no topo estão depreciados para
   esse evento); código de saída 2 também bloqueia. **PostToolUse** roda depois da
   ferramenta e não desfaz o efeito.
-- *Matcher*: nomes unidos por `|` casam exatamente; outros caracteres viram regex
-  (`Edit.*` também casa `NotebookEdit`); MCP: `mcp__<servidor>__.*`. `MultiEdit` é legado.
+- *Matcher* [Verificado 2026-10-21]: `*`, vazio ou ausente casam tudo. Só letras, dígitos, `_`, `-`,
+  espaço, `,` e `|` formam lista exata (`Edit|Write` ou `Edit, Write`, com espaços em volta; `Edit || Write`
+  (só letras, espaços e `|`) é lista exata e casa só os dois). Outro caractere faz expressão regular de
+  JavaScript sem âncora: `Edit.*` também casa `NotebookEdit`, e a alternativa vazia de
+  `tool == "Edit" || tool == "Write"` casa qualquer nome. MCP: `mcp__<servidor>__.*` (`mcp__memory` sozinho
+  não casa nada; servidor de plugin: `mcp__plugin_<plugin>_<servidor>__<ferramenta>`). Em evento sem matcher
+  (UserPromptSubmit, Stop e outros) o campo é ignorado. `MultiEdit` é legado. O inventário do host confere os
+  matchers inteiros (§1).
 - Com `mcp__.*` no matcher, o hook `assets/hooks/guarda_caminho.py` nega **toda** ferramenta MCP
   fora de `FUNDACAO_MCP_PERMITIDAS` — inclusive as de infraestrutura do próprio host (no
   aplicativo Claude Desktop, a família `mcp__ccd_*`: plano, sessões, painéis). A lista aceita
@@ -153,7 +205,11 @@ e o ensaio `python <skill>/scripts/mcp_ensaio.py --raiz <raiz> --projeto <autori
 que sobe o servidor em processo separado (stdio), descobre as ferramentas, faz a chamada
 autorizada, confere a negativa entre projetos (registrada na trilha) e encerra, sem rede.
 Ensaiado nesta skill com o SDK `mcp` 2.3.0 já presente no ambiente (real-local; cenário
-CEN-15 e teste `test_mcp.py`). Verifique a presença do pacote no inventário
+CEN-15 e teste `test_mcp.py`). Pasta `mcp/` sem `__init__` no caminho de importação (a raiz
+da fundação, no uso normal) não é o SDK: sem ele instalado, o Python a montaria como pacote de
+namespace, e o servidor a trata como "pacote mcp ausente", sem importar nada dela; o
+`atualizar_fundacao.py checar` a recusa [revisão de segurança da 1.7.7, terceira passada,
+R177C-B-03]. Verifique a presença do pacote no inventário
 (`modulos_opcionais.mcp`) — é fato do ambiente, não da skill; ausente, instalar exige
 autorização e cadeia fixada [Decisão; revisão de segurança da 1.4.5, #20]: (1) num ambiente
 confiável com o mesmo SO, arquitetura e Python da venv de destino, o operador resolve
@@ -219,6 +275,12 @@ isolado → subagente · dados externos com autorização → MCP · garantia de
 hook/permissão · distribuição → plugin. Fixe versão e hash de todo componente externo
 (R54) e revise o diff a cada atualização.
 
+**Texto sempre carregado custa mais** [Decisão; 1.7.7; método adaptado de Harness², P5]: o corpo do `SKILL.md`, a
+descrição dele e o `AGENTS.md` gerado entram em toda sessão e competem com o espaço do trabalho. Antes de pôr uma
+regra ali, prefira, nesta ordem, uma referência carregada sob demanda, um script, um subagente e um hook. Os três
+têm teto em caracteres que só desce (`scripts/tests/test_orcamento_texto.py`): regra nova paga com um corte ou vai
+para a referência da etapa; subir o teto é mudança de critério, com motivo registrado.
+
 **Instruções da raiz e pastas de dados** [Verificado 2026-10-21; Decisão; 1.7.0]: o Claude Code carrega ao iniciar
 o `CLAUDE.md` da pasta da sessão e das pastas acima (os de subpastas, quando lê arquivos nelas); `@AGENTS.md` dentro
 dele importa sem duplicar, e o `AGENTS.md` sozinho só é lido direto quando não há `CLAUDE.md` (2.1.277 ou
@@ -231,4 +293,5 @@ temporária vazia, sem eles. Pasta `data/` é dado: o perfil do host exclui `**/
 uma subpasta é carregada quando a sessão lê ou edita ali, sem configuração que desligue isso — negue-a por nome
 (`Skill(<nome>)`, opção `--negar-skill` de `assets/host/preparo_host.py perfil-windows|perfil-wsl`) a partir de
 `python <skill>/scripts/instrucoes_aninhadas.py listar --raiz <pasta>` (só lê; lista instruções, skills, agentes,
-comandos, regras, MCP e configurações aninhados, com as negações sugeridas).
+comandos, regras, MCP e configurações aninhados, com as negações sugeridas; não segue ligação e tem tetos — código 1
+quando o inventário fica parcial) [auditoria Codex Security da 1.7.6, #7].

@@ -111,8 +111,11 @@ Resposta de rota simulada sai como `succeeded_simulated`, nunca como `succeeded`
    todos os descendentes ficam num Job Object (Windows; nos demais, o grupo de processos — ramo
    não executado aqui, que não alcança descendente com sessão própria): quando a chamada
    termina, ou no prazo, o que sobrar é encerrado — inclusive um órfão que herdou as saídas,
-   que antes prendia a resposta. Falha ao iniciar o processo e prompt acima do limite saem como resultado
-   `failed`, dentro do contrato. Isso reduz a superfície, mas
+   que antes prendia a resposta. A saída também tem teto, porque o prazo não limita memória: stdout
+   acima de 32 MiB ou stderr acima de 4 MiB encerra a árvore na hora, e a chamada sai `invalid_output`,
+   contada no teto da rota (a CLI começou) [auditoria Codex Security da 1.7.6, #9; executor em
+   `assets/fundacao-kit/fundacao/core/processo.py`]. Falha ao iniciar o processo e prompt acima do limite
+   saem como resultado `failed`, dentro do contrato. Isso reduz a superfície, mas
    não é barreira: antes de liberar a rota, prove com um documento-canário de outro projeto
    na raiz. O canário é necessário, não suficiente (uma negativa não prova que outra instrução
    não leia): com dados reais numa fundação multiprojeto, a rota Codex CLI fica **desligada**
@@ -161,8 +164,10 @@ antes de repetir); modelo rejeitado (não invente substituto nem mude o orçamen
 
 ## Com o kit
 `fundacao/adapters/` (`assets/fundacao-kit/fundacao/adapters/simulado.py`, `assets/fundacao-kit/fundacao/adapters/cli.py` com `ClaudeCLIProvider`/`CodexCLIProvider`
-— código presente), `fundacao/core/routing.py`, `fundacao/core/usage.py`,
+— código presente), `fundacao/core/processo.py` (executor de árvore com prazo e teto de saída),
+`fundacao/core/routing.py`, `fundacao/core/usage.py`,
 `registry/route_policy.json`. Testes: `tests/test_eventos_rotas.py`, `tests/test_configuracao_decidida.py`,
 `tests/test_adaptadores_rotas.py` (linha de comando, entrada padrão, ambiente e tetos, com
 `subprocess.run` substituído — nenhuma CLI de provedor é executada),
-`tests/test_auditoria_1_5_0_execucao.py` (#9, #17).
+`tests/test_auditoria_1_5_0_execucao.py` (#9, #17), `tests/test_auditoria_1_7_6_recursos.py` (teto da
+saída, com uma "CLI" de ensaio).

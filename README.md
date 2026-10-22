@@ -6,7 +6,7 @@
 
 **Uma base reutilizável para criar, adaptar e operar projetos com inteligência artificial.**
 
-[![Skill 1.7.6](https://img.shields.io/badge/skill-1.7.6-087E8B)](fundacao-ia-multiprojetos/SKILL.md)
+[![Skill 1.7.7](https://img.shields.io/badge/skill-1.7.7-087E8B)](fundacao-ia-multiprojetos/SKILL.md)
 [![Kit 1.7.4](https://img.shields.io/badge/kit-1.7.4-176B87)](fundacao-ia-multiprojetos/assets/fundacao-kit/fundacao/__init__.py)
 [![CI validar](https://github.com/opera02/fundacao-ia-multiprojetos-skill/actions/workflows/validar.yml/badge.svg)](https://github.com/opera02/fundacao-ia-multiprojetos-skill/actions/workflows/validar.yml)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB)](#requisitos)
@@ -22,7 +22,7 @@ O repositório entrega **uma skill no padrão Agent Skills e um kit de referênc
 
 > **O que você instala:** a skill fornece o procedimento que a IA seguirá. O kit fornece código local para experimentar e implementar os contratos. Instalar a skill, implantar uma fundação e validar integrações reais são etapas distintas.
 >
-> **Versões desta entrega:** skill **1.7.6**, de **21/10/2026**, e kit **1.7.4** (o fluxo de adaptação passa a guardar no projeto, numa pasta conferida por manifesto, a ferramenta que roda os casos do golden pela fundação, sem identidade própria, para que a comparação com o golden possa ser repetida — ressalva da nova execução da avaliação E10, com as correções da revisão de segurança dessa diferença; antes, na 1.7.5, a correção dos cinco achados da avaliação de segurança E11 no kit e da lacuna da E10 na skill, com as correções da revisão de segurança dessa diferença; na 1.7.3, quinze melhorias vindas da análise do vibe-coding-toolkit). A rota habilitada inicialmente no kit é a **simulada**. Consulte o [estado de verificação](#verificacao) para distinguir código disponível, testes locais e integrações ainda não ensaiadas.
+> **Versões desta entrega:** skill **1.7.7**, de **22/10/2026**, e kit **1.7.7** (correção dos doze achados da auditoria Codex Security sobre a 1.7.6 — o código importado no fluxo de adaptação só roda pelo lançador, com plano preso por SHA-256 e pelo manifesto da cópia e, no WSL, dentro do bubblewrap; a restauração é autorizada pela fundação viva ou por uma âncora fora da cópia; o preparo do host não usa o Python indicado no perfil e fixa o perfil inteiro do WSL; o instalador, o atualizador e o empacotador não seguem caminhos nem ferramentas não conferidos; e a CI pública confere o pacote e a transferência contra a árvore —, métodos adaptados do harness2, do Google, e do everything-claude-code nas avaliações, no inventário do host e no registro de mudanças e lições, e as correções das passadas da revisão de segurança dessa diferença; antes, na 1.7.6, a ferramenta que roda os casos do golden guardada no projeto; na 1.7.5, a correção dos achados da avaliação de segurança E11; na 1.7.3, quinze melhorias vindas da análise do vibe-coding-toolkit). A rota habilitada inicialmente no kit é a **simulada**. Consulte o [estado de verificação](#verificacao) para distinguir código disponível, testes locais e integrações ainda não ensaiadas.
 
 ## Navegação
 
@@ -222,10 +222,10 @@ Se o interpretador instalado for chamado `python3`, use esse nome nos comandos. 
 
 ### Compatibilidade registrada pelo projeto
 
-| Ambiente | Evidência da entrega 1.7.6 | O que não está demonstrado nesse registro |
+| Ambiente | Evidência da entrega 1.7.7 | O que não está demonstrado nesse registro |
 |---|---|---|
 | **Windows 11 + Python 3.12.10** | Suítes, cenários, instalação e atualização em ambientes descartáveis | Uso de dados reais e integrações reais com provedores |
-| **Claude Code 2.1.302** | Instalação registrada até a 1.7.6; descoberta no catálogo conferida até a 1.4.5 | Acionamento da 1.7.6 instalada em um pedido real |
+| **Claude Code 2.1.302** | Instalação registrada até a 1.7.7; descoberta no catálogo conferida até a 1.4.5 | Acionamento da 1.7.7 instalada em um pedido real |
 | **Codex** | Estrutura e caminhos compatíveis com a documentação do host | Uso desta skill em sessão Codex |
 | **Claude.ai** | ZIP específico preparado | Upload e execução deste pacote no serviço |
 | **Linux/macOS; Python 3.10/3.11** | Caminhos previstos no código; simulações de condições de compatibilidade | Certificação completa nessas combinações pela entrega original |
@@ -250,32 +250,32 @@ Sem Git, use **Code → Download ZIP**, extraia o conteúdo e abra o terminal na
 | Você quer… | Arquivo |
 |---|---|
 | Instalar a skill localmente | [`entrega/dist/fundacao-ia-multiprojetos.skill`](entrega/dist/fundacao-ia-multiprojetos.skill) |
-| Levar pacote, instalador e instruções para outro computador | [`fundacao-ia-multiprojetos-1.7.6.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.6.zip) |
-| Fazer upload no Claude.ai | [`fundacao-ia-multiprojetos-1.7.6-para-claude-ai.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.6-para-claude-ai.zip) |
+| Levar pacote, instalador e instruções para outro computador | [`fundacao-ia-multiprojetos-1.7.7.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.7.zip) |
+| Fazer upload no Claude.ai | [`fundacao-ia-multiprojetos-1.7.7-para-claude-ai.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.7-para-claude-ai.zip) |
 | Examinar também os cenários de avaliação | [`fundacao-ia-multiprojetos-completo.zip`](entrega/dist/fundacao-ia-multiprojetos-completo.zip) |
-| Pedir uma revisão em texto a outra IA | [`fundacao-ia-multiprojetos-1.7.6-para-revisao.md`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.6-para-revisao.md) |
+| Pedir uma revisão em texto a outra IA | [`fundacao-ia-multiprojetos-1.7.7-para-revisao.md`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.7-para-revisao.md) |
 
-O arquivo `.skill` é um ZIP com a pasta `fundacao-ia-multiprojetos/` na raiz. O pacote instalável contém **123 arquivos** e não inclui `evals/`; o completo inclui as avaliações. O arquivo `-para-revisao.md` é material de leitura, não um instalador.
+O arquivo `.skill` é um ZIP com a pasta `fundacao-ia-multiprojetos/` na raiz. O pacote instalável contém **238 arquivos** e não inclui `evals/`; o completo inclui as avaliações. O arquivo `-para-revisao.md` é material de leitura, não um instalador.
 
 ### 3. Instalar para descoberta local por Claude Code e Codex
 
 Execute na raiz do repositório:
 
 ```bash
-python entrega/instalar_skill.py instalar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 eadd68dab228c147d45357fcf6b978faada776ad11dfcdc80fd8661c973937de
+python entrega/instalar_skill.py instalar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 b9dee031f09f56d19fe8e20ae7ff1dc892bc11a58d6aa9c0c18e1b0c936441de
 ```
 
 Depois, confira a cópia:
 
 ```bash
-python entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 eadd68dab228c147d45357fcf6b978faada776ad11dfcdc80fd8661c973937de
+python entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 b9dee031f09f56d19fe8e20ae7ff1dc892bc11a58d6aa9c0c18e1b0c936441de
 ```
 
 **Esse instalador é compartilhado:** cria a cópia em `~/.agents/skills/fundacao-ia-multiprojetos/` e uma ligação em `~/.claude/skills/fundacao-ia-multiprojetos/`. No Windows, usa junção de diretório; nos sistemas POSIX, link simbólico. Ele não instala nem autentica os aplicativos.
 
-A origem é conferida antes da extração contra o `--sha256` informado, obrigatório desde a 1.5.1; o [`SHA256SUMS.txt`](entrega/dist/SHA256SUMS.txt) ao lado só detecta corrupção, porque viaja junto com o pacote. O comando `verificar` compara os arquivos instalados com a origem e confere a ligação. **Isso comprova a cópia, não o acionamento no host.** Se a skill já existir, siga [Atualização](#manutencao).
+A origem é conferida antes da extração contra o `--sha256` informado, obrigatório desde a 1.5.1; o [`SHA256SUMS.txt`](entrega/dist/SHA256SUMS.txt) ao lado só detecta corrupção, porque viaja junto com o pacote. Desde a 1.7.7, a CI pública confere, a cada envio, que os pacotes de `entrega/dist/` e a transferência da versão são exatamente a árvore do mesmo commit e que a [lista dos pacotes liberados](entrega/HISTORICO-PACOTES-SHA256.txt) só cresce. O comando `verificar` compara os arquivos instalados com a origem e confere a ligação. **Isso comprova a cópia, não o acionamento no host.** Se a skill já existir, siga [Atualização](#manutencao).
 
-O hash acima corresponde especificamente ao pacote **1.7.6**. Desde a 1.5.1, `instalar` e `atualizar` recusam sem `--sha256`. Para outra versão, use o hash publicado junto ao pacote escolhido; não substitua um hash divergente apenas para fazer a instalação continuar.
+O hash acima corresponde especificamente ao pacote **1.7.7**. Desde a 1.5.1, `instalar` e `atualizar` recusam sem `--sha256`. Para outra versão, use o hash publicado junto ao pacote escolhido; não substitua um hash divergente apenas para fazer a instalação continuar.
 
 <details>
 <summary><strong>Alternativa: instalação manual somente no host ou no projeto escolhido</strong></summary>
@@ -302,7 +302,7 @@ Referências oficiais: [Claude Code](https://code.claude.com/docs/en/skills) e [
 
 1. Habilite **Code execution and file creation** em **Settings → Capabilities**. Em uma organização, as políticas de skills e execução de código também precisam permitir o recurso.
 2. Acesse **Customize → Skills → + → + Create skill → Upload a skill**.
-3. Envie o arquivo [`fundacao-ia-multiprojetos-1.7.6-para-claude-ai.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.6-para-claude-ai.zip).
+3. Envie o arquivo [`fundacao-ia-multiprojetos-1.7.7-para-claude-ai.zip`](entrega/transferencia/fundacao-ia-multiprojetos-1.7.7-para-claude-ai.zip).
 4. Habilite a skill na lista e solicite seu uso explicitamente em uma conversa.
 
 O ZIP é idêntico ao `.skill`, com extensão apropriada ao upload. O projeto preparou o arquivo, mas **não testou seu upload nem sua execução no Claude.ai**. Uma sessão na nuvem só pode atuar nos arquivos e ferramentas que realmente alcança; instalar a skill lá não concede acesso ao disco do seu computador.
@@ -651,8 +651,8 @@ A entrega registra um ensaio local de descoberta, chamada e negativa, mas a cone
 Na raiz do repositório, após obter o pacote desejado:
 
 ```bash
-python entrega/instalar_skill.py atualizar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 eadd68dab228c147d45357fcf6b978faada776ad11dfcdc80fd8661c973937de
-python entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 eadd68dab228c147d45357fcf6b978faada776ad11dfcdc80fd8661c973937de
+python entrega/instalar_skill.py atualizar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 b9dee031f09f56d19fe8e20ae7ff1dc892bc11a58d6aa9c0c18e1b0c936441de
+python entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 b9dee031f09f56d19fe8e20ae7ff1dc892bc11a58d6aa9c0c18e1b0c936441de
 ```
 
 A versão anterior é guardada em `~/.agents/skills-anteriores/`. A troca usa preparação, verificação e renomeações com mecanismo de retorno e recuperação de interrupção; não é descrita como uma única troca atômica. Para voltar, use `atualizar --origem` com a cópia anterior ou o pacote correspondente e confira sua integridade. **Não existe subcomando `rollback`.**
@@ -741,21 +741,21 @@ Para se aprofundar: [guia de entrega](entrega/README-ENTREGA.md) · [árvore det
 
 ## Testes, evidências e limites
 
-### Resultados registrados na entrega 1.7.6
+### Resultados registrados na entrega 1.7.7
 
 Os números abaixo são o registro histórico em **Windows 11, Python 3.12.10**. Devem ser lidos com suas condições, e não como uma certificação geral de produção.
 
 | Verificação | Resultado registrado | Alcance |
 |---|---|---|
-| Kit de referência | Suíte com **355 testes**, sem falhas e com **5 pulados** | Testes locais positivos e negativos; os pulados dependiam de links simbólicos de arquivo ou do bash do Linux/WSL |
-| Scripts da skill | **193 testes**, sem falhas e com **2 pulados** (um só roda como administrador) | Ferramentas locais, inclusive o preparo do host num PowerShell e num bash do Git de verdade, as instruções da raiz e a catraca da atualização |
-| Ferramentas de entrega | **100 testes**, sem falhas e com **2 pulados** | Instalação, empacotamento, regressões e a CI pública |
+| Kit de referência | Suíte com **418 testes**, sem falhas e com **5 pulados** | Testes locais positivos e negativos; os pulados dependiam de links simbólicos de arquivo ou do bash do Linux/WSL |
+| Scripts da skill | **445 testes**, sem falhas e com **4 pulados** (um só roda como administrador; dois só rodam com o bubblewrap do Linux/WSL, onde passaram) | Ferramentas locais, inclusive o preparo do host num PowerShell e num bash do Git de verdade, as instruções da raiz, a catraca da atualização e o plano de execução do fluxo B |
+| Ferramentas de entrega | **254 testes**, sem falhas e com **2 pulados** | Instalação, empacotamento, regressões, as ferramentas das avaliações e a CI pública |
 | Cenários CEN-01–CEN-16 | **16/16**, com **113/113 verificações** no ambiente registrado | Incluem condições simuladas identificadas; algumas dependem de ferramentas externas |
-| Referências da árvore | **351 conferidas, 0 ausentes** | Integridade dos caminhos internos conferidos pela ferramenta |
+| Referências da árvore | **420 conferidas, 0 ausentes** | Integridade dos caminhos internos conferidos pela ferramenta |
 | Validação estrutural | `quick_validate` válido na árvore e no pacote | Formato e estrutura; não comprova acionamento no host |
 | MCP por stdio | Descoberta, chamada, negativa e encerramento conferidos | Ensaio local com SDK disponível; não comprova a integração em cada aplicativo |
 
-Fontes: [guia de entrega](entrega/README-ENTREGA.md), [matriz de hosts](entrega/MATRIZ-HOSTS-E-VERIFICACOES.md), [avaliações](entrega/avaliacoes/AVALIACOES.md) e [cenários da versão 1.7.6](entrega/avaliacoes/cenarios/RESULTADOS-versao-1.7.6.md).
+Fontes: [guia de entrega](entrega/README-ENTREGA.md), [matriz de hosts](entrega/MATRIZ-HOSTS-E-VERIFICACOES.md), [avaliações](entrega/avaliacoes/AVALIACOES.md) e [cenários da versão 1.7.7](entrega/avaliacoes/cenarios/RESULTADOS-versao-1.7.7.md).
 
 **Conferência adicional da documentação da 1.4.5:** em Linux com Python 3.12.14, as três suítes coletaram 229 testes: **223 aprovados, 6 pulados e nenhuma falha**. Também foram conferidas 28 chamadas de CLI, incluindo negativas esperadas, instalação, atualização, criação de projeto/tarefa, backup e restauração. Esse ensaio não valida o acionamento da skill nos hosts. Ambiente, comandos e limites estão no [registro da revisão do README](docs/VERIFICACAO-README.md).
 
@@ -767,6 +767,7 @@ Na raiz do repositório:
 python -B fundacao-ia-multiprojetos/scripts/verificar_referencias.py
 python -B -m unittest discover -s fundacao-ia-multiprojetos/scripts/tests
 python -B -m unittest discover -s entrega/testes
+python -B entrega/verificar_pacote.py --exigir-igual-a-arvore --exigir-transferencia --lista-so-cresce --exigir-transferencia-fixada
 ```
 
 Para a suíte do kit, entre na pasta que contém seu módulo:

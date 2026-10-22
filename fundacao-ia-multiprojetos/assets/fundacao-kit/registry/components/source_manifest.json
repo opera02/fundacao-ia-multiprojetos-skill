@@ -1,7 +1,7 @@
 {
   "schema_version": "fundacao.component/1",
   "component_id": "source_manifest",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "kind": "tool",
   "purpose": "Relaciona caminho relativo, tamanho e SHA-256 de documentos autorizados do projeto, a partir de identificadores do catálogo.",
   "enabled": false,
@@ -9,6 +9,14 @@
   "allowed_projects": [],
   "permissions": ["sources:read"],
   "timeout_seconds": 10,
+  "limits": {
+    "request_bytes": 1048576,
+    "stdout_bytes": 4194304,
+    "stderr_bytes": 1048576,
+    "max_files": 1000,
+    "file_bytes": 1073741824,
+    "total_file_bytes": 4294967296
+  },
   "requires_modules": [],
   "cost_mode": "local_sem_custo",
   "evidence": []

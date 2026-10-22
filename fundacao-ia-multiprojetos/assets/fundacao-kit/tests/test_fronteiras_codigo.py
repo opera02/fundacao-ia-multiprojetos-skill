@@ -3,7 +3,9 @@ vibe-coding-toolkit, 21/10/2026).
 
 As regras eram só texto (references/principios-e-evidencias.md; db.py liga foreign_keys, busy_timeout e WAL em
 cada conexão). Agora valem como teste, só com a biblioteca padrão e sem executar o código lido:
-- SQLite só é aberto por core/db.py, core/backup.py e __main__.py (as conexões com as PRAGMAs da fundação);
+- SQLite só é aberto por core/db.py e core/backup.py (as conexões com as PRAGMAs da fundação; até a 1.7.6 também
+  por __main__.py, que lia a autorização no banco da cópia — na 1.7.7 ela foi para core/ancora_copia.py, que abre o
+  banco pelo db.py: auditoria Codex Security da 1.7.6, #2);
 - o núcleo (core/) não importa adaptador — a dívida conhecida fica enumerada e não pode crescer;
 - nada de print fora dos pontos de entrada; só biblioteca padrão (o SDK mcp só no servidor MCP);
 - arquivo novo fica em até 350 linhas; arquivo maior tem teto que não sobe e que precisa descer quando o
@@ -20,17 +22,20 @@ import unittest
 from helpers import KIT
 
 PACOTE = KIT / "fundacao"
-ABREM_SQLITE = {"fundacao/core/db.py", "fundacao/core/backup.py", "fundacao/__main__.py"}
+ABREM_SQLITE = {"fundacao/core/db.py", "fundacao/core/backup.py"}
 PONTOS_DE_ENTRADA = {"fundacao/__main__.py", "fundacao/mcp_servidor.py"}
 TERCEIROS = {"fundacao/mcp_servidor.py": {"mcp"}}
-# Dívida conhecida: components.py usa adapters.cli._processo (contenção do processo no Windows). Não cresce.
-DIVIDA_NUCLEO_ADAPTADOR = {"fundacao/core/components.py"}
+# Dívida paga na 1.7.7: components.py usava adapters.cli._processo; o executor de árvore de processos saiu para
+# core/processo.py (com o teto de saída da auditoria Codex Security da 1.7.6, #9). A lista vazia continua valendo:
+# dependência nova do núcleo para adaptador não entra.
+DIVIDA_NUCLEO_ADAPTADOR: set[str] = set()
 LIMITE, FOLGA = 350, 30
 # 1.7.4: a leitura do registro protegido saiu de backup.py (registro_protegido.py) e o comando do titular saiu de
 # decisoes.py (comando_titular.py) quando as correções da avaliação E11 entraram; com o encadeamento das decisões no
 # lugar da ordem por data (revisão de segurança da 1.7.4), decisoes.py encolheu. Os dois tetos desceram em relação à
 # 1.7.3 (backup.py 882 -> 816, decisoes.py 786 -> 741).
-TETO = {"fundacao/__main__.py": 384, "fundacao/adapters/cli.py": 405, "fundacao/core/backup.py": 816,
+# 1.7.7: com a saída do executor para core/processo.py, adapters/cli.py ficou abaixo de 350 linhas e saiu da lista.
+TETO = {"fundacao/__main__.py": 384, "fundacao/core/backup.py": 816,
         "fundacao/core/decisoes.py": 741, "fundacao/core/knowledge.py": 442, "fundacao/core/memory.py": 560,
         "fundacao/core/tasks.py": 803}
 

@@ -1,15 +1,31 @@
-"""Auditoria externa da 1.3.4 — `caracterizar.py` (F13): comparação integral e efeitos isolados por caso."""
+"""Auditoria externa da 1.3.4 — `caracterizar.py` (F13): comparação integral e efeitos isolados por caso.
+
+Desde a 1.7.7, `gravar` e `comparar` só rodam presos ao plano dos mesmos argumentos (auditoria Codex Security da
+1.7.6, #1); aqui o plano é sem isolamento, com o motivo registrado, porque os programas são fictícios do teste.
+"""
 
 from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from apoio import rodar_script
+
+SEM_ISOLAMENTO = ("--sem-isolamento", "teste da comparação: programas fictícios do próprio teste")
+
+
+def com_plano(acao: str, *args) -> subprocess.CompletedProcess:
+    """`gravar` ou `comparar` com o hash do plano dos mesmos argumentos; plano recusado volta como está."""
+    plano = rodar_script("caracterizar.py", "plano", *SEM_ISOLAMENTO, *args)
+    if plano.returncode != 0:
+        return plano
+    return rodar_script("caracterizar.py", acao, "--plano-aprovado", json.loads(plano.stdout)["sha256"],
+                        *SEM_ISOLAMENTO, *args)
 
 
 class TestF13Caracterizacao(unittest.TestCase):
@@ -25,12 +41,12 @@ class TestF13Caracterizacao(unittest.TestCase):
         shutil.rmtree(self.base, ignore_errors=True)
 
     def gravar(self, *extra):
-        return rodar_script("caracterizar.py", "gravar", "--entradas", self.proj / "entradas" / "*.json",
-                            "--saida", self.golden, *extra, "--", sys.executable, self.antigo, "{entrada}")
+        return com_plano("gravar", "--entradas", self.proj / "entradas" / "*.json",
+                         "--saida", self.golden, *extra, "--", sys.executable, self.antigo, "{entrada}")
 
     def comparar(self, *extra):
-        p = rodar_script("caracterizar.py", "comparar", "--golden", self.golden, *extra,
-                         "--", sys.executable, self.novo, "{entrada}")
+        p = com_plano("comparar", "--golden", self.golden, *extra,
+                      "--", sys.executable, self.novo, "{entrada}")
         return p, (json.loads(p.stdout) if p.stdout.strip().startswith("{") else None)
 
     def test_f13_mudanca_depois_de_20000_caracteres_e_detectada(self):
@@ -68,11 +84,11 @@ class TestF13Caracterizacao(unittest.TestCase):
         programa = "import sys, pathlib\npathlib.Path(sys.argv[2], 'saida.txt').write_text('ok:' + pathlib.Path(sys.argv[1]).name)\n"
         self.antigo.write_text(programa, encoding="utf-8")
         self.novo.write_text(programa, encoding="utf-8")
-        g = rodar_script("caracterizar.py", "gravar", "--entradas", self.proj / "entradas" / "*.json", "--saida",
-                         self.golden, "--ensaio", ensaio, "--", sys.executable, self.antigo, "{entrada}", "{ensaio}")
+        g = com_plano("gravar", "--entradas", self.proj / "entradas" / "*.json", "--saida",
+                      self.golden, "--ensaio", ensaio, "--", sys.executable, self.antigo, "{entrada}", "{ensaio}")
         self.assertEqual(g.returncode, 0, g.stderr[-400:])
-        p = rodar_script("caracterizar.py", "comparar", "--golden", self.golden, "--ensaio", ensaio,
-                         "--", sys.executable, self.novo, "{entrada}", "{ensaio}")
+        p = com_plano("comparar", "--golden", self.golden, "--ensaio", ensaio,
+                      "--", sys.executable, self.novo, "{entrada}", "{ensaio}")
         self.assertEqual(p.returncode, 0, p.stdout[-400:] + p.stderr[-400:])
 
     def test_f13_nao_limpa_pasta_do_usuario_sem_marca_de_ensaio(self):
@@ -80,8 +96,8 @@ class TestF13Caracterizacao(unittest.TestCase):
         pasta_usuario.mkdir()
         (pasta_usuario / "importante.txt").write_text("não apagar", encoding="utf-8")
         self.antigo.write_text("print('x')\n", encoding="utf-8")
-        p = rodar_script("caracterizar.py", "gravar", "--entradas", self.proj / "entradas" / "*.json", "--saida",
-                         self.golden, "--ensaio", pasta_usuario, "--", sys.executable, self.antigo, "{entrada}")
+        p = com_plano("gravar", "--entradas", self.proj / "entradas" / "*.json", "--saida",
+                      self.golden, "--ensaio", pasta_usuario, "--", sys.executable, self.antigo, "{entrada}")
         self.assertNotEqual(p.returncode, 0)
         self.assertEqual((pasta_usuario / "importante.txt").read_text(encoding="utf-8"), "não apagar")
 

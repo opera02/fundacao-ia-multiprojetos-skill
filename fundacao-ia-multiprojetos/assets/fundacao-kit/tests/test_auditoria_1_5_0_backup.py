@@ -4,8 +4,9 @@
 ligação dentro da cópia não confere. #8: a cópia é conferida por uma âncora guardada FORA dela — o
 SHA-256 do manifest.json, devolvido pelo `backup criar` e anotado no livro de cópias da fundação
 (`state/copias.jsonl`, ao lado do registro protegido). Sem âncora, cópia que não consta no livro ou
-cujo código difere do kit que restaura só é liberada por decisão explícita. A CLI da âncora é
-conferida em `test_restauracao.py`.
+cujo código difere do kit que restaura só é liberada por decisão explícita; desde a 1.7.7 (auditoria
+Codex Security da 1.7.6, #2), também a cópia com o código igual ao do kit, e a decisão leva o motivo
+(ver `test_auditoria_1_7_7_ancora.py`). A CLI da âncora é conferida em `test_restauracao.py`.
 Cada teste exige o comportamento seguro; na 1.4.5 (base a8e74c4) os de ataque falham por asserção.
 Identidades, projetos e conteúdos são fictícios; nada é executado do código da cópia.
 """
@@ -187,11 +188,17 @@ class TestN8AncoraExterna(_Base):
         self.assertNotIn("aviso_ancora", res)
         self.assertEqual(self.eventos_de_fim(certa)[-1]["ancora"], "conferida")
 
-    def test_8_sem_ancora_e_com_o_codigo_do_kit_libera_com_aviso_alto(self):
+    def test_8_sem_ancora_e_com_o_codigo_do_kit_so_libera_com_decisao_e_aviso_alto(self):
+        """Até a 1.7.6, liberava só com o aviso; a cópia forjada com o código do kit passava (1.7.7, #2)."""
         snap = self.pasta("snap")
         backup.create_backup(self.root, snap, "a8-sem-ancora")
         dest = self.pasta("dest")
-        res = backup.restore(snap, dest, self.registro_guardado_sem_livro())
+        registro = self.registro_guardado_sem_livro()
+        res = backup.restore(snap, dest, registro)
+        self.assertFalse(res["released"], res)
+        self.assertEqual(res["codigo_diferente"], [])
+        self.assertFalse(dest.exists())
+        res = backup.restore(snap, dest, registro, aceitar_copia_sem_ancora="desastre: só o registro foi guardado")
         self.assertTrue(res["released"], res)
         self.assertEqual(res["ancora"]["situacao"], "ausente")
         self.assertIn("--sha256-manifesto", res["aviso_ancora"])
@@ -209,7 +216,7 @@ class TestN8AncoraExterna(_Base):
         self.assertFalse(res["released"])
         self.assertEqual(res["codigo_diferente"], ["fundacao/__init__.py"])
         self.assertFalse(dest.exists())
-        aceito = backup.restore(snap, dest, registro, aceitar_copia_sem_ancora=True)
+        aceito = backup.restore(snap, dest, registro, aceitar_copia_sem_ancora="personalização local conferida")
         self.assertTrue(aceito["released"], aceito)
         self.assertIn("decisão explícita", aceito["ressalva_ancora"])
         self.assertIn("decisão explícita", self.eventos_de_fim(dest)[-1]["ressalva_ancora"])

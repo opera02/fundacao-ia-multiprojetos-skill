@@ -42,7 +42,9 @@ medido), estado de custo [Livro p163; 3.0 R10.1]. Eventos com finalidade: criaç
 transição, chamada, negativa, erro, resultado, aprovação [Livro p165].
 Trilha à prova de edição: `prev_hash` encadeado; pasta fora do alcance de escrita do
 agente; ancoragem periódica (commit assinado/carimbo) [3.0 R10.3]. Kit:
-`fundacao/core/events.py` (`emit` na mesma transação, `verify_chain`, `export_jsonl`).
+`fundacao/core/events.py` (`emit` na mesma transação, `verify_chain`, `export_jsonl` — que acrescenta por
+`publicacao.anexar`: destino que é ligação ou vínculo físico recusa sem gravar nem marcar eventos; revisão de
+segurança da 1.7.7, R177-KIT-04).
 
 ## Painel que ajuda a decidir (R50) [Livro p163–164]
 Cinco blocos: tarefas por estado · falhas recentes · requisitos sem evidência · consumo

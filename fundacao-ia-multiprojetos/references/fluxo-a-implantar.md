@@ -270,8 +270,12 @@ do SO (exFAT/FAT) → isolamento só lógico, declarado como limitação antes d
 projeto criado, integração real com provedores, capacidade inativa) aparecem separados.
 
 **Falhas:** matriz ou RETOMADA inválidas → corrija antes de encerrar; evidência citada
-que não existe → retire a afirmação ou refaça a verificação; sessão interrompida → a
-RETOMADA da última etapa concluída é o ponto de continuidade.
+que não existe → retire a afirmação ou refaça a verificação; evidência ou histórico fora da
+raiz, por ligação ou acima do teto → copie para `evidence/` e cite o caminho relativo [Decisão;
+auditoria Codex Security da 1.7.6, #7]; evidência ou histórico em caminho protegido (`state/`,
+`projects/<projeto>/data/`, segredo) → registre o resultado em `evidence/`, sem o dado [Decisão;
+revisão de segurança da 1.7.7, R177-VAL-01]; sessão interrompida → a RETOMADA da última etapa
+concluída é o ponto de continuidade.
 
 ---
 
@@ -291,20 +295,31 @@ que cada um garante e por quê: `references/seguranca-isolamento.md` §5.
    powershell -ExecutionPolicy Bypass -File "<skill>/assets/host/windows/preparar-maquina.ps1" -Raiz "<raiz>" -Titular <id> -Projeto <projeto> -Backups "<pasta de backup em outro disco>"
    ```
    `-Projeto` também grava o projeto autenticado das sessões (`FUNDACAO_PROJECT`, que o `guarda_caminho.py` exige para
-   liberar a escrita) no `settings.local.json` [Decisão; 1.7.0]. Opcionais: `-NegarSkill nome1,nome2` (skills
-   aninhadas em pastas de dados, listadas por `scripts/instrucoes_aninhadas.py`, negadas por nome nos dois perfis),
-   `-SomenteLeitura "<pasta>"` (origem que a sessão só lê), `-Python <python.exe>` e `-TrocarChave`
-   (troca de chave, com cópia da âncora anterior); `-Simular` ou `-WhatIf` só mostram o plano. Se a chave ainda não
-   existir, o ssh-keygen pede a senha duas vezes: só o titular a digita e a anota fora do computador, junto com a
-   impressão digital que o script mostra no fim.
+   liberar a escrita) no `settings.local.json` [Decisão; 1.7.0] e deixa nele só a identidade e o projeto, porque a
+   sessão de dados reais carrega o arquivo inteiro; o anterior vai para `.claude/anteriores/` [Decisão; auditoria
+   Codex Security da 1.7.6, #5]. Opcionais: `-NegarSkill nome1,nome2` (skills aninhadas em pastas de dados, listadas
+   por `scripts/instrucoes_aninhadas.py`, negadas por nome nos dois perfis), `-SomenteLeitura "<pasta>"` (origem que a
+   sessão só lê), `-Python <python.exe>` e `-TrocarChave` (troca de chave, com cópia da âncora anterior); `-Simular`
+   ou `-WhatIf` só mostram o plano. Sem `-Python`, o interpretador sai das instalações registradas do Windows ou do
+   PATH, nunca do `.claude/settings.json` existente; com ou sem ele, só roda o python.exe do instalador oficial
+   (assinatura da Python Software Foundation), sem ligação no caminho e sem escrita para outras contas comuns;
+   recusado, o script para com código 2 sem executar nada [Decisão; auditoria Codex Security da 1.7.6, #3]. Se a chave
+   ainda não existir, o ssh-keygen pede a senha duas vezes: só o titular a digita e a anota fora do computador, junto
+   com a impressão digital que o script mostra no fim.
 3. **Titular, no terminal do Ubuntu** (o sudo pede a senha do Linux só para pacotes, AppArmor e `wsl.conf`):
    ```
-   bash "<skill vista do WSL>/assets/host/wsl/preparar-wsl.sh" --raiz "<raiz vista do WSL>" --projeto <projeto> --claude-versao <versão> --claude-sha256 <hash do manifesto assinado>
+   bash "<skill vista do WSL>/assets/host/wsl/preparar-wsl.sh" --raiz "<raiz vista do WSL>" --projeto <projeto> --titular <id> --claude-versao <versão> --claude-sha256 <hash do manifesto assinado>
    ```
-   Sem o Claude Code no Ubuntu, o script para (código 3) e mostra o comando oficial de instalação; o login também
-   é do titular. Depois, no PowerShell do Windows: `wsl --terminate <distribuição>`.
+   `--titular` é o mesmo `-Titular` do passo 2. O script só fixa no lançador o que confere inteiro: o perfil igual ao
+   que o modelo da skill gera para a raiz (cada projeto da raiz, menos o da sessão, com escrita negada), os hooks
+   iguais aos da skill e o `settings.local.json` só com a identidade de `--titular` e o projeto. Diferença: para
+   (código 1) e aponta o passo 2; projeto criado depois dele também pede o passo 2 de novo [Decisão; auditoria Codex
+   Security da 1.7.6, #5]. Sem o Claude Code no Ubuntu, o script para (código 3) e mostra o comando oficial de
+   instalação; o login também é do titular. Depois, no PowerShell do Windows: `wsl --terminate <distribuição>`.
 4. **Titular, no terminal do Ubuntu:** `bash ~/abrir-fundacao.sh` abre a sessão de dados reais (lançador gerado do
-   modelo `assets/host/wsl/abrir-sessao.sh`, com o perfil `assets/host/wsl/settings.wsl.json` já preenchido).
+   modelo `assets/host/wsl/abrir-sessao.sh`, com o perfil `assets/host/wsl/settings.wsl.json` já preenchido). Ele
+   confere pelo SHA-256 também o `settings.local.json` e o titular fixado no preparo: mudou depois, não abre; repita
+   os passos 2 e 3.
 5. **Executor:** repete as simulações (tudo "igual", âncora protegida e a impressão digital anotada pelo titular) e
    registra em `evidence/host/` o relatório do script do Windows, os SHA-256 e o que ficou pendente. Simulação nunca
    vale como execução real: sem a execução do titular, o passo fica pendente na RETOMADA.
@@ -322,8 +337,9 @@ conferido.
 ```
 python <skill>/scripts/instalar_kit.py --destino <raiz> [--simular]   # plano antes de escrever; conflito: nada escrito, código 3
 python <skill>/scripts/instalar_kit.py --destino <raiz> --atualizar   # atualização C6: guarda a versão anterior
-python <skill>/scripts/atualizar_fundacao.py checar --raiz <raiz>     # atualização C6 em um comando: só lê
-python <skill>/scripts/atualizar_fundacao.py aplicar --raiz <raiz> --backups <outro disco>  # backup, ensaio, promoção
+python <skill>/scripts/atualizar_fundacao.py checar --raiz <raiz>     # atualização C6 em um comando: só lê, sem executar a raiz
+python <skill>/scripts/atualizar_fundacao.py aplicar --raiz <raiz> --backups <outro disco>  # backup, ensaio em cópias conferidas, promoção
+python <skill>/scripts/atualizar_fundacao.py desfazer --registro <arq>  # volta o código; só registro ancorado em registry/atualizacoes.jsonl
 # Códigos: 0 composição verificada · 3 incompleta (conflito; --manter-conflitos = estado misto registrado)
 #          4 ligação/junção para fora do destino (nada escrito) · 5 falha na promoção (desfeita; com
 #          `desfeito: false` o retorno também falhou: siga `erros` e `acao_necessaria`)
@@ -346,7 +362,8 @@ python -m fundacao eventos verificar
 python -m fundacao eventos exportar --destino <raiz>/evidence/eventos.jsonl      # audit ou admin na fundação
 python -m fundacao backup criar --destino <ref> --rotulo baseline-a05-001        # admin na fundação
 python -m fundacao backup restaurar --origem <ref> --destino <nova-pasta> --retiradas <raiz>/state/retiradas.jsonl
-#   autorizada pelo banco DA CÓPIA (funciona com a origem danificada); não liberada = código 3
+#   autorizada pela fundação viva; com a origem danificada, pela cópia ancorada (livro ou --sha256-manifesto)
+#   sem âncora: só com --aceitar-copia-sem-ancora "<motivo>" (fica na trilha); não liberada = código 3
 #   `backup verificar` confere arquivos e banco (hash e contagens) contra o manifesto; não confere = código 3
 #   cópia em pasta de rede (UNC) serve; restaure a fundação que será usada em disco local
 python -m fundacao rota gasto --rota api_creditos  # gasto e tentativas sem custo medido (audit ou admin)

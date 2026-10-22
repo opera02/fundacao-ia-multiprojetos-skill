@@ -7,19 +7,46 @@
 
 `aplicar`, em sequência, parando no primeiro problema (nada é escrito na raiz antes do passo 4):
   1. `checar`: recusa se algum arquivo de código foi ALTERADO LOCALMENTE desde a instalação (difere do kit
-     novo e do hash registrado em registry/kit_install.json) — isso é decisão C6 à parte — ou se faltar a
-     identidade da administração ou a cadeia de eventos não conferir;
-  2. backup ANTES (código atual da raiz): `backup criar` + `backup verificar`, em PASTA/antes-kit-<versão>-<data>;
+     novo e do hash registrado em registry/kit_install.json) — isso é decisão C6 à parte —, se houver nas áreas de
+     código, ou no primeiro nível da raiz (módulo, pacote ou `.pth` que o uso normal importaria; segunda passada da
+     revisão de segurança da 1.7.7, R177B-B-06; e a pasta `mcp/` mesmo sem `__init__`, que sem o SDK do MCP vira
+     pacote de namespace; terceira passada, R177C-B-03), executável que nenhum dos dois conhece ou ligação, ou se
+     faltar a identidade da administração ou a cadeia de eventos não conferir. O `checar` não executa nada da raiz: a
+     cadeia é conferida pelo kit da skill, com o banco aberto somente leitura (auditoria Codex Security da 1.7.6, #8).
+     Também recusa ligação ou vínculo físico onde a atualização grava (GRAVADOS; revisão de segurança da 1.7.7,
+     R177-ATU-03);
+  2. backup ANTES (código atual da raiz, rodado de uma cópia conferida por hash): `backup criar` + `backup
+     verificar`, em PASTA/antes-kit-<versão>-<data>;
   3. ensaio: restaura essa cópia numa pasta temporária, aplica o kit novo (`instalar_kit.py --atualizar`), roda
-     `init`, `eventos verificar` e a suíte de conformidade NELA. Falha de teste que já acontecia na raiz antes da
-     atualização é relatada, mas não bloqueia; falha nova (regressão) bloqueia;
-  4. promoção na raiz: `instalar_kit.py --atualizar` (guarda os arquivos substituídos), `init` e `eventos verificar`;
-     depois, as instruções da raiz (AGENTS.md e CLAUDE.md, `instrucoes_raiz.py gerar`), sem bloquear;
+     `init`, `eventos verificar` e a suíte de conformidade NELA. A suíte roda de cópias conferidas por hash (a do
+     código da raiz antes, a da cópia atualizada depois), com os módulos enumerados da lista, nunca da árvore viva.
+     Falha de teste que já acontecia antes da atualização é relatada, mas não bloqueia; falha nova (regressão)
+     bloqueia;
+  4. promoção na raiz: onde a atualização grava, conferido de novo (ligação ou vínculo físico criado durante o ensaio
+     recusa; revisão de segurança da 1.7.7, segunda passada, R177B-B-05); `instalar_kit.py --atualizar` (guarda os
+     arquivos substituídos), o `__pycache__` das áreas de código e do primeiro nível apagado sem seguir ligação
+     (bytecode não conferido; R177-ATU-02, R177B-B-06), `init` e `eventos verificar`; depois, as instruções da raiz
+     (AGENTS.md e CLAUDE.md, `instrucoes_raiz.py gerar`), sem bloquear. O instalador que para depois de gravar (saída
+     sem `nada_escrito`) deixa a promoção interrompida: o `__pycache__` sai do mesmo jeito, e o registro é gravado e
+     ancorado antes de parar, para o `desfazer` (terceira passada, R177C-B-04); a promoção que falhou e o próprio
+     instalador desfez (código 5, `desfeito`, composição `nao_alterada`) conta como `nada_escrito`: para sem tocar a
+     raiz (quarta passada, R177D-5);
   5. backup DEPOIS (código novo, com âncora) + `backup verificar`;
-  6. registro em <raiz>/evidence/atualizacoes/ e resumo em linguagem simples.
+  6. registro em <raiz>/evidence/atualizacoes/, com a âncora, e resumo em linguagem simples; só então, sem bloquear
+     e com tempo limite, o inventário do host (R177-VAL-04).
+Do passo 4 em diante, o código que roda é o do kit da skill (o mesmo que acabou de ser conferido na raiz).
+Com o kit da raiz já igual ao da skill, o `aplicar` só regenera as instruções da raiz se o texto que a skill geraria
+for outro (skill nova com o mesmo kit), guardando as anteriores e com registro; sem diferença, não escreve nada.
 `desfazer` devolve os arquivos substituídos (registry/kit_backup/...) e apaga os criados pela atualização (as
 instruções da raiz também, salvo se editadas depois), só se o
-`user_version` do banco não mudou; se mudou, a volta é restaurar a cópia ANTES numa pasta nova (C9).
+`user_version` do banco não mudou; se mudou, a volta é restaurar a cópia ANTES numa pasta nova (C9). O registro só
+vale com o SHA-256 que o `aplicar` anotou em registry/atualizacoes.jsonl, e cada caminho dele fica nas áreas de
+código do kit (auditoria Codex Security da 1.7.6, #10). E só devolve se o código ainda é o que a atualização deixou
+(`sha256_novo`): repetido, ou depois de outra atualização, recusa (revisão de segurança da 1.7.7). O registro, a
+âncora e o `desfazer` moram em `registro_atualizacao.py`; a gravação sem seguir ligação, em `gravacao_segura.py`.
+Os comandos que a saída sugere ao titular (voltar o código ou as instruções, conferir o host, gerar as instruções)
+trazem o caminho completo do script e os caminhos entre aspas duplas: colados no PowerShell ou no bash, de qualquer
+pasta, rodam como estão; caminho que não pode ir entre aspas com segurança não vira comando (`comando`).
 
 Identidade: FUNDACAO_PRINCIPAL vem do lançador (administração da fundação); este script não a define.
 Saída em JSON; códigos: 0 ok · 1 recusado ou falhou (com `etapa` e `motivo`) · 2 uso incorreto.
@@ -32,15 +59,19 @@ import json
 import os
 import re
 import shutil
-import sqlite3
-import stat
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 
 AQUI = Path(__file__).resolve().parent
+if str(AQUI) not in sys.path:  # carregado por caminho (testes): o módulo vizinho também tem de ser achado
+    sys.path.append(str(AQUI))
+import codigo_conferido as conferido  # noqa: E402  (inventário, cópia conferida e execução isolada; #8)
+import gravacao_segura as gravacao  # noqa: E402  (gravação sem seguir ligação nem vínculo físico; R177-ATU-03)
+from registro_atualizacao import (GRAVADOS, Parada, agora, caminho_do_registro_valido, com_ligacao,  # noqa: E402
+                                  desfazer, desvio, gravar, sha, user_version, versao_do_kit)  # registro e volta
+
 KIT = AQUI.parent / "assets" / "fundacao-kit"
 INSTALAR_KIT = AQUI / "instalar_kit.py"
 INVENTARIAR_HOST = AQUI / "inventariar_host.py"
@@ -50,47 +81,35 @@ CONFIGURACAO = "registry"
 IGNORAR = {"__pycache__", ".pytest_cache"}
 VARIAVEL_IDENTIDADE = "FUNDACAO_" + "PRINCIPAL"
 TEMPO = 3600
-AREAS_DE_CODIGO = ("fundacao", "templates", "tests")
+TEMPO_INVENTARIO = 120  # inventário do host: informativo, roda depois do registro (R177-VAL-04)
+AREAS_DE_CODIGO = conferido.AREAS_DE_CODIGO  # fundacao/, templates/, tests/
 RETIRADAS = "tests/testes_retirados.json"  # no kit novo: ID do teste retirado de propósito -> versão e motivo
-RUNNER = r"""
-import json, os, sys, unittest
-suite = unittest.defaultTestLoader.discover("tests", pattern=sys.argv[1])
-ids = []
-def coletar(s):
-    for t in s:
-        coletar(t) if isinstance(t, unittest.TestSuite) else ids.append(t.id())
-coletar(suite)
-with open(os.devnull, "w", encoding="utf-8") as nada:
-    r = unittest.TextTestRunner(stream=nada, verbosity=0).run(suite)
-falhas = r.failures + r.errors
-print(json.dumps({"total": r.testsRun, "ids": sorted(ids), "falhas": sorted(t.id() for t, _ in falhas),
-                  "detalhes": {t.id(): tb[-1200:] for t, tb in falhas}, "pulados": len(r.skipped),
-                  "pulados_ids": {t.id(): str(m)[:200] for t, m in r.skipped}}))
-"""
+NAO_LIBERADA = Path("state") / "restauracao-nao-liberada.json"  # marca do kit (backup.MARCA_NAO_LIBERADA)
+# Dentro de aspas duplas, o PowerShell interpreta `$`, a crase e as aspas (também as tipográficas); o bash, `$`, a
+# crase, as aspas, `!` (histórico) e a barra invertida antes delas ou dobrada (terceira passada).
+NAO_CITAVEIS = frozenset('"$`!' + chr(0x201C) + chr(0x201D) + chr(0x201E))  # aspas, $, crase, ! e as tipográficas
 
 
-class Parada(Exception):
-    """Interrompe `aplicar` ou `desfazer` na etapa indicada; nada além do já relatado foi feito."""
-
-    def __init__(self, etapa: str, motivo: str, **detalhes):
-        super().__init__(motivo)
-        self.etapa, self.motivo, self.detalhes = etapa, motivo, detalhes
-
-
-def sha(p: Path) -> str:
-    return hashlib.sha256(Path(p).read_bytes()).hexdigest()
-
-
-def agora() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+def citar(caminho) -> str:
+    """O caminho entre aspas duplas, que o PowerShell e o bash leem como um argumento só, com espaços e acentos.
+    Recusa (ValueError) o que algum dos dois interpretaria dentro das aspas (NAO_CITAVEIS e caractere de controle), a
+    barra invertida dobrada (o bash a reduz a uma) e a final (no bash ela escaparia a aspa de fechamento; no PowerShell
+    5.1, a passagem para o programa também)."""
+    texto = str(caminho)
+    if any(c in NAO_CITAVEIS or c < " " for c in texto) or "\\\\" in texto or texto.endswith("\\"):
+        raise ValueError("caminho com caractere que o PowerShell ou o bash interpretaria entre aspas: " + texto[:200])
+    return '"' + texto + '"'
 
 
-def versao_do_kit(base: Path) -> str | None:
-    init = Path(base) / "fundacao" / "__init__.py"
-    if not init.is_file():
-        return None
-    m = re.search(r'^KIT_VERSION\s*=\s*"([^"]+)"', init.read_text(encoding="utf-8"), re.M)
-    return m.group(1) if m else None
+def comando(script: Path, *argumentos) -> str:
+    """Comando pronto para o titular colar no PowerShell ou no bash, de qualquer pasta: `python`, o caminho completo do
+    script e cada caminho (`Path`) entre aspas duplas; texto passa como está. Caminho que não pode ir entre aspas com
+    segurança não vira comando: volta o aviso, e o caminho fica na saída para ser citado à mão (terceira passada)."""
+    try:
+        partes = ["python", citar(Path(script).resolve())]
+        return " ".join(partes + [citar(a) if isinstance(a, Path) else str(a) for a in argumentos])
+    except ValueError as exc:
+        return "(comando não montado: " + str(exc) + "; cite-o à mão)"
 
 
 def tupla(v: str | None) -> tuple:
@@ -114,7 +133,7 @@ def hashes_instalados(raiz: Path) -> dict[str, str]:
     conhecidos: dict[str, str] = {}
     try:
         historico = json.loads(arq.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):  # ilegível ou trocado (R177C-B-04): o `checar` recusa o que difere
         return conhecidos
     for reg in historico if isinstance(historico, list) else []:
         if not isinstance(reg, dict):
@@ -164,59 +183,44 @@ def rodar(cmd: list, cwd: Path, timeout: int = TEMPO) -> tuple:
     return r.returncode, dados, (r.stderr or "")[-2000:]
 
 
-def fundacao(raiz: Path, *args: str) -> tuple:
-    """CLI do kit DA PRÓPRIA RAIZ (o código que ela executa hoje)."""
-    return rodar([sys.executable, "-B", "-m", "fundacao", "--raiz", str(raiz), *args], cwd=raiz)
+def fundacao(codigo: Path, raiz: Path, *args: str) -> tuple:
+    """CLI do kit sobre a `raiz`, rodando o código de `codigo`: o kit da skill ou uma cópia conferida do código da
+    raiz, nunca a árvore viva dela (auditoria Codex Security da 1.7.6, #8)."""
+    return rodar(conferido.python_isolado(codigo, conferido.CLI, "--raiz", raiz, *args), cwd=raiz)
 
 
-def suite(raiz: Path, padrao: str) -> dict:
-    """Suíte de conformidade da raiz: total, ids das falhas e pulados."""
-    _code, dados, erro = rodar([sys.executable, "-B", "-c", RUNNER, padrao], cwd=raiz)
+def suite(origem: Path, arquivos: dict, padrao: str, copia: Path) -> dict:
+    """Suíte de conformidade numa cópia conferida de `origem` (só os `arquivos`, caminho -> sha256, e registry/, que
+    os testes do kit copiam, sem as cópias do código guardadas pela promoção; R177-ATU-01), com os módulos enumerados
+    da lista: total, ids das falhas e pulados."""
+    try:
+        conferido.preparar_copia(origem, arquivos, copia, dados=(CONFIGURACAO,))
+    except (ValueError, OSError) as exc:
+        raise Parada("ensaio", "a cópia dos testes não conferiu com a lista (" + str(exc)[:300] + "): algo mudou nas "
+                     "áreas de código depois do `checar`; a raiz NÃO foi alterada")
+    modulos = conferido.modulos_de_teste(arquivos, padrao)
+    _code, dados, erro = rodar(conferido.python_isolado(copia, conferido.RUNNER, json.dumps(modulos)), cwd=copia)
     if not isinstance(dados, dict):
         return {"total": 0, "falhas": ["suite-nao-rodou: " + erro[-300:]], "pulados": 0}
     return dados
 
 
-def user_version(raiz: Path):
-    db = Path(raiz) / "state" / "state.sqlite"
-    if not db.is_file():
-        return None
-    con = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)
-    try:
-        return con.execute("PRAGMA user_version").fetchone()[0]
-    finally:
-        con.close()
-
-
-def caminho_do_registro_valido(rel) -> bool:
-    """Como no instalar_kit.py: relativo, barras normais, sem `..`, `.`, raiz, unidade ou `:` (VCT170-01/02)."""
-    if not isinstance(rel, str) or not rel or chr(92) in rel or ":" in rel or rel.startswith("/"):
-        return False
-    return all(parte not in ("", ".", "..") for parte in rel.split("/"))
-
-
-def com_ligacao(raiz: Path, rel: str) -> bool:
-    """Algum componente do caminho, abaixo da raiz, é ligação simbólica ou junção? Conferido sem seguir (como o
-    guarda_caminho.py e o backup do kit): `dentro()` resolve a ligação e aceitaria `tests/elo -> .claude`
-    (revisão de segurança da 1.7.0, VCT170-04)."""
-    atual = Path(raiz)
-    for parte in rel.split("/"):
-        atual = atual / parte
-        try:
-            st = os.lstat(atual)
-        except OSError:
-            return False  # o resto do caminho ainda não existe
-        if stat.S_ISLNK(st.st_mode) or getattr(st, "st_reparse_tag", 0) & 0x20000000:  # substituto de nome
-            return True
-    return False
+def cadeia_de_eventos(raiz: Path) -> tuple:
+    """(íntegra?, detalhes) da cadeia de eventos da raiz, recalculada pelo kit da skill com o banco aberto somente
+    leitura: nada da raiz é importado e nada é escrito (#8). `eventos verificar` sai com código 0 mesmo com a cadeia
+    quebrada; por isso vale `cadeia_integra`, não o código de saída."""
+    code, dados, erro = rodar(conferido.python_isolado(KIT, conferido.CADEIA, raiz), cwd=KIT)
+    if code != 0 or not isinstance(dados, dict):
+        return False, {"erro": erro[-300:]}
+    return dados.get("cadeia_integra") is True, dados
 
 
 def rota_sigilosa(raiz: Path) -> dict:
     """Desvio da rota sigilosa da raiz julgado pelo kit NOVO (avaliação E11, F-05): sem aceite assinado do titular sobre
     a política exata, o kit o deixa sem efeito ao carregar (vale a rota distribuída). Não bloqueia: vai aos avisos."""
-    codigo = ("import json, sys\nfrom fundacao.core.politica_rotas import desvio_sem_decisao\n"
+    codigo = ("import json\nfrom fundacao.core.politica_rotas import desvio_sem_decisao\n"
               "print(json.dumps({'desvio_sem_decisao': desvio_sem_decisao(sys.argv[1])}, ensure_ascii=False))")
-    code, dados, erro = rodar([sys.executable, "-B", "-c", codigo, str(raiz)], cwd=KIT)
+    code, dados, erro = rodar(conferido.python_isolado(KIT, codigo, raiz), cwd=KIT)
     if code != 0 or not isinstance(dados, dict):
         return {"conferida": False, "erro": erro[-300:]}
     return {"conferida": True, **dados}
@@ -224,12 +228,18 @@ def rota_sigilosa(raiz: Path) -> dict:
 
 def checar(raiz: Path) -> dict:
     """Só lê. `pode_aplicar` e os `motivos` de recusa, com o que muda arquivo a arquivo; `avisos` não bloqueiam."""
+    return _inspecionar(raiz)[0]
+
+
+def _inspecionar(raiz: Path) -> tuple:
+    """O `checar` e o inventário conferido das áreas de código (caminho -> sha256), que o `aplicar` usa para montar
+    as cópias de onde o código antigo e os testes rodam. Nada da raiz é executado aqui (#8)."""
     raiz = Path(raiz).resolve()
     res = {"raiz": str(raiz), "kit_na_raiz": versao_do_kit(raiz), "kit_da_skill": versao_do_kit(KIT), "motivos": []}
     if res["kit_na_raiz"] is None or not (raiz / "state" / "state.sqlite").is_file():
         res["motivos"].append("a pasta não é uma fundação instalada pelo kit (fundacao/__init__.py e state/state.sqlite)")
         res["pode_aplicar"] = False
-        return res
+        return res, {}
     if tupla(res["kit_da_skill"]) < tupla(res["kit_na_raiz"]):
         res["motivos"].append("o kit desta skill é mais antigo que o da raiz: atualize a skill antes")
     conhecidos = hashes_instalados(raiz)
@@ -255,17 +265,31 @@ def checar(raiz: Path) -> dict:
                 motivo = ("difere do kit novo e do hash registrado na instalação" if rel in conhecidos
                           else "sem hash de instalação registrado")
                 mudancas["alterados_localmente"].append({"path": rel, "motivo": motivo})
+    # Inventário exato das áreas de código (#8) e do primeiro nível da raiz (R177B-B-06): todo executável conferido pelo
+    # hash do kit novo ou pelo registrado na instalação; o que nenhum dos dois conhece, o que difere do hash conhecido
+    # e as ligações recusam.
+    vistos = conferido.inventario(raiz, do_kit, conhecidos)
+    mudancas["executaveis_a_mais"] = vistos["a_mais"]
+    mudancas["bytecode_a_apagar"] = conferido.bytecode(raiz)  # não recusa: a promoção o apaga (R177-ATU-02, B-06)
     # Órfãos: o kit anterior instalou, o novo não tem mais (o instalar_kit.py os guarda no backup).
     mudancas["entradas_invalidas"] = sorted(rel for rel in conhecidos if not caminho_do_registro_valido(rel))
     candidatos = [rel for rel in conhecidos if rel not in do_kit and caminho_do_registro_valido(rel)
                   and rel.split("/", 1)[0] in AREAS_DE_CODIGO and (raiz / rel).is_file()]
-    mudancas["por_ligacao"] += sorted(rel for rel in candidatos if com_ligacao(raiz, rel))
-    mudancas["retirar"] = sorted(rel for rel in candidatos if not com_ligacao(raiz, rel))
+    mudancas["alterados_localmente"] += [{"path": rel, "motivo": "o kit novo não tem mais e difere do hash registrado "
+                                          "na instalação"} for rel in candidatos if rel in vistos["alterados"]]
+    mudancas["por_ligacao"] = sorted(set(mudancas["por_ligacao"]) | set(vistos["ligacoes"])
+                                     | {rel for rel in candidatos if com_ligacao(raiz, rel)})
+    mudancas["retirar"] = sorted(rel for rel in candidatos if not com_ligacao(raiz, rel)
+                                 and rel not in vistos["alterados"])
     res["mudancas"] = mudancas
     if mudancas["por_ligacao"]:
-        res["motivos"].append("caminho do kit passa por ligação ou junção dentro da raiz ("
-                              + ", ".join(mudancas["por_ligacao"][:5]) + "): a atualização escreveria ou retiraria "
-                              "o arquivo do outro lado; investigue antes de atualizar")
+        res["motivos"].append("ligação ou junção nas áreas de código, no primeiro nível da raiz (com nome de módulo, "
+                              "de pacote ou __pycache__) ou no caminho de um arquivo do kit ("
+                              + ", ".join(mudancas["por_ligacao"][:5]) + "): a atualização escreveria, retiraria ou "
+                              "executaria o que está do outro lado; investigue antes de atualizar")
+    mudancas["gravacao_desviada"] = gravacao.desviados(raiz, GRAVADOS)
+    if mudancas["gravacao_desviada"]:
+        res["motivos"].append(desvio(mudancas["gravacao_desviada"], "a atualização"))
     if mudancas["entradas_invalidas"]:
         res["motivos"].append("registry/kit_install.json tem caminho que o instalador nunca grava (com `..`, absoluto "
                               "ou com barra invertida): o registro pode ter sido adulterado; investigue antes de "
@@ -273,12 +297,24 @@ def checar(raiz: Path) -> dict:
     if mudancas["alterados_localmente"]:
         res["motivos"].append("há arquivo de código alterado localmente desde a instalação: a atualização o "
                               "substituiria; revise-o antes (fluxo C6)")
+    if mudancas["executaveis_a_mais"]:
+        res["motivos"].append("há arquivo executável nas áreas de código (fundacao/, templates/, tests/) ou no "
+                              "primeiro nível da raiz que nem o kit novo nem o registro da instalação conhecem ("
+                              + ", ".join(mudancas["executaveis_a_mais"][:5]) + "): a atualização o executaria, ou o "
+                              "uso normal (`python -m fundacao` na raiz, que a põe no caminho de importação) o "
+                              "importaria no lugar do módulo de mesmo nome, também de dentro de uma pasta com o nome "
+                              "de um pacote que o kit importa de fora da biblioteca padrão ("
+                              + ", ".join(n + "/" for n in conferido.IMPORTADOS_DE_FORA) + ", mesmo sem __init__); "
+                              "retire-o ou mova-o para fora dessas pastas (ou para uma subpasta que não seja pacote "
+                              "nem tenha um desses nomes) e repita (fluxo C6)")
+    if (raiz / NAO_LIBERADA).exists():
+        res["motivos"].append("raiz de restauração não liberada (" + NAO_LIBERADA.as_posix() + "): não use; refaça a "
+                              "restauração numa pasta nova (fluxo C9)")
     res["identidade"] = os.environ.get(VARIAVEL_IDENTIDADE) or None
     if not res["identidade"]:
         res["motivos"].append("identidade ausente: " + VARIAVEL_IDENTIDADE + " vem do lançador (administração da fundação)")
-    code, dados, erro = fundacao(raiz, "eventos", "verificar")
-    res["cadeia_de_eventos"] = dados if dados is not None else {"erro": erro[-300:]}
-    if code != 0:
+    integra, res["cadeia_de_eventos"] = cadeia_de_eventos(raiz)
+    if not integra:
         res["motivos"].append("a cadeia de eventos da raiz não confere: investigue antes de atualizar")
     res["user_version"] = user_version(raiz)
     res["instrucoes_raiz"] = _plano_instrucoes(raiz)
@@ -288,21 +324,44 @@ def checar(raiz: Path) -> dict:
     res["nada_a_fazer"] = not (mudancas["copiar"] or mudancas["atualizar"] or mudancas["alterados_localmente"]
                                or mudancas["retirar"])
     res["pode_aplicar"] = not res["motivos"]
-    return res
+    return res, vistos["conferidos"]
 
 
-def _backup(raiz: Path, destino: Path, rotulo: str) -> dict:
-    """`backup criar` + `backup verificar` com o código da raiz; a âncora vem do kit ou é calculada aqui."""
-    code, dados, erro = fundacao(raiz, "backup", "criar", "--destino", str(destino), "--rotulo", rotulo)
+def _codigo_conferido(raiz: Path, conferidos: dict, destino: Path) -> Path:
+    """Cópia conferida do pacote `fundacao/` da raiz (o código ANTES), de onde rodam o backup ANTES e a restauração do
+    ensaio: o que roda é exatamente o que o `checar` conferiu, mesmo que a raiz mude depois (#8)."""
+    try:
+        conferido.preparar_copia(raiz, {rel: h for rel, h in conferidos.items() if rel.startswith("fundacao/")},
+                                 destino, areas=("fundacao",))
+    except (ValueError, OSError) as exc:
+        raise Parada("backup", "o código da raiz mudou depois do `checar` (" + str(exc)[:300] + "): nada foi "
+                     "executado nem alterado; confira e repita")
+    return destino
+
+
+def _backup(codigo: Path, raiz: Path, destino: Path, rotulo: str) -> dict:
+    """`backup criar` + `backup verificar` com o código de `codigo` (cópia conferida do código da raiz ANTES; o kit da
+    skill DEPOIS); a âncora vem do kit ou é calculada aqui."""
+    code, dados, erro = fundacao(codigo, raiz, "backup", "criar", "--destino", str(destino), "--rotulo", rotulo)
     if code != 0 or not isinstance(dados, dict):
         raise Parada("backup", "`backup criar` falhou (" + rotulo + ")", erro=erro, saida=dados)
     ancora = dados.get("sha256_manifesto") or sha(destino / "manifest.json")
     extra = ["--sha256-manifesto", ancora] if dados.get("sha256_manifesto") else []
-    code, ver, erro = fundacao(raiz, "backup", "verificar", "--origem", str(destino), *extra)
+    code, ver, erro = fundacao(codigo, raiz, "backup", "verificar", "--origem", str(destino), *extra)
     if code != 0 or not (isinstance(ver, dict) and ver.get("ok")):
         raise Parada("backup", "a cópia " + rotulo + " não conferiu", erro=erro, verificacao=ver)
     return {"pasta": str(destino), "rotulo": rotulo, "sha256_manifesto": ancora,
             "ancora_pelo_kit": bool(dados.get("sha256_manifesto")), "arquivos": len(dados.get("files", []))}
+
+
+def _conferir_antes_da_promocao(raiz: Path) -> None:
+    """Onde a atualização grava, conferido de novo logo antes da promoção: o `checar` rodou antes do ensaio inteiro, e
+    vínculo físico ou ligação criados nesse intervalo levariam o registro da instalação, as cópias ou a âncora para
+    fora da raiz (R177B-B-05). Até aqui nada foi escrito na raiz."""
+    desviados = gravacao.desviados(raiz, GRAVADOS)
+    if desviados:
+        raise Parada("promocao", desvio(desviados, "a atualização") + "; apareceu depois do `checar`, durante o "
+                     "ensaio: a raiz NÃO foi alterada")
 
 
 def _instalar_kit(destino: Path) -> dict:
@@ -314,26 +373,68 @@ def _instalar_kit(destino: Path) -> dict:
     return dados
 
 
+def _promover(raiz: Path, registro: dict) -> dict:
+    """`instalar_kit.py --atualizar` na raiz e, depois, o `__pycache__` das áreas de código e do primeiro nível
+    apagado sem seguir ligação: bytecode não conferido rodaria no uso normal no lugar da fonte (R177-ATU-02,
+    R177B-B-06). O instalador que parava depois de gravar (código 3 com o registro da instalação não gravado ou a
+    composição divergente; 5 com a promoção que falhou) deixava a raiz no kit novo sem registro ancorado, e o
+    `desfazer` recusava. Agora, sem `nada_escrito` na saída dele, a promoção entra no registro marcada como
+    interrompida, com a saída (o plano que o `desfazer` devolve), e o bytecode sai do mesmo jeito; o `aplicar` grava e
+    ancora o registro antes de parar. Com `nada_escrito`, para como antes; sem saída legível não há plano, e a volta é
+    a cópia ANTES (C9) (terceira passada, R177C-B-04). A promoção que falhou e o próprio instalador desfez (código 5,
+    `desfeito`, composição `nao_alterada`; no Windows, por exemplo, arquivo preso pelo antivírus) deixa o código da
+    raiz como estava: conta como `nada_escrito`, sem âncora nem `__pycache__` apagado, e a mensagem diz que a raiz não
+    foi alterada; antes ia para o registro ancorado, e o `desfazer` recusava e mandava à cópia ANTES (quarta passada,
+    R177D-5). São as duas únicas saídas do instalador sem nada mudado nas áreas de código."""
+    try:
+        registro["promocao"] = {"instalar_kit": _instalar_kit(raiz)}
+    except Parada as p:
+        saida, codigo = p.detalhes.get("saida"), p.detalhes.get("codigo")
+        if isinstance(saida, dict) and saida.get("nada_escrito") is True:
+            raise  # nada foi gravado na raiz
+        if isinstance(saida, dict) and saida.get("desfeito") is True and saida.get("composicao") == "nao_alterada":
+            raise Parada("instalar_kit", "a promoção falhou, e o próprio instalador a desfez (código " + str(codigo)
+                         + "): o código da raiz continua o de antes e NÃO foi alterado; veja `erros` na saída do "
+                         "instalador (por exemplo, arquivo preso pelo antivírus), resolva e repita o `aplicar`",
+                         **p.detalhes) from None  # como com `nada_escrito`: sem âncora nem `__pycache__` apagado
+        apagado, nao_apagado = conferido.apagar_bytecode(raiz)  # a raiz pode ter ficado com o código novo
+        if not isinstance(saida, dict):  # sem a saída do instalador, não há plano para o `desfazer`
+            raise Parada("instalar_kit", "o instalador parou sem saída legível (código " + str(codigo) + "): a raiz "
+                         "pode ter sido alterada; confira e, para voltar, restaure a cópia ANTES numa pasta nova (C9)",
+                         bytecode_apagado=apagado, bytecode_nao_apagado=nao_apagado, **p.detalhes) from None
+        motivo = ("o instalador parou depois de gravar na raiz (código " + str(codigo) + ", composição "
+                  + str(saida.get("composicao")) + "): a promoção ficou interrompida, e a raiz pode estar no kit "
+                  "novo, sem `init`; o `desfazer` com o registro desta atualização devolve o código anterior")
+        registro["promocao"] = {"instalar_kit": saida, "interrompida": motivo, "bytecode_apagado": apagado,
+                                "bytecode_nao_apagado": nao_apagado}
+        raise Parada("instalar_kit", motivo, **p.detalhes) from None
+    promo = registro["promocao"]
+    promo["bytecode_apagado"], promo["bytecode_nao_apagado"] = conferido.apagar_bytecode(raiz)
+    return promo
+
+
 def _init_e_cadeia(raiz: Path, etapa: str) -> dict:
-    code, init, erro = fundacao(raiz, "init")
+    """`init` e `eventos verificar` com o kit da skill (o mesmo código que a raiz ou a cópia acabou de receber)."""
+    code, init, erro = fundacao(KIT, raiz, "init")
     if code != 0:
         raise Parada(etapa, "`init` falhou", erro=erro, saida=init)
-    code, cadeia, erro = fundacao(raiz, "eventos", "verificar")
-    if code != 0:
+    code, cadeia, erro = fundacao(KIT, raiz, "eventos", "verificar")
+    if code != 0 or not (isinstance(cadeia, dict) and cadeia.get("cadeia_integra") is True):
         raise Parada(etapa, "a cadeia de eventos não conferiu depois do `init`", erro=erro, saida=cadeia)
     return {"init": init, "cadeia_de_eventos": cadeia}
 
 
-def _ensaio(raiz: Path, antes: dict, padrao: str, manter: bool = False) -> dict:
+def _ensaio(raiz: Path, codigo: Path, conferidos: dict, antes: dict, padrao: str, manter: bool = False) -> dict:
     """Restaura a cópia ANTES numa pasta temporária e aplica nela o kit novo, com `init`, cadeia e suíte.
-    Regressão = teste que falha na cópia atualizada e não falhava na raiz antes, ou que passava e na cópia
-    sumiu ou passou a ser pulado sem a retirada declarada pelo kit novo (catraca, proposta 5). A cópia tem os
-    dados da fundação: é apagada no fim, também na falha (o registro guarda o motivo de cada teste), salvo
-    com `manter`."""
-    base = suite(raiz, padrao)
+    Regressão = teste que falha na cópia atualizada e não falhava antes, ou que passava e na cópia
+    sumiu ou passou a ser pulado sem a retirada declarada pelo kit novo (catraca, proposta 5). A suíte de antes roda
+    de uma cópia conferida do código da raiz e a de depois, de uma cópia conferida da cópia atualizada (#8). As
+    cópias têm os dados da fundação: são apagadas no fim, também na falha (o registro guarda o motivo de cada
+    teste), salvo com `manter`."""
     tmp = Path(tempfile.mkdtemp(prefix="ensaio-atualizacao-"))
     try:
-        return _ensaio_na_copia(raiz, antes, padrao, base, tmp / "raiz")
+        base = suite(raiz, conferidos, padrao, tmp / "testes-antes")
+        return _ensaio_na_copia(raiz, codigo, antes, padrao, base, tmp)
     except Parada as p:
         if not manter:
             p.detalhes["copia_de_ensaio"] = None
@@ -344,22 +445,24 @@ def _ensaio(raiz: Path, antes: dict, padrao: str, manter: bool = False) -> dict:
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _ensaio_na_copia(raiz: Path, antes: dict, padrao: str, base: dict, copia: Path) -> dict:
+def _ensaio_na_copia(raiz: Path, codigo: Path, antes: dict, padrao: str, base: dict, tmp: Path) -> dict:
+    copia = tmp / "raiz"
     extra = ["--sha256-manifesto", antes["sha256_manifesto"]] if antes["ancora_pelo_kit"] else []
-    code, rest, erro = fundacao(raiz, "backup", "restaurar", "--origem", antes["pasta"], "--destino", str(copia),
-                                "--retiradas", str(raiz / "state" / "retiradas.jsonl"), *extra)
+    code, rest, erro = fundacao(codigo, raiz, "backup", "restaurar", "--origem", antes["pasta"], "--destino",
+                                str(copia), "--retiradas", str(raiz / "state" / "retiradas.jsonl"), *extra)
     if code != 0 or not (isinstance(rest, dict) and rest.get("released")):
         raise Parada("ensaio", "a cópia ANTES não restaurou numa pasta de ensaio", erro=erro, saida=rest,
                      copia_de_ensaio=str(copia))
     kit = _instalar_kit(copia)
     conferencia = _init_e_cadeia(copia, "ensaio")
-    depois = suite(copia, padrao)
+    depois = suite(copia, arquivos_do_kit(), padrao, tmp / "testes-depois")
     regressoes = sorted(set(depois["falhas"]) - set(base["falhas"]))
     declaradas = retiradas_declaradas()
     passavam = set(base.get("ids", [])) - set(base["falhas"]) - set(base.get("pulados_ids", {}))
     sumidos = sorted(set(base.get("ids", [])) - set(depois.get("ids", [])) - set(declaradas))
     pulados_novos = sorted((passavam & set(depois.get("pulados_ids", {}))) - set(declaradas))
     ensaio = {"suite_antes_na_raiz": base, "suite_na_copia_atualizada": depois, "regressoes": regressoes,
+              "copias_conferidas": True,  # as duas suítes rodaram de cópias conferidas por hash (#8)
               "testes_sumidos": sumidos, "pulados_novos": pulados_novos,
               "retiradas_declaradas": sorted(set(declaradas) & set(base.get("ids", []))),
               "falhas_que_ja_existiam": sorted(set(depois["falhas"]) & set(base["falhas"])),
@@ -376,17 +479,34 @@ def _ensaio_na_copia(raiz: Path, antes: dict, padrao: str, base: dict, copia: Pa
 
 def _inventario_host(raiz: Path) -> dict | None:
     """Confere o inventário do ecossistema do host (proposta 15), se a fundação tiver um. Não bloqueia: mudança
-    no host é informação para o titular conferir e regravar, não falha da atualização do kit."""
-    arq = raiz / INVENTARIO_HOST
+    no host é informação para o titular conferir e regravar, não falha da atualização do kit. Roda depois do registro,
+    com TEMPO_INVENTARIO: travar ou falhar vira `conferido: False` com o motivo, nunca exceção (R177-VAL-04)."""
+    arq, erro = raiz / INVENTARIO_HOST, ""
     if not arq.is_file():
         return None
-    _code, dados, erro = rodar([sys.executable, "-B", str(INVENTARIAR_HOST), "verificar", "--inventario", str(arq),
-                                "--raiz", str(raiz)], cwd=AQUI)
-    if not isinstance(dados, dict) or "diferencas" not in dados:
-        return {"conferido": False, "erro": (erro or "")[-300:]}
-    mudancas = {cat: {k: len(v) for k, v in d.items() if v} for cat, d in dados["diferencas"].items()}
+    try:
+        _code, dados, erro = rodar([sys.executable, "-B", str(INVENTARIAR_HOST), "verificar", "--inventario",
+                                    str(arq), "--raiz", str(raiz)], cwd=AQUI, timeout=TEMPO_INVENTARIO)
+        mudancas = {cat: {k: len(v) for k, v in d.items() if v} for cat, d in dados["diferencas"].items()}
+    except subprocess.TimeoutExpired:
+        return {"conferido": False, "motivo": "tempo esgotado: " + str(TEMPO_INVENTARIO) + " s"}
+    except Exception as exc:  # noqa: BLE001 — informativo: nada aqui derruba a atualização já registrada
+        return {"conferido": False, "motivo": "saída inesperada (" + type(exc).__name__ + ") " + (erro or "")[-200:]}
     return {"conferido": True, "sem_mudancas": bool(dados.get("ok")),
             "mudancas": {cat: m for cat, m in mudancas.items() if m}}
+
+
+def _resumo_host(raiz: Path, host: dict | None) -> list:
+    if not host:
+        return []
+    if not host.get("conferido"):
+        return ["Inventário do host não conferido (" + str(host.get("motivo"))[:200] + "); a atualização já está "
+                "registrada. Confira depois: "
+                + comando(INVENTARIAR_HOST, "verificar", "--inventario", raiz / INVENTARIO_HOST, "--raiz", raiz)]
+    return ["Ecossistema do host (skills, plugins, MCP, hooks): " + (
+        "igual ao inventário." if host["sem_mudancas"] else "mudou desde o inventário: "
+        + json.dumps(host["mudancas"], ensure_ascii=False) + " — confira e regrave com: "
+        + comando(INVENTARIAR_HOST, "gravar", "--saida", raiz / INVENTARIO_HOST, "--raiz", raiz, "--substituir"))]
 
 
 def _plano_instrucoes(raiz: Path) -> dict:
@@ -395,25 +515,29 @@ def _plano_instrucoes(raiz: Path) -> dict:
                                cwd=AQUI)
     if not isinstance(dados, dict):
         return {"erro": (erro or "")[-300:]}
-    if not dados.get("ok"):
-        return {"conflito": dados.get("conflito")}
+    if not dados.get("ok"):  # escrito à mão (conflito) ou ligação no lugar do arquivo (erro; R177-ATU-03)
+        return {"conflito": dados["conflito"]} if dados.get("conflito") else {"erro": str(dados.get("erro"))[:300]}
     return {"AGENTS.md": dados["agents"]["acao"], "CLAUDE.md": dados["claude"]["acao"]}
 
 
 def _instrucoes_raiz(raiz: Path, carimbo: str) -> dict:
     """Regenera o AGENTS.md e o CLAUDE.md da raiz (proposta 1), guardando antes os que já existiam, para o
-    `desfazer`. Não bloqueia: AGENTS.md escrito à mão fica como está e o resumo pede a decisão do titular."""
+    `desfazer`, numa pasta nova de registry/kit_backup/, sem ligação no caminho e com arquivos criados com
+    exclusividade (R177-ATU-03). Não bloqueia: AGENTS.md escrito à mão fica como está e o resumo pede a decisão do
+    titular."""
     plano = _plano_instrucoes(raiz)
     if "erro" in plano or "conflito" in plano:
         return {"gerado": False, **plano}
-    guarda = raiz / "registry" / "kit_backup" / ("instrucoes-" + carimbo)
-    guardados = []
+    rel = "registry/kit_backup/instrucoes-" + carimbo
+    guarda, guardados = raiz / rel, []
     try:
         for nome, acao in plano.items():
             if acao == "atualizar":
-                guarda.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(raiz / nome, guarda / nome)
-                guardados.append({"path": nome, "sha256_anterior": sha(guarda / nome)})
+                if not guardados:
+                    gravacao.pasta_nova(raiz, rel)
+                dados = (raiz / nome).read_bytes()
+                gravacao.criar(guarda / nome, dados)
+                guardados.append({"path": nome, "sha256_anterior": hashlib.sha256(dados).hexdigest()})
     except OSError as exc:
         return {"gerado": False, "erro": "a versão anterior não foi guardada: " + str(exc)}
     code, dados, erro = rodar([sys.executable, "-B", str(INSTRUCOES_RAIZ), "gerar", "--raiz", str(raiz)], cwd=AQUI)
@@ -427,62 +551,91 @@ def _instrucoes_raiz(raiz: Path, carimbo: str) -> dict:
 
 
 def _resumo_instrucoes(raiz: Path, instr: dict) -> list:
-    comando = "python " + INSTRUCOES_RAIZ.name + ' gerar --raiz "' + str(raiz) + '"'
     if instr.get("gerado"):
         mudou = [nome for nome, acao in instr["acoes"].items() if acao != "igual"]
         return (["Instruções da raiz geradas pela skill (" + ", ".join(mudou) + "): as sessões abertas nesta pasta "
                  "passam a lê-las ao iniciar."] if mudou else [])
     if instr.get("conflito"):
         return ["O AGENTS.md da raiz foi escrito à mão e não foi alterado. Revise-o e, para a skill passar a "
-                "mantê-lo (o seu texto fica no trecho do titular), rode: " + comando + " --adotar"]
+                "mantê-lo (o seu texto fica no trecho do titular), rode: "
+                + comando(INSTRUCOES_RAIZ, "gerar", "--raiz", raiz, "--adotar")]
     return ["Atenção: as instruções da raiz não foram geradas (" + str(instr.get("erro"))[:200] + "); "
-            "rode depois: " + comando]
+            "rode depois: " + comando(INSTRUCOES_RAIZ, "gerar", "--raiz", raiz)]
 
 
-def _gravar(raiz: Path, nome: str, dados: dict) -> Path:
-    pasta = Path(raiz) / "evidence" / "atualizacoes"
-    pasta.mkdir(parents=True, exist_ok=True)
-    arq = pasta / nome
-    with open(arq, "x", encoding="utf-8", newline="\n") as fh:
-        fh.write(json.dumps(dados, ensure_ascii=False, indent=1) + "\n")
-    return arq
+def _so_instrucoes(raiz: Path, pre: dict, carimbo: str) -> dict:
+    """Kit igual: nada a fazer no código. Se o texto que `instrucoes_raiz.py gerar` produziria difere do atual (skill
+    nova com o mesmo kit), as instruções da raiz são regeneradas pelas regras dele (AGENTS.md escrito à mão, sem a
+    marca da skill, não é tocado), com as anteriores guardadas e registro ancorado, que o `desfazer` aceita.
+    Sem diferença, nada é escrito (defeito anotado na liberação da 1.7.6: o AGENTS.md ficava com o texto anterior)."""
+    nada = ["A fundação já está no kit " + str(pre["kit_na_raiz"]) + ": nada a fazer."]
+    plano = pre["instrucoes_raiz"]
+    if "AGENTS.md" in plano and set(plano.values()) == {"igual"}:
+        return {"ok": True, "nada_a_fazer": True, "checar": pre, "resumo": nada}
+    instr = _instrucoes_raiz(raiz, carimbo) if "AGENTS.md" in plano else {"gerado": False, **plano}
+    if not instr.get("gerado") and ("conflito" in instr or "AGENTS.md" not in plano):  # nada foi escrito
+        return {"ok": True, "nada_a_fazer": True, "checar": pre, "resumo": nada + _resumo_instrucoes(raiz, instr)}
+    registro = {"schema_version": "fundacao.atualizacao/1", "raiz": str(raiz), "iniciado_em": carimbo,
+                "kit_antes": pre["kit_na_raiz"], "kit_da_skill": pre["kit_da_skill"], "identidade": pre["identidade"],
+                "user_version_antes": pre["user_version"], "so_instrucoes": True, "instrucoes_raiz": instr,
+                "concluido_em": agora()}
+    arq = gravar(raiz, "instrucoes-raiz-" + carimbo + ".json", registro, ancorar=bool(instr.get("gerado")))
+    resumo = ["A fundação já está no kit " + str(pre["kit_na_raiz"]) + ": o código não muda."]
+    resumo += _resumo_instrucoes(raiz, instr) + ["Registro: " + str(arq) + "."]
+    if instr.get("gerado"):
+        if instr.get("copia"):
+            resumo.append("As versões anteriores ficaram em " + instr["copia"] + ".")
+        resumo.append("Para voltar as instruções: " + comando(Path(__file__), "desfazer", "--registro", arq))
+    return {"ok": True, "nada_a_fazer": False, "so_instrucoes": True, "registro": str(arq), "resumo": resumo}
 
 
 def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False) -> dict:
     raiz, backups = Path(raiz).resolve(), Path(backups).resolve()
     carimbo = agora()
-    pre = checar(raiz)
+    pre, conferidos = _inspecionar(raiz)
     if not pre["pode_aplicar"]:
         raise Parada("checar", "; ".join(pre["motivos"]), checar=pre)
     if pre["nada_a_fazer"]:
-        resumo = ["A fundação já está no kit " + str(pre["kit_na_raiz"]) + ": nada a fazer."]
-        instr = pre["instrucoes_raiz"]
-        if "AGENTS.md" not in instr or {instr["AGENTS.md"], instr["CLAUDE.md"]} != {"igual"}:
-            resumo += _resumo_instrucoes(raiz, {"gerado": False, "erro": "desatualizadas ou ausentes", **instr})
-        return {"ok": True, "nada_a_fazer": True, "checar": pre, "resumo": resumo}
+        return _so_instrucoes(raiz, pre, carimbo)
     nova, antiga = pre["kit_da_skill"], pre["kit_na_raiz"]
     registro = {"schema_version": "fundacao.atualizacao/1", "raiz": str(raiz), "iniciado_em": carimbo,
                 "kit_antes": antiga, "kit_da_skill": nova, "identidade": pre["identidade"],
                 "mudancas": pre["mudancas"], "user_version_antes": pre["user_version"]}
+    codigo = Path(tempfile.mkdtemp(prefix="codigo-conferido-"))
     try:
+        antes = _codigo_conferido(raiz, conferidos, codigo / "antes")  # o código ANTES roda só desta cópia
         rotulo = "antes-kit-" + nova + "-" + carimbo
-        registro["antes"] = _backup(raiz, backups / rotulo, rotulo)
-        registro["ensaio"] = _ensaio(raiz, registro["antes"], padrao, manter_ensaio)
-        registro["promocao"] = {"instalar_kit": _instalar_kit(raiz)}
-        registro["promocao"].update(_init_e_cadeia(raiz, "promocao"))
+        registro["antes"] = _backup(antes, raiz, backups / rotulo, rotulo)
+        registro["ensaio"] = _ensaio(raiz, antes, conferidos, registro["antes"], padrao, manter_ensaio)
+        _conferir_antes_da_promocao(raiz)
+        promo = _promover(raiz, registro)  # instalador e `__pycache__` (R177-ATU-02); interrompida: R177C-B-04
+        promo.update(_init_e_cadeia(raiz, "promocao"))
         registro["user_version_depois"] = user_version(raiz)
         registro["instrucoes_raiz"] = _instrucoes_raiz(raiz, carimbo)  # antes da cópia DEPOIS, que as leva
         rotulo = "depois-kit-" + nova + "-" + carimbo
-        registro["depois"] = _backup(raiz, backups / rotulo, rotulo)
+        registro["depois"] = _backup(KIT, raiz, backups / rotulo, rotulo)
     except Parada as p:
         registro["falha"] = {"etapa": p.etapa, "motivo": p.motivo, **p.detalhes}
         nome = "falha-atualizacao-kit-" + nova + "-" + carimbo + ".json"
-        p.detalhes["registro"] = str(_gravar(raiz, nome, registro))
+        try:  # falha depois da promoção deixa a raiz no kit novo: o `desfazer` precisa poder usar este registro
+            p.detalhes["registro"] = str(gravar(raiz, nome, registro, ancorar="promocao" in registro))
+        except Parada as q:
+            p.detalhes["registro"], p.detalhes["registro_nao_gravado"] = None, q.motivo
+        else:
+            if "promocao" in registro:  # registro ancorado: o comando pronto para voltar o código (R177C-B-04)
+                p.detalhes["para_voltar"] = comando(Path(__file__), "desfazer", "--registro",
+                                                    Path(p.detalhes["registro"]))
         raise
+    finally:
+        shutil.rmtree(codigo, ignore_errors=True)
     registro["kit_depois"] = versao_do_kit(raiz)
-    registro["inventario_host"] = _inventario_host(raiz)
     registro["concluido_em"] = agora()
-    arq = _gravar(raiz, "atualizacao-kit-" + nova + "-" + carimbo + ".json", registro)
+    try:  # registro e âncora ANTES do inventário do host: travar ou falhar nele não perde a atualização (R177-VAL-04)
+        arq = gravar(raiz, "atualizacao-kit-" + nova + "-" + carimbo + ".json", registro, ancorar=True)
+    except Parada as p:
+        raise Parada("registro", "a fundação foi atualizada, mas " + p.motivo + "; sem registro não há `desfazer`: a "
+                     "volta é a cópia ANTES numa pasta nova (C9)", copia_antes=registro["antes"]["pasta"])
+    host = _inventario_host(raiz)
     ensaio = registro["ensaio"]
     resumo = ["Fundação atualizada do kit " + str(antiga) + " para " + str(registro["kit_depois"]) + ".",
               "Cópia de segurança ANTES: " + registro["antes"]["pasta"] + " (âncora "
@@ -495,121 +648,12 @@ def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False)
     if ensaio["falhas_que_ja_existiam"]:
         resumo.append("Atenção: " + str(len(ensaio["falhas_que_ja_existiam"])) + " teste(s) já falhava(m) antes e "
                       "continua(m) falhando (não é regressão): " + ", ".join(ensaio["falhas_que_ja_existiam"][:3]))
-    resumo += _resumo_instrucoes(raiz, registro["instrucoes_raiz"])
-    host = registro["inventario_host"]
-    if host and host.get("conferido"):
-        resumo.append("Ecossistema do host (skills, plugins, MCP, hooks): " + (
-            "igual ao inventário." if host["sem_mudancas"] else "mudou desde o inventário — confira e regrave com "
-            "inventariar_host.py gravar --substituir: " + json.dumps(host["mudancas"], ensure_ascii=False)))
-    resumo.append("Para voltar o código: python " + Path(__file__).name + " desfazer --registro " + str(arq))
-    return {"ok": True, "registro": str(arq), "resumo": resumo}
-
-
-INSTRUCOES = ("AGENTS.md", "CLAUDE.md")  # os únicos arquivos que as instruções da raiz tocam
-
-
-def _dentro(caminho, base: Path) -> bool:
-    try:
-        Path(caminho).resolve().relative_to(Path(base).resolve())
-        return True
-    except (ValueError, OSError, RuntimeError):
-        return False
-
-
-def _conferir_registro(registro_arq: Path, reg: dict) -> Path:
-    """O registro é dado (fica em evidence/, gravável por shell): só vale o desta raiz, com caminhos relativos sem
-    `..`, cópias dentro de registry/kit_backup e instruções só AGENTS.md e CLAUDE.md (revisão de segurança da 1.7.0,
-    VCT170-02). Devolve a raiz; qualquer desvio para antes de alterar o que for."""
-    raiz = Path(registro_arq).resolve().parents[2]  # <raiz>/evidence/atualizacoes/<registro>.json
-    if Path(str(reg.get("raiz") or "")).resolve() != raiz:
-        raise Parada("desfazer", "o registro diz que a raiz é " + str(reg.get("raiz")) + ", mas ele está em " + str(raiz)
-                     + ": só se desfaz a atualização registrada dentro da própria raiz; nada foi alterado")
-    guarda = raiz / "registry" / "kit_backup"
-    kit = (reg.get("promocao") or {}).get("instalar_kit") or {}
-    instr = reg.get("instrucoes_raiz") or {}
-    problemas = [campo + " fora de registry/kit_backup" for campo, pasta in
-                 (("backup_dos_substituidos", kit.get("backup_dos_substituidos")), ("copia", instr.get("copia")))
-                 if pasta and not _dentro(pasta, guarda)]
-    for chave in ("substituidos", "copiados", "orfaos_retirados"):
-        for item in kit.get(chave) or []:
-            rel = item.get("path") if isinstance(item, dict) else None
-            if not caminho_do_registro_valido(rel) or com_ligacao(raiz, rel) or not _dentro(raiz / rel, raiz):
-                problemas.append(chave + ": caminho inválido ou atrás de ligação " + repr(rel)[:80])
-            elif chave == "orfaos_retirados" and rel.split("/", 1)[0] not in AREAS_DE_CODIGO:
-                problemas.append("orfaos_retirados: fora das áreas de código: " + rel)
-    nomes = set(instr.get("acoes") or {}) | {i.get("path") for i in instr.get("guardados") or [] if isinstance(i, dict)}
-    if not nomes <= set(INSTRUCOES):
-        problemas.append("instrucoes_raiz: só AGENTS.md e CLAUDE.md")
-    if problemas:
-        raise Parada("desfazer", "o registro tem caminho fora do que a atualização grava (" + "; ".join(problemas[:5])
-                     + "): pode ter sido adulterado; nada foi alterado")
-    return raiz
-
-
-def desfazer(registro_arq: Path, aceitar_banco_migrado: bool) -> dict:
-    """Devolve o código anterior à atualização registrada, se o esquema do banco não mudou."""
-    reg = json.loads(Path(registro_arq).read_text(encoding="utf-8"))
-    raiz = _conferir_registro(Path(registro_arq), reg)
-    kit = reg["promocao"]["instalar_kit"]
-    atual = user_version(raiz)
-    if atual != reg.get("user_version_antes") and not aceitar_banco_migrado:
-        raise Parada("desfazer", "o banco mudou de esquema desde a atualização (user_version "
-                     + str(reg.get("user_version_antes")) + " -> " + str(atual) + "): voltar só o código deixaria "
-                     "o kit antigo com um banco novo. Restaure a cópia ANTES numa pasta nova (fluxo C9)",
-                     copia_antes=(reg.get("antes") or {}).get("pasta"))
-    backup = Path(kit["backup_dos_substituidos"]) if kit.get("backup_dos_substituidos") else None
-    guardados = ([(i["path"], i["sha256_anterior"]) for i in kit.get("substituidos", [])]
-                 + [(i["path"], i["sha256"]) for i in kit.get("orfaos_retirados", [])])
-    for rel, esperado in guardados:  # confere tudo antes de alterar qualquer arquivo
-        origem = backup / rel if backup else None
-        if origem is None or not origem.is_file() or sha(origem) != esperado:
-            raise Parada("desfazer", "a cópia anterior de " + rel + " está ausente ou diferente em "
-                         "registry/kit_backup; nada foi alterado")
-    instr = reg.get("instrucoes_raiz") or {}
-    for item in instr.get("guardados", []):
-        origem = Path(instr["copia"]) / item["path"]
-        if not origem.is_file() or sha(origem) != item["sha256_anterior"]:
-            raise Parada("desfazer", "a cópia anterior de " + item["path"] + " está ausente ou diferente em "
-                         + instr["copia"] + "; nada foi alterado")
-    devolvidos, apagados, orfaos = [], [], []
-    for item in kit.get("substituidos", []):
-        shutil.copy2(backup / item["path"], raiz / item["path"])
-        devolvidos.append(item["path"])
-    for item in kit.get("orfaos_retirados", []):  # o que o kit novo tinha retirado volta ao lugar
-        (raiz / item["path"]).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(backup / item["path"], raiz / item["path"])
-        orfaos.append(item["path"])
-    for item in kit.get("copiados", []):
-        alvo = raiz / item["path"]
-        if alvo.is_file() and sha(alvo) == item["sha256"]:
-            alvo.unlink()
-            apagados.append(item["path"])
-    instrucoes = {"devolvidas": [], "apagadas": [], "mantidas": []}
-    com_copia = {item["path"] for item in instr.get("guardados", [])}
-    for nome, acao in (instr.get("acoes") or {}).items() if instr.get("gerado") else ():
-        alvo = raiz / nome
-        if acao == "igual" or not alvo.is_file():
-            continue
-        if sha(alvo) != instr["sha256"][nome]:  # editado depois da atualização: fica como está
-            instrucoes["mantidas"].append(nome)
-        elif nome in com_copia:
-            shutil.copy2(Path(instr["copia"]) / nome, alvo)
-            instrucoes["devolvidas"].append(nome)
-        elif acao == "criar":
-            alvo.unlink()
-            instrucoes["apagadas"].append(nome)
-    versao = versao_do_kit(raiz)
-    res = {"ok": True, "kit_na_raiz": versao, "devolvidos": devolvidos, "apagados": apagados,
-           "orfaos_devolvidos": orfaos, "instrucoes": instrucoes,
-           "resumo": ["Código devolvido ao kit " + str(versao) + ": " + str(len(devolvidos))
-                      + " arquivo(s) devolvido(s), " + str(len(orfaos)) + " retirado(s) recolocado(s) e "
-                      + str(len(apagados)) + " apagado(s). O banco não foi tocado."]}
-    if instrucoes["mantidas"]:
-        res["resumo"].append("Instruções da raiz editadas depois da atualização ficaram como estão: "
-                             + ", ".join(instrucoes["mantidas"]) + ".")
-    nome = "desfeita-" + Path(registro_arq).stem + "-" + agora() + ".json"
-    res["registro"] = str(_gravar(raiz, nome, {**res, "atualizacao": str(registro_arq)}))
-    return res
+    if registro["promocao"]["bytecode_nao_apagado"]:
+        resumo.append("Atenção: o bytecode destas pastas não foi apagado; apague-as antes de usar a fundação (o Python "
+                      "as refaz da fonte): " + "; ".join(registro["promocao"]["bytecode_nao_apagado"][:3]))
+    resumo += _resumo_instrucoes(raiz, registro["instrucoes_raiz"]) + _resumo_host(raiz, host)
+    resumo.append("Para voltar o código: " + comando(Path(__file__), "desfazer", "--registro", arq))
+    return {"ok": True, "registro": str(arq), "inventario_host": host, "resumo": resumo}
 
 
 def main(argv: list | None = None) -> int:

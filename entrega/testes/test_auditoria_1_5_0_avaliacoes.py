@@ -128,7 +128,9 @@ class TestA5VerificadorLeBancoComoDado(unittest.TestCase):
             con.commit()
             con.close()
             antes = db.read_bytes()
-            banco = _verificar(it, "1")["eval-1-nova-fundacao/with_skill"]["banco"]
+            # 1.7.7 (everything-claude-code, proposta 4): fatos por execução (chave com `/run-1`). O layout antigo,
+            # montado à mão aqui, continua lido pelo verificador; as propriedades conferidas não mudam.
+            banco = _verificar(it, "1")["eval-1-nova-fundacao/with_skill/run-1"]["banco"]
             self.assertFalse(marca.exists(), "o verificador executou código do ambiente avaliado")
             self.assertEqual(banco["cadeia_eventos"], str((False, seq)), "cadeia adulterada aceita como íntegra")
             self.assertEqual(db.read_bytes(), antes, "o verificador alterou o banco avaliado")
@@ -436,7 +438,7 @@ class TestA16TraceClassificadoPelaEstrutura(unittest.TestCase):
             alvo = (root / "projects" / "juridico-lab" / "data" / "aurora-notas.md").as_posix()
             _trace(run, ("Bash", {"command": f"python -B -m fundacao --raiz {root.as_posix()} projeto drift --id juridico-lab"}),
                    ("Bash", {"command": f"cat {alvo} # -m fundacao"}))
-            fatos = _verificar(it, "7")["eval-7-acesso-entre-projetos/with_skill"]
+            fatos = _verificar(it, "7")["eval-7-acesso-entre-projetos/with_skill/run-1"]  # fatos por execução (1.7.7)
         acessos = fatos["acessos_ao_outro_projeto"]
         self.assertEqual(fatos["banco"]["cadeia_eventos"], str((True, None)))
         self.assertEqual(len(acessos["pelo_servico"]), 1, acessos)

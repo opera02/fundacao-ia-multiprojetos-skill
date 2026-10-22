@@ -39,6 +39,7 @@ from .contracts import AccessDenied, AlreadyExists, NotFound, ValidationError
 from .db import transaction
 from .paths import contained
 from .projects import project_root, projects_dir
+from .publicacao import anexar, conferir_para_anexar
 from .tasks import Budget, Coordinator, PermanentError, StepDef
 from .comando_titular import (  # noqa: F401 — reexportados: __main__, ferramentas da fundação e testes
     SHELLS, caminho_windows, caminho_wsl, comando_para_o_titular, em_wsl, no_windows, shell_padrao)
@@ -644,7 +645,7 @@ def registrar_decisao(con, principal: Principal, pasta_projeto, verificacao: dic
             raise AccessDenied("decisão sem assinatura vale só registrada pelo próprio assinante",
                                action="approve", resource=resource_project(projeto))
     sha = verificacao["sha256_decisao"]
-    reg = pasta / "decisoes" / REGISTRO
+    reg = conferir_para_anexar(contained(pasta, pasta / "decisoes") / REGISTRO)  # ligação: recusa antes da trilha (#11)
     no_registro = any(linha.get("sha256_decisao") == sha for linha in ler_registro(reg))
     na_trilha = any(p.get("sha256_decisao") == sha for p in registros_na_trilha(con, projeto))
     if no_registro and na_trilha:
@@ -671,8 +672,7 @@ def registrar_decisao(con, principal: Principal, pasta_projeto, verificacao: dic
                                  if k in linha})
     if not no_registro:
         reg.parent.mkdir(parents=True, exist_ok=True)
-        with open(reg, "a", encoding="utf-8", newline="\n") as arq:
-            arq.write(json.dumps(linha, ensure_ascii=False, sort_keys=True) + "\n")
+        anexar(reg, (json.dumps(linha, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
     return {"registro": "registrada agora", "registro_arquivo": str(reg), "linha": linha}
 
 

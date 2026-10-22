@@ -101,6 +101,12 @@ class StaleArtifact(FundacaoError):
     code = "E_STALE"
 
 
+class LimiteExcedido(FundacaoError):
+    """Pedido, saída de processo ou arquivo acima do teto (auditoria Codex Security da 1.7.6, #9)."""
+
+    code = "E_LIMITE_EXCEDIDO"
+
+
 def check_transition(current: str, new: str) -> None:
     if new not in ALLOWED_STEP_TRANSITIONS.get(current, set()):
         raise InvalidTransition(f"transição proibida: {current} -> {new}", current=current, new=new)

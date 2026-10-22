@@ -32,12 +32,28 @@ PY = sys.executable
 BASE_ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1"}
 BASE_ENV.pop("FUNDACAO_PRINCIPAL", None)
 ISOLAR = "-P" if sys.version_info >= (3, 11) else "-I"  # B8: sem a pasta da ferramenta no caminho de importação
+# B6 e B8 pelo plano de execução do `caracterizar.py` (auditoria Codex Security da 1.7.6, #1). O legado daqui é fixture
+# fictícia da skill: plano sem isolamento, com o motivo registrado, igual nos dois sistemas da CI; o bubblewrap de
+# verdade fica com os testes dos scripts. No B8, a ferramenta é código da fundação e precisa da raiz e da identidade.
+# Nos dois, `--copia` vai com `--manifesto`, que prende o código que o programa roda (revisão de segurança da 1.7.7,
+# R177-FB-02): no B6, o da origem; no B8, o da pasta da ferramenta, o mesmo citado no relatório.
+SEM_ISOLAMENTO_B6 = "cenário de avaliação: fixture fictícia da própria skill, sem dado real"
+SEM_ISOLAMENTO_B8 = "B8: a ferramenta de execução da fundação precisa da raiz e da identidade do lançador"
 
 
 def run(cmd, cwd=None, env=None, timeout=600, stdin=None):
     return subprocess.run([str(c) for c in cmd], cwd=str(cwd) if cwd else None, env=env or BASE_ENV,
                           capture_output=True, text=True, encoding="utf-8", errors="replace",
                           timeout=timeout, input=stdin)
+
+
+def caracterizar(acao: str, args: list, env=None):
+    """`caracterizar.py plano` com os argumentos e, se ele passar, `acao` presa ao hash dele (`--plano-aprovado`)."""
+    plano = run([PY, "-B", SCRIPTS / "caracterizar.py", "plano", *args], env=env)
+    if plano.returncode != 0:
+        return plano
+    return run([PY, "-B", SCRIPTS / "caracterizar.py", acao, "--plano-aprovado", json.loads(plano.stdout)["sha256"],
+                *args], env=env)
 
 
 def kit_cli(root: Path, args: list[str], principal: str | None = None):
@@ -402,9 +418,14 @@ def adaptar(W: Path, root: Path, origem: Path, concluir: bool = True) -> list[tu
         passos.append(("cópia de trabalho", "ja-existia"))
     golden = W / "ref" / "golden.json"
     if not golden.exists():
-        r = run([PY, "-B", SCRIPTS / "caracterizar.py", "gravar", "--entradas", str(trabalho / "casos" / "*.json"),
-                 "--saida", golden, "--cwd", trabalho, "--pasta-saida", trabalho / "saida", "--",
-                 PY, "-B", "run.py", "{entrada}"])
+        # B6: a cópia de trabalho confere com o manifesto da origem (o do CEN-02, ou gravado agora) antes de rodar.
+        manifesto = W / "ref" / "manifesto-origem.json"
+        if not manifesto.exists():
+            run([PY, "-B", SCRIPTS / "manifesto.py", "criar", "--raiz", origem, "--saida", manifesto])
+        r = caracterizar("gravar", ["--entradas", str(trabalho / "casos" / "*.json"), "--saida", golden, "--copia",
+                                    trabalho, "--manifesto", manifesto, "--pasta-saida", trabalho / "saida",
+                                    "--sem-isolamento", SEM_ISOLAMENTO_B6, "--", PY, "-B", "-X", "utf8", "run.py",
+                                    "{entrada}"])
         passos.append(("caracterização (golden)", "feito" if r.returncode == 0 else f"falhou: {r.stderr[-200:]}"))
     else:
         passos.append(("caracterização (golden)", "ja-existia"))
@@ -467,10 +488,13 @@ def _comparar_golden(W: Path, root: Path):
     shutil.rmtree(saida, ignore_errors=True)  # saídas derivadas são regeneradas
     env = {k: v for k, v in BASE_ENV.items() if k not in ("PYTHONUTF8", "PYTHONIOENCODING")}
     env.update({"FUNDACAO_RAIZ": str(root), "FUNDACAO_PRINCIPAL": "titular"})  # sem modo UTF-8 de propósito
-    return run([PY, "-B", SCRIPTS / "caracterizar.py", "comparar", "--golden", W / "ref" / "golden.json",
-                "--pasta-saida", saida, "--", PY, "-B", ISOLAR, pasta_ferramenta(root) / "executar_via_fundacao.py",
-                "{entrada}"],
-               env=env)
+    # A ferramenta lê a raiz e a identidade do lançador: elas passam ao plano só pelo nome (`--variavel NOME`). O plano
+    # prende o SHA-256 do manifesto conferido acima e confere a pasta contra ele de novo antes de rodar.
+    return caracterizar("comparar", ["--golden", W / "ref" / "golden.json", "--copia", pasta_ferramenta(root),
+                                     "--manifesto", manifesto_ferramenta(W, root),
+                                     "--pasta-saida", saida, "--sem-isolamento", SEM_ISOLAMENTO_B8, "--variavel",
+                                     "FUNDACAO_RAIZ", "--variavel", "FUNDACAO_PRINCIPAL", "--", PY, "-B", ISOLAR,
+                                     pasta_ferramenta(root) / "executar_via_fundacao.py", "{entrada}"], env=env)
 
 
 def cen02(W: Path) -> Cenario:

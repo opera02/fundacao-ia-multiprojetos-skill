@@ -2,8 +2,9 @@
 
 > Relatório de trabalho PRIVADO, somente leitura: a revisão não altera nada na árvore revisada e o relatório fica
 > fora dela (ex.: `entrega/auditoria/` da árvore de desenvolvimento, gravado com hash). Redija: sem credenciais,
-> dados pessoais, caminhos internos de clientes nem trechos de caso. Adaptado do modelo de revisão de segurança do
-> vibe-coding-toolkit (MIT; análise de 21/10/2026). Apague os campos que não usar.
+> dados pessoais, caminhos internos de clientes nem trechos de caso. Traduzido e adaptado do modelo de revisão de
+> segurança do vibe-coding-toolkit (MIT; análise de 21/10/2026; aviso de copyright e licença em
+> `<skill>/AVISOS-DE-TERCEIROS.md`). Apague os campos que não usar.
 
 ## Escopo
 

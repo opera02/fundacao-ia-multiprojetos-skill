@@ -231,8 +231,9 @@ class TestA16TimeoutGuardaSaidaParcial(unittest.TestCase):
 
     def test_a16_saidas_parciais_diferentes_nao_comparam_iguais(self):
         mod = carregar("caracterizar")
-        casos = [mod.run_case([sys.executable, "-I", "-c", self.PROGRAMA.format(m=m)], "", None, None, [], 3)
-                 for m in ("ANTIGO", "NOVO")]
+        # Desde a 1.7.7, `run_case` sem plano exige o motivo explícito (revisão de segurança da 1.7.7).
+        casos = [mod.run_case([sys.executable, "-I", "-c", self.PROGRAMA.format(m=m)], "", None, None, [], 3,
+                              sem_isolamento="teste: programa fictício do próprio teste") for m in ("ANTIGO", "NOVO")]
         self.assertEqual([c["codigo"] for c in casos], ["timeout", "timeout"])
         self.assertIn("ANTIGO", casos[0]["stdout"], "a saída parcial foi descartada no timeout")
         self.assertIn("erro-NOVO", casos[1]["stderr"])
@@ -255,8 +256,13 @@ class TestA16TimeoutGuardaSaidaParcial(unittest.TestCase):
         golden = base / "golden.json"
         golden.write_text(json.dumps({"schema_version": "fundacao.golden/2", "comando": [], "ignorar": [],
                                       "casos": [caso]}), encoding="utf-8")
-        p = rodar_script("caracterizar.py", "comparar", "--golden", golden, "--timeout", "3", "--",
-                         sys.executable, "-I", "-c", self.PROGRAMA.format(m="QUALQUER"))
+        # Desde a 1.7.7 o comparar roda preso ao plano dos mesmos argumentos (auditoria Codex Security da 1.7.6, #1):
+        # sem isolamento, com o motivo registrado, porque o programa é fictício do teste.
+        args = ["--golden", golden, "--timeout", "3", "--sem-isolamento", "teste: programa fictício do próprio teste",
+                "--", sys.executable, "-I", "-c", self.PROGRAMA.format(m="QUALQUER")]
+        plano = rodar_script("caracterizar.py", "plano", *args)
+        self.assertEqual(plano.returncode, 0, plano.stderr)
+        p = rodar_script("caracterizar.py", "comparar", "--plano-aprovado", json.loads(plano.stdout)["sha256"], *args)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("timeout", json.loads(p.stdout)["aviso"])
 

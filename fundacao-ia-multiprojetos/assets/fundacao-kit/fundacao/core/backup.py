@@ -11,11 +11,10 @@
 - O registro protegido (`state/retiradas.jsonl`) tem identidade própria, criada pelo `init`
   e anotada no manifesto: a restauração recusa registro de outra fundação ou recriado.
 - Ligação (link simbólico ou junção) não é seguida: nem na cópia, nem na verificação (#24).
-- Âncora externa (#8): o manifesto fica na pasta da cópia, e quem pode reescrevê-la recalcula
-  tudo. O `backup criar` devolve o SHA-256 do manifest.json e o anota no livro de cópias
-  (`state/copias.jsonl`, ao lado do registro protegido e fora da cópia); a restauração confere
-  a cópia por ele. Sem âncora, cópia que não consta no livro ou cujo código difere do kit que
-  restaura só libera por decisão explícita; sem livro e com o mesmo código, libera com aviso.
+- Âncora externa (#8) e quem verifica ou restaura (auditoria Codex Security da 1.7.6, #2): ancora_copia.py. Sem
+  âncora, a restauração só libera por decisão explícita, com motivo — o código igual ao do kit não a dispensa.
+- Preparo privado (auditoria da 1.7.6, #12): preparo.py. Backup e restauração copiam presos ao objeto listado; a
+  restauração monta a raiz numa pasta de preparo ao lado do destino e só a promove depois de conferi-la de novo.
 """
 
 from __future__ import annotations
@@ -28,8 +27,12 @@ import sqlite3
 import stat
 from pathlib import Path
 
+from . import preparo, publicacao
+from .ancora_copia import (  # noqa: F401 — âncora, manifesto e autorização (1.7.7), reexportados
+    AVISO_SEM_ANCORA, FONTE_LIVRO, GUARDE_A_ANCORA, LIVRO_COPIAS, MARCA_NAO_LIBERADA, anotar_ancora, autorizar,
+    aviso_da_ancora, conferir_ancora, dentro_da_copia, ler_manifesto, motivo_sem_ancora)
 from .canon import canonical_json, sha256_file, sha256_text
-from .contracts import ValidationError
+from .contracts import FundacaoError, ValidationError
 from .db import connect, transaction, uri_somente_leitura, utcnow
 from .ids import new_id
 from .registro_protegido import (  # noqa: F401 — leitura do registro protegido (1.7.4)
@@ -44,18 +47,6 @@ FILE_DIRS = ("fundacao", "registry", "templates", "projects", "AGENTS.md", "CLAU
 REGISTROS_PADRAO = ("docs", "evidence", "ferramentas", "tests", "RETOMADA.md")
 POLITICA_BACKUP = "backup_policy.json"
 SCHEMA_REGISTRO = "fundacao.retiradas/1"
-MARCA_NAO_LIBERADA = "restauracao-nao-liberada.json"
-LIVRO_COPIAS = "copias.jsonl"  # âncoras das cópias (sha256 do manifest.json), ao lado do registro protegido
-# Windows: etiqueta de ponto de nova análise "substituta de nome" (bit 29) — junção, link simbólico e
-# afins, que redirecionam para outro caminho; arquivo de nuvem (OneDrive) e deduplicação não a têm.
-_SUBSTITUTA_DE_NOME = 0x20000000
-GUARDE_A_ANCORA = ("guarde o sha256_manifesto FORA da pasta da cópia (anotação, gerenciador de senhas, outro disco); "
-                   "ele também foi anotado em state/copias.jsonl — guarde esse livro junto do registro protegido "
-                   "(state/retiradas.jsonl). A restauração confere a cópia por ele.")
-AVISO_SEM_ANCORA = ("ATENÇÃO: nada fora da pasta da cópia confirma que ela é a que foi guardada; quem pode escrever "
-                    "nessa pasta pode trocar arquivos, banco e permissões e recalcular o manifesto. Confira com o "
-                    "sha256_manifesto devolvido pelo `backup criar` (--sha256-manifesto) ou com o livro de cópias "
-                    "(state/copias.jsonl) ao lado do registro protegido.")
 # Arquivos que o sistema operacional cria sozinho numa pasta (Explorer em pasta de rede, Finder):
 # não contam como "extras" na verificação e não são restaurados.
 METADADOS_DO_SO = ("Thumbs.db", "ehthumbs.db", "desktop.ini", ".DS_Store")
@@ -65,30 +56,6 @@ NAO_REAPLICADO = [
     "habilitação de componente posterior à cópia (o componente volta desligado)",
     "alterações em arquivos posteriores à cópia, como registry/route_policy.json: confira à mão",
 ]
-
-
-def _e_ligacao(path: Path) -> bool:
-    """Link simbólico ou junção (e afins do Windows), conferido sem seguir a ligação."""
-    try:
-        st = os.lstat(path)
-    except OSError:
-        return False
-    return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_reparse_tag", 0) & _SUBSTITUTA_DE_NOME)
-
-
-def _percorrer(base: Path, ignorar: set[str]) -> list[tuple[Path, bool]]:
-    """Caminhos sob `base`, ordenados, sem atravessar ligação: a ligação vem marcada (True) e o que
-    há do outro lado não é listado nem lido. `os.walk` sozinho entraria na junção do Windows."""
-    itens = []
-    for pasta, subpastas, nomes in os.walk(base):
-        atual = Path(pasta)
-        for nome in sorted(subpastas):
-            if nome in ignorar or _e_ligacao(atual / nome):
-                subpastas.remove(nome)
-                if nome not in ignorar:
-                    itens.append((atual / nome, True))
-        itens.extend((atual / nome, _e_ligacao(atual / nome)) for nome in nomes)
-    return sorted(itens)
 
 
 def registros_incluidos(root: Path) -> list[str]:
@@ -115,31 +82,29 @@ def registros_incluidos(root: Path) -> list[str]:
 
 
 def _files(root: Path, ligacoes: list[str] | None = None, extras: tuple[str, ...] | list[str] = ()):
-    """Arquivos que entram na cópia: os do kit (FILE_DIRS) e os registros da fundação (`extras`, pastas ou
-    arquivos). Ligação (pasta ou arquivo) não é seguida (#24): fica fora, anotada em `ligacoes`; arquivo cujo
-    caminho resolvido sai da raiz (troca no meio), também."""
+    """Arquivos que entram na cópia, com o `lstat` da listagem (a identidade que a cópia confere, #12): os do kit
+    (FILE_DIRS) e os registros da fundação (`extras`, pastas ou arquivos). Ligação (pasta ou arquivo) não é seguida
+    (#24): fica fora, anotada em `ligacoes`."""
     ligacoes = [] if ligacoes is None else ligacoes
-    raiz = Path(root).resolve()
     vistos: set[Path] = set()
     for top in (*FILE_DIRS, *extras):
         base = Path(root) / top
-        if _e_ligacao(base):
+        try:
+            st = os.lstat(base)
+        except OSError:
+            continue
+        if preparo.e_ligacao(base):
             ligacoes.append(Path(top).as_posix())
             continue
-        if base.is_file():
-            itens = [(base, False)] if _copiavel(base.name) else []
-        elif base.is_dir():
-            itens = _percorrer(base, EXCLUDE_PARTS)
-        else:
-            continue
-        for path, ligacao in itens:
+        itens = preparo.percorrer(base, EXCLUDE_PARTS) if stat.S_ISDIR(st.st_mode) else [(base, False, st)]
+        for path, ligacao, st in itens:
             if not _copiavel(path.name) or path in vistos:
                 continue
             vistos.add(path)
-            if ligacao or (path.is_file() and not path.resolve().is_relative_to(raiz)):
+            if ligacao:
                 ligacoes.append(path.relative_to(root).as_posix())
-            elif path.is_file():
-                yield path
+            elif stat.S_ISREG(st.st_mode):
+                yield path, st
 
 
 def _copiavel(nome: str) -> bool:
@@ -173,16 +138,16 @@ def default_tombstone_log(con: sqlite3.Connection) -> Path | None:
 
 def ensure_tombstone_log(log_path: Path) -> str:
     """Garante o registro protegido com identidade própria (o `init` chama). Registro de kit
-    anterior, sem identidade, recebe-a numa linha nova ao final: nada é reescrito."""
+    anterior, sem identidade, recebe-a numa linha nova ao final: nada é reescrito. As linhas vão por
+    `publicacao.anexar`: ligação ou vínculo físico no lugar do registro recusa sem gravar (R177-KIT-04)."""
     path = Path(log_path)
     log_id, _ = _ler_registro(path)
     if log_id:
         return log_id
     log_id = new_id("reg")
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8", newline="\n") as fh:
-        fh.write(canonical_json({"entity_type": REGISTRO, "log_id": log_id, "criado_em": utcnow(),
-                                 "schema_version": SCHEMA_REGISTRO}) + "\n")
+    publicacao.anexar(path, (canonical_json({"entity_type": REGISTRO, "log_id": log_id, "criado_em": utcnow(),
+                                             "schema_version": SCHEMA_REGISTRO}) + "\n").encode("utf-8"))
     return log_id
 
 
@@ -203,10 +168,7 @@ def append_tombstone_log(log_path: Path, record: dict) -> None:
     log_path = Path(log_path)
     if not log_path.exists() or log_path.stat().st_size == 0:
         ensure_tombstone_log(log_path)
-    with log_path.open("a", encoding="utf-8", newline="\n") as fh:
-        fh.write(canonical_json(record) + "\n")
-        fh.flush()
-        os.fsync(fh.fileno())
+    publicacao.anexar(log_path, (canonical_json(record) + "\n").encode("utf-8"))  # com fsync; sem seguir ligação
 
 
 # ------------------------------------------------------------------ outbox do registro protegido
@@ -343,9 +305,13 @@ def _cobre(linhas: list[tuple[str, dict]], conhecido: dict) -> bool:
 
 # ------------------------------------------------------------------ backup
 def create_backup(root: Path, dest: Path, label: str) -> dict:
-    root, dest = Path(root), Path(dest)
+    root, dest = Path(os.path.abspath(root)), Path(os.path.abspath(dest))
     if dest.exists() and any(dest.iterdir()):
         raise FileExistsError("destino de backup não vazio: não substitua uma referência anterior")
+    ligada = preparo.ligacao_no_caminho(dest) or preparo.ligacao_no_caminho(root / "state" / "state.sqlite")
+    if ligada:  # #12: a cópia iria para outro lugar, ou o estado viria de outro lugar
+        raise ValidationError("o caminho da raiz ou do destino da cópia passa por ligação (link simbólico ou junção): "
+                              "informe o caminho real", caminho=ligada)
     extras = registros_incluidos(root)
     destino_real = dest.resolve()
     for top in (*FILE_DIRS, *extras):  # cópia dentro do que ela copia se copiaria a si mesma
@@ -361,7 +327,7 @@ def create_backup(root: Path, dest: Path, label: str) -> dict:
         try:
             try:
                 flush_outbox(con, root / "state" / "retiradas.jsonl")
-            except (OSError, ValidationError) as exc:
+            except (OSError, FundacaoError) as exc:  # inclui registro que é ligação ou vínculo físico (R177-KIT-04)
                 raise ValidationError("registro protegido com decisões pendentes de gravação: corrija o acesso ao "
                                       "registro (state/retiradas.jsonl) e repita; nenhuma cópia foi feita",
                                       erro=type(exc).__name__) from exc
@@ -372,12 +338,40 @@ def create_backup(root: Path, dest: Path, label: str) -> dict:
     retiradas = tombstone_state(root / "state" / "retiradas.jsonl")
     if not retiradas["log_id"]:
         raise ValidationError("registro de retiradas ausente ou sem identidade nesta raiz: rode `init` antes do backup")
-    dest.mkdir(parents=True, exist_ok=True)
+    # #12: a cópia é montada numa pasta de preparo exclusiva ao lado do destino e promovida inteira (renomeação
+    # atômica): nada é gravado no destino nem através de ligação nele, e cópia pela metade não aparece.
+    pasta = preparo.criar_preparo(dest)
+    try:
+        manifest = _montar_copia(root, pasta, label, extras, retiradas)
+        # Âncora (#8): o hash do manifesto, que confere cada arquivo e o banco, sai da pasta da cópia.
+        ancora = sha256_file(pasta / "manifest.json")
+        substituido = preparo.promover(pasta, dest)  # destino vazio criado antes: trocado (R177-KIT-05)
+    finally:
+        shutil.rmtree(pasta, ignore_errors=True)
+    resultado = {**manifest, "sha256_manifesto": ancora, "guarde_a_ancora": GUARDE_A_ANCORA}
+    avisos = [preparo.AVISO_DESTINO_EXISTENTE] if substituido else []
+    if manifest.get("ligacoes_nao_seguidas"):
+        avisos.append("ligações (link simbólico ou junção) não foram seguidas e o que elas apontam NÃO está na "
+                      "cópia: veja ligacoes_nao_seguidas")
+    try:
+        anotar_ancora(root / "state" / LIVRO_COPIAS, {"rotulo": label, "criado_em": manifest["created_at"],
+                                                      "destino": str(dest.resolve()), "sha256_manifesto": ancora})
+    except (OSError, FundacaoError) as exc:  # livro que é ligação ou vínculo físico: recusado sem gravar (R177-KIT-04)
+        avisos.append(f"a âncora não foi anotada no livro de cópias ({type(exc).__name__}: {exc}): guarde o "
+                      "sha256_manifesto; a restauração vai pedi-lo")
+    if avisos:
+        resultado["aviso"] = "; ".join(avisos)
+    return resultado
+
+
+def _montar_copia(root: Path, pasta: Path, label: str, extras: list[str], retiradas: dict) -> dict:
+    """Banco, arquivos e manifest.json da cópia, gravados na pasta de preparo (#12); devolve o manifesto."""
+    src_db = root / "state" / "state.sqlite"
     files = []
     if src_db.exists():
-        (dest / "state").mkdir()
+        (pasta / "state").mkdir()
         src = sqlite3.connect(str(src_db))
-        dst = sqlite3.connect(str(dest / "state" / "state.sqlite"))
+        dst = sqlite3.connect(str(pasta / "state" / "state.sqlite"))
         try:
             src.backup(dst)  # cópia consistente mesmo com o banco em uso
             dst.execute("PRAGMA journal_mode = DELETE")  # cópia fora do WAL: conferir não cria -wal/-shm
@@ -385,19 +379,24 @@ def create_backup(root: Path, dest: Path, label: str) -> dict:
             dst.close()
             src.close()
     ligacoes: list[str] = []
-    for path in _files(root, ligacoes, extras):
+    criadas = {pasta}
+    for path, st in _files(root, ligacoes, extras):
         rel = path.relative_to(root)
-        target = dest / "files" / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
+        target = pasta / "files" / rel
+        preparo.criar_pasta(target.parent, criadas)
+        try:  # presa ao objeto listado: trocado por ligação depois da listagem, fica fora como ligação (#12)
+            sha, tamanho = preparo.copiar(path, target, st)
+        except ValidationError:
+            ligacoes.append(rel.as_posix())
+            continue
         # Tamanho e hash do que foi COPIADO: a origem não é lida de novo depois da cópia.
-        files.append({"path": rel.as_posix(), "size": target.stat().st_size, "sha256": sha256_file(target)})
+        files.append({"path": rel.as_posix(), "size": tamanho, "sha256": sha})
     manifest = {
         "schema_version": "fundacao.backup/1",
         "label": label,
         "created_at": utcnow(),
-        "db": logical_summary(dest / "state" / "state.sqlite", copia=True) if src_db.exists() else None,
-        "db_sha256": sha256_file(dest / "state" / "state.sqlite") if src_db.exists() else None,
+        "db": logical_summary(pasta / "state" / "state.sqlite", copia=True) if src_db.exists() else None,
+        "db_sha256": sha256_file(pasta / "state" / "state.sqlite") if src_db.exists() else None,
         "files": files,
         # Identidade do registro e linhas conhecidas no momento da cópia: na restauração, o registro
         # informado precisa ter a mesma identidade e alcançar pelo menos este ponto.
@@ -408,113 +407,50 @@ def create_backup(root: Path, dest: Path, label: str) -> dict:
     }
     if ligacoes:
         manifest["ligacoes_nao_seguidas"] = sorted(ligacoes)
-    (dest / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    # Âncora (#8): o hash do manifesto, que confere cada arquivo e o banco, sai da pasta da cópia.
-    ancora = sha256_file(dest / "manifest.json")
-    resultado = {**manifest, "sha256_manifesto": ancora, "guarde_a_ancora": GUARDE_A_ANCORA}
-    avisos = []
-    if ligacoes:
-        avisos.append("ligações (link simbólico ou junção) não foram seguidas e o que elas apontam NÃO está na "
-                      "cópia: veja ligacoes_nao_seguidas")
-    try:
-        _anotar_ancora(root / "state" / LIVRO_COPIAS, {"rotulo": label, "criado_em": manifest["created_at"],
-                                                       "destino": str(dest.resolve()), "sha256_manifesto": ancora})
-    except OSError as exc:
-        avisos.append(f"a âncora não foi anotada no livro de cópias ({type(exc).__name__}): guarde o "
-                      "sha256_manifesto; a restauração vai pedi-lo")
-    if avisos:
-        resultado["aviso"] = "; ".join(avisos)
-    return resultado
-
-
-def _anotar_ancora(livro: Path, registro: dict) -> None:
-    livro.parent.mkdir(parents=True, exist_ok=True)
-    with livro.open("a", encoding="utf-8", newline="\n") as fh:
-        fh.write(canonical_json(registro) + "\n")
-        fh.flush()
-        os.fsync(fh.fileno())
-
-
-def _ancoras_do_livro(livro: Path) -> set[str]:
-    """Âncoras anotadas no livro de cópias; linha ilegível não confere nada (só deixa de achar)."""
-    try:
-        linhas = livro.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
-        return set()
-    ancoras = set()
-    for linha in linhas:
-        try:
-            rec = json.loads(linha)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(rec, dict) and isinstance(rec.get("sha256_manifesto"), str):
-            ancoras.add(rec["sha256_manifesto"])
-    return ancoras
-
-
-def conferir_ancora(backup_dir: Path, sha256_manifesto: str | None = None, livro: Path | None = None) -> dict:
-    """Confere o manifest.json da cópia contra a âncora guardada FORA dela (#8): a informada pelo
-    operador ou a anotada no livro de cópias. `situacao`: conferida, divergente (a informada não
-    bate) ou ausente (com `livro_sem_esta_copia` quando o livro existe e não a tem)."""
-    atual = sha256_file(Path(backup_dir) / "manifest.json")
-    if sha256_manifesto:
-        situacao = "conferida" if sha256_manifesto.strip().lower() == atual else "divergente"
-        return {"situacao": situacao, "fonte": "sha256 informado", "sha256_manifesto": atual}
-    if livro is not None and Path(livro).is_file():
-        if atual in _ancoras_do_livro(Path(livro)):
-            return {"situacao": "conferida", "fonte": str(livro), "sha256_manifesto": atual}
-        return {"situacao": "ausente", "fonte": None, "livro_sem_esta_copia": str(livro), "sha256_manifesto": atual}
-    return {"situacao": "ausente", "fonte": None, "sha256_manifesto": atual}
-
-
-def _ler_manifesto(backup_dir: Path) -> dict:
-    """Manifesto com a estrutura esperada; senão, erro do contrato (não traceback)."""
-    m = json.loads((Path(backup_dir) / "manifest.json").read_text(encoding="utf-8"))
-    ok = (isinstance(m, dict) and isinstance(m.get("files"), list)
-          and all(isinstance(f, dict) and isinstance(f.get("path"), str) and isinstance(f.get("sha256"), str)
-                  for f in m["files"])
-          and isinstance(m.get("db"), (dict, type(None))) and isinstance(m.get("retiradas"), (dict, type(None))))
-    if not ok:
-        raise ValidationError("manifesto da cópia com estrutura inválida: não é uma cópia desta fundação")
-    return m
+    (pasta / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest
 
 
 def verify_backup(backup_dir: Path, *, sha256_manifesto: str | None = None, livro: Path | None = None) -> dict:
     """Confere a cópia contra o manifesto: hash de cada arquivo; no banco, o SHA-256 do arquivo
     (cópias da 1.3.1 em diante), a integridade e o resumo lógico (contagem por tabela e
     `user_version`). Banco trocado, tabela esvaziada ou banco ausente = não confere; ligação dentro
-    da cópia também (#24). O manifesto fica na mesma pasta: quem reescreve os dois forja a cópia — por
-    isso o manifesto é conferido contra a âncora guardada fora dela (#8): `sha256_manifesto` informado
-    (divergente = não confere) ou o livro de cópias; sem âncora, a resposta avisa (`aviso_ancora`)."""
+    da cópia também (#24), e nada é lido através dela: `files/` é listada antes, sem seguir ligação, e só o arquivo
+    comum listado tem o hash calculado, preso ao objeto da listagem (R177-KIT-03). O manifesto fica na mesma pasta:
+    quem reescreve os dois forja a cópia — por isso ele é conferido contra a âncora guardada fora dela (#8):
+    `sha256_manifesto` informado (divergente = não confere) ou o livro de cópias, fora da cópia (R177-KIT-01); sem
+    âncora ou com a do livro, a resposta avisa (`aviso_ancora`). O
+    manifesto é lido uma vez (a âncora confere os bytes que valem) e caminho dele que sairia de `files/` é
+    estrutura inválida (#12). A restauração verifica a cópia já trazida para o preparo, não no lugar."""
     backup_dir = Path(backup_dir)
-    manifest = _ler_manifesto(backup_dir)
-    ancora = conferir_ancora(backup_dir, sha256_manifesto, livro)
-    changed, missing = [], []
-    for f in manifest["files"]:
-        path = backup_dir / "files" / f["path"]
-        if not path.exists():
-            missing.append(f["path"])
-        elif sha256_file(path) != f["sha256"]:
-            changed.append(f["path"])
-    # Arquivo na cópia que o manifesto não lista também não confere: seria restaurado (até código
-    # em fundacao/) sem que ninguém o tivesse copiado.
-    base = backup_dir / "files"
-    listados = {f["path"] for f in manifest["files"]}
-    soltos, ligacoes = [], []
-    if base.is_dir():
-        for p, ligacao in _percorrer(base, set()):
+    bruto = preparo.ler(backup_dir / "manifest.json")
+    manifest = ler_manifesto(bruto)
+    ancora = conferir_ancora(bruto, sha256_manifesto, livro, backup_dir)
+    base, comuns, ligacoes = backup_dir / "files", {}, []  # comuns: caminho relativo -> (caminho, lstat da listagem)
+    if preparo.e_ligacao(base):
+        ligacoes.append(".")  # a própria pasta files/
+    elif base.is_dir():
+        for p, ligacao, st in preparo.percorrer(base):
             rel = p.relative_to(base).as_posix()
             if ligacao:  # a cópia nunca tem ligação: restaurá-la copiaria o que está do outro lado
                 ligacoes.append(rel)
-            elif p.is_file() and rel not in listados:
-                soltos.append(rel)
-    soltos.sort()
+            elif stat.S_ISREG(st.st_mode):
+                comuns[rel] = (p, st)
+    missing = [f["path"] for f in manifest["files"] if f["path"] not in comuns]  # ausente, ligação ou pasta
+    changed = [f["path"] for f in manifest["files"]
+               if f["path"] in comuns and preparo.resumo(*comuns[f["path"]]) != f["sha256"]]
+    # Arquivo na cópia que o manifesto não lista também não confere: seria restaurado (até código
+    # em fundacao/) sem que ninguém o tivesse copiado.
+    listados = {f["path"] for f in manifest["files"]}
+    soltos = sorted(rel for rel in comuns if rel not in listados)
     do_so = [rel for rel in soltos if rel.rsplit("/", 1)[-1] in METADADOS_DO_SO]
     extras = [rel for rel in soltos if rel not in do_so]
     db = backup_dir / "state" / "state.sqlite"
     esperado = manifest.get("db")
     db_check, db_problemas = None, []
-    if db.exists():
+    if preparo.e_ligacao(db.parent) or preparo.e_ligacao(db):
+        db_problemas.append("o banco da cópia passa por ligação (link simbólico ou junção)")
+    elif db.exists():
         if manifest.get("db_sha256") and sha256_file(db) != manifest["db_sha256"]:
             db_problemas.append("hash do banco diferente do manifesto")
         db_check = logical_summary(db, copia=True)
@@ -536,8 +472,7 @@ def verify_backup(backup_dir: Path, *, sha256_manifesto: str | None = None, livr
                  "db_problemas": db_problemas, "ancora": ancora}
     if ligacoes:
         resultado["ligacoes"] = sorted(ligacoes)
-    if ancora["situacao"] == "ausente":
-        resultado["aviso_ancora"] = AVISO_SEM_ANCORA
+    resultado.update(aviso_da_ancora(ancora))
     if do_so:
         resultado["ignorados_do_so"] = do_so  # metadados do sistema: nem conferidos nem restaurados
     if db.exists() and not manifest.get("db_sha256"):
@@ -550,18 +485,17 @@ def verify_backup(backup_dir: Path, *, sha256_manifesto: str | None = None, livr
 # ------------------------------------------------------------------ restauração
 def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
             aceitar_registro_nao_comprovado: bool = False, executado_por: str = "restauracao",
-            sha256_manifesto: str | None = None, aceitar_copia_sem_ancora: bool = False,
+            sha256_manifesto: str | None = None, aceitar_copia_sem_ancora: str | None = None,
             livro: Path | None = None) -> dict:
     """Restaura em destino NOVO, reaplica o que o registro guarda e só então libera.
 
-    Não libera (released=false), e não copia nada, quando: a cópia não confere; o registro não foi
-    informado, não existe, é ilegível, tem identidade diferente da anotada na cópia (outra fundação
-    ou registro recriado) ou não alcança as linhas conhecidas no momento da cópia. Cópia sem
-    identidade anotada (kit anterior à 1.3.0) e sem retiradas só libera com aceitação explícita,
-    que fica na resposta e na trilha. Reaplica por tipo: fonte (`id@versão`, com limpeza dos
-    derivados), memória (com os derivados registrados) e revogação de acesso (só as posteriores
-    à cópia). Cada reaplicação vira evento na trilha restaurada. Até liberar, o destino carrega
-    `state/restauracao-nao-liberada.json`, e a CLI recusa usar essa raiz.
+    Não libera (released=false), e não copia nada para o destino, quando: o caminho da cópia ou do destino
+    passa por ligação; a cópia não confere; o registro não foi informado, não existe, é ilegível, tem
+    identidade diferente da anotada na cópia (outra fundação ou registro recriado) ou não alcança as linhas
+    conhecidas no momento da cópia. Cópia sem identidade anotada (kit anterior à 1.3.0) e sem retiradas só
+    libera com aceitação explícita, que fica na resposta e na trilha. Reaplica por tipo: fonte (`id@versão`,
+    com limpeza dos derivados), memória (com os derivados registrados), revogação de acesso e desativação de
+    componente (só as posteriores à cópia). Cada reaplicação vira evento na trilha restaurada.
 
     Ponto de corte coerente (auditoria F12): o registro é relido depois da reaplicação e, se
     cresceu (escritores ativos na origem), as linhas novas também são reaplicadas, até ficar
@@ -571,32 +505,47 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
     na resposta). Decisões protegidas confirmadas no banco copiado e ainda não exportadas (outbox)
     entram no registro do destino antes de liberar.
 
-    Âncora externa (#8): o manifest.json é conferido contra `sha256_manifesto` (informado) ou contra o
-    livro de cópias ao lado do registro (`livro`; padrão: `copias.jsonl` na pasta do registro).
-    Âncora divergente não libera. Sem âncora, não libera — salvo `aceitar_copia_sem_ancora`, que fica
-    na resposta e na trilha — quando o livro existe e não tem esta cópia ou quando o código da cópia
-    (`fundacao/`, que a raiz restaurada vai executar) difere do kit que restaura; sem livro e com o
-    mesmo código, libera com `aviso_ancora`."""
-    backup_dir, target_root = Path(backup_dir), Path(target_root)
+    Âncora externa (#8; auditoria Codex Security da 1.7.6, #2): o manifest.json é lido uma vez e conferido contra
+    `sha256_manifesto` (informado) ou contra o livro de cópias ao lado do registro (`livro`; padrão: `copias.jsonl`
+    na pasta do registro). Âncora divergente não libera. Sem âncora, não libera — nem com o código igual ao do kit
+    — salvo `aceitar_copia_sem_ancora` com o motivo, decisão que fica na resposta e na trilha (`ressalva_ancora`).
+    Registro ou livro dentro da própria cópia não valem, e a âncora vinda do livro sai com `aviso_ancora` (R177-KIT-01).
+
+    Preparo privado (auditoria da 1.7.6, #12): a cópia vem para uma pasta de preparo criada ao lado do destino, com
+    exclusividade, cada arquivo lido sem seguir ligação e conferido como o objeto listado; a verificação, o banco e
+    a reaplicação usam só o preparo, que carrega `state/restauracao-nao-liberada.json` até o fim. Logo antes da
+    promoção — renomeação atômica para o destino, que nunca grava através de ligação —, a raiz preparada é
+    conferida de novo. O destino só recebe a raiz liberada; o preparo não liberado é apagado. Destino vazio criado
+    antes é trocado pela raiz preparada, sem as permissões próprias dele: `aviso_permissoes` (R177-KIT-05)."""
+    backup_dir, target_root = Path(os.path.abspath(backup_dir)), Path(os.path.abspath(target_root))
     if target_root.exists() and any(target_root.iterdir()):
         raise FileExistsError("restaure em diretório novo ou vazio; nunca sobre a origem")
     if livro is None and tombstone_log is not None:
         livro = Path(tombstone_log).parent / LIVRO_COPIAS
-    check = verify_backup(backup_dir, sha256_manifesto=sha256_manifesto, livro=livro)
+    check: dict = {}
 
     def nao_liberar(reason: str, **extra) -> dict:
         return {"released": False, "reason": reason, "check": check, **extra}
 
-    if check["ancora"]["situacao"] == "divergente":
+    ligada = preparo.ligacao_no_caminho(backup_dir) or preparo.ligacao_no_caminho(target_root)
+    if ligada:  # #12: a leitura ou a escrita iria para outro lugar
+        return nao_liberar(f"o caminho da cópia ou do destino passa por ligação (link simbólico ou junção) em {ligada}:"
+                           " informe o caminho real; não liberar")
+    bruto = preparo.ler(backup_dir / "manifest.json")  # lido UMA vez: a âncora e o que vale são estes bytes
+    manifest = ler_manifesto(bruto)
+    ancora = check["ancora"] = conferir_ancora(bruto, sha256_manifesto, livro, backup_dir)
+    if ancora.get("livro_recusado"):
+        livro = None  # dentro da própria cópia: não confere nada nem vai para a raiz restaurada (R177-KIT-01)
+    if ancora["situacao"] == "divergente":
         return nao_liberar("o manifesto da cópia não confere com o sha256_manifesto informado: não é a cópia que "
                            "foi guardada, ou ela foi alterada; não liberar")
-    if not check["ok"]:
-        return nao_liberar("backup íntegro? não")
     if tombstone_log is None:
         return nao_liberar("registro de retiradas indisponível: não liberar")
+    if dentro_da_copia(tombstone_log, backup_dir):  # a cópia não comprova a si mesma (R177-KIT-01)
+        return nao_liberar(f"o registro de retiradas informado ({tombstone_log}) fica dentro da própria cópia: não "
+                           "vale; informe o registro protegido da fundação, guardado fora da cópia; não liberar")
     if not Path(tombstone_log).is_file():
         return nao_liberar("registro de retiradas inexistente no caminho informado: não liberar")
-    manifest = _ler_manifesto(backup_dir)
     try:
         texto = _ler_texto(Path(tombstone_log)) or ""  # conteúdo capturado UMA vez: é o corte inicial
         log_id, linhas = _analisar_registro(texto, estrito=True)  # validado antes de copiar
@@ -621,35 +570,104 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
         return nao_liberar("registro de retiradas não alcança as retiradas da cópia "
                            "(outro registro ou registro truncado): não liberar")
     ressalva_ancora = None
-    if check["ancora"]["situacao"] != "conferida":
-        motivos = []
-        if check["ancora"].get("livro_sem_esta_copia"):
-            motivos.append(f"ela não consta no livro de cópias ao lado do registro ({LIVRO_COPIAS})")
+    if ancora["situacao"] != "conferida":
+        motivos = [motivo_sem_ancora(ancora)]
         codigo_diferente = _codigo_diferente_do_kit(manifest)
         if codigo_diferente:
             motivos.append("o código da cópia (fundacao/), que a raiz restaurada vai executar, difere do kit que "
                            "está restaurando")
-        if motivos and not aceitar_copia_sem_ancora:
+        motivo = aceitar_copia_sem_ancora.strip() if isinstance(aceitar_copia_sem_ancora, str) else ""
+        if not motivo:  # #2: sem âncora, só a decisão explícita e motivada; o código igual ao do kit não a dispensa
             return nao_liberar("cópia sem âncora externa: " + " e ".join(motivos) + ". Informe --sha256-manifesto "
                                "com o código devolvido pelo `backup criar`; sem ele, confira de onde veio a cópia e "
-                               "use --aceitar-copia-sem-ancora (a decisão fica na trilha); não liberar",
+                               "use --aceitar-copia-sem-ancora \"<motivo>\" (a decisão fica na trilha); não liberar",
                                codigo_diferente=codigo_diferente)
-        if motivos:
-            ressalva_ancora = "cópia sem âncora externa (" + "; ".join(motivos) + "); aceita por decisão explícita"
-    posicao = int(conhecido.get("linhas") or 0)  # linhas já refletidas no banco copiado
+        ressalva_ancora = f"cópia sem âncora externa ({'; '.join(motivos)}); aceita por decisão explícita: {motivo}"
+    fim = {"ancora": ancora["situacao"], **({"ressalva": ressalva} if ressalva else {}),
+           **({"ressalva_ancora": ressalva_ancora} if ressalva_ancora else {})}
+    pasta = preparo.criar_preparo(target_root)
+    try:
+        try:  # a cópia inteira vem para o preparo, presa ao objeto listado: depois disso, nada é lido da origem
+            achados = preparo.trazer_copia(backup_dir, pasta / "copia", pular=METADADOS_DO_SO)
+        except ValidationError as exc:
+            return nao_liberar(f"a cópia mudou durante a leitura ({exc}): não liberar; restaure de novo")
+        check = verify_backup(pasta / "copia", sha256_manifesto=sha256_manifesto, livro=livro)
+        if achados["ligacoes"]:
+            check["ok"], check["ligacoes"] = False, sorted({*check.get("ligacoes", []), *achados["ligacoes"]})
+        if achados["pulados"]:
+            check["ignorados_do_so"] = achados["pulados"]  # metadados do sistema: nem conferidos nem restaurados
+        if check["ancora"]["sha256_manifesto"] != ancora["sha256_manifesto"]:
+            return nao_liberar("o manifesto da cópia mudou durante a restauração: não liberar; restaure de novo")
+        check["ancora"] = ancora  # os mesmos bytes: vale a conferência da leitura inicial (com o motivo, se houver)
+        if not check["ok"]:
+            return nao_liberar("backup íntegro? não")
+        raiz = pasta / "raiz"
+        os.rename(pasta / "copia" / "files", raiz)
+        os.mkdir(raiz / "state")
+        os.rename(pasta / "copia" / "state" / "state.sqlite", raiz / "state" / "state.sqlite")
+        (raiz / "state" / MARCA_NAO_LIBERADA).write_text(json.dumps(
+            {"copia": manifest.get("label"), "inicio": utcnow(),
+             "situacao": "restauração em andamento ou não liberada: não use esta raiz"}, ensure_ascii=False),
+            encoding="utf-8")
+        feito = _reaplicar(raiz, manifest, Path(tombstone_log), texto, linhas, log_id,
+                           int(conhecido.get("linhas") or 0), executado_por, livro, fim)
+        if "recusa" in feito:
+            return nao_liberar(feito["recusa"], reapplied=feito["reapplied"])
+        if feito["summary"]["integrity_check"] != "ok":
+            return nao_liberar("o banco restaurado não passou na conferência de integridade: não liberar",
+                               reapplied=feito["reapplied"], db=feito["summary"])
+        esperado = {**{f["path"]: None if f["path"] in feito["alterados"] else f["sha256"] for f in manifest["files"]},
+                    **{f"state/{nome}": sha for nome, sha in feito["estado"].items()}}
+        try:  # imediatamente antes da promoção: a raiz preparada é a que foi conferida e reaplicada (#12)
+            divergentes = preparo.reconferir(raiz, esperado)
+        except ValidationError as exc:
+            divergentes = [str(exc)]
+        if divergentes:
+            return nao_liberar("a raiz preparada mudou antes da promoção (" + ", ".join(divergentes[:5]) + "): não "
+                               "liberar; restaure de novo", reapplied=feito["reapplied"])
+        try:
+            substituido = preparo.promover(raiz, target_root)
+        except (OSError, ValidationError) as exc:
+            return nao_liberar(f"o destino mudou durante a restauração ({exc}): não liberar",
+                               reapplied=feito["reapplied"])
+        (target_root / "state" / MARCA_NAO_LIBERADA).unlink()  # liberada: o destino é a raiz conferida
+    finally:
+        shutil.rmtree(pasta, ignore_errors=True)  # o que sobrou do preparo; raiz não liberada não fica
+    result = {"released": True, "reapplied": feito["reapplied"], "registro": log_id,
+              "nao_reaplicado": NAO_REAPLICADO, "corte_do_registro": feito["corte"], "db": feito["summary"],
+              "ancora": ancora, "check": check, **aviso_da_ancora(ancora),
+              **({"aviso_permissoes": preparo.AVISO_DESTINO_EXISTENTE} if substituido else {})}  # R177-KIT-05
+    if ressalva:
+        result["ressalva"] = ressalva
+    if ressalva_ancora:
+        result["ressalva_ancora"] = ressalva_ancora
+    if check.get("aviso"):
+        result["aviso_copia"] = check["aviso"]
+    from .. import KIT_VERSION  # import tardio: versão do kit que está restaurando
+    kit_copia = _versao_do_kit(target_root)
+    if kit_copia and kit_copia != KIT_VERSION:
+        # A raiz restaurada roda o kit que veio na cópia; o registro protegido pode ter tipos mais novos.
+        result["kit_da_copia"] = kit_copia
+        result["acao_necessaria"] = (f"a raiz restaurada traz o kit {kit_copia} da cópia (este é o {KIT_VERSION}); "
+                                     "antes de usá-la, atualize o kit nela (instalar_kit.py --destino <destino> "
+                                     "--atualizar) e rode `python -m fundacao init`")
+    alvo = str(target_root.resolve())
+    if alvo.startswith("\\\\?\\UNC\\") or (alvo.startswith("\\\\") and not alvo.startswith("\\\\?\\")):
+        result["aviso_destino"] = ("destino em pasta de rede: serve para conferir; para usar a fundação, restaure em "
+                                   "disco local (o SQLite em WAL não deve operar num compartilhamento de rede)")
+    return result
 
-    shutil.copytree(backup_dir / "files", target_root, dirs_exist_ok=True,  # destino novo ou vazio
-                    ignore=shutil.ignore_patterns(*METADADOS_DO_SO))
-    (target_root / "state").mkdir(parents=True, exist_ok=True)
-    marca = target_root / "state" / MARCA_NAO_LIBERADA
-    marca.write_text(json.dumps({"copia": manifest.get("label"), "inicio": utcnow(),
-                                 "situacao": "restauração em andamento ou não liberada: não use esta raiz"},
-                                ensure_ascii=False), encoding="utf-8")
-    shutil.copy2(backup_dir / "state" / "state.sqlite", target_root / "state" / "state.sqlite")
-    con = connect(target_root / "state" / "state.sqlite")
+
+def _reaplicar(raiz: Path, manifest: dict, tombstone_log: Path, texto: str, linhas: list, log_id: str | None,
+               posicao: int, executado_por: str, livro: Path | None, fim: dict) -> dict:
+    """Reaplica o registro protegido na raiz PREPARADA (#12: nada fora do preparo) e fecha a restauração com o evento
+    `restore_completed` (`fim`: âncora e ressalvas). `posicao`: linhas já refletidas no banco copiado. Recusa no
+    meio: {"recusa", "reapplied"}; senão, o que foi reaplicado, o corte, o resumo do banco, os arquivos reescritos e
+    o SHA-256 de cada arquivo de `state/` (conferidos de novo antes da promoção)."""
+    con = connect(raiz / "state" / "state.sqlite")
     reapplied: list[str] = []
-    destino_log = target_root / "state" / "retiradas.jsonl"
-    mesmo_registro = Path(tombstone_log).resolve() == destino_log.resolve()
+    alterados: set[str] = set()  # reescritos pela reaplicação: fora da conferência pelo manifesto
+    destino_log = raiz / "state" / "retiradas.jsonl"
     try:
         from . import events, revisions  # import tardio evita ciclo
         from .auth import Principal, resource_project
@@ -681,7 +699,7 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
                 if idx < posicao:
                     return  # anterior à cópia: o arquivo copiado já está desligado
                 from .components import entry_path  # contido em registry/components/ (avaliação E11, F-03)
-                comp = entry_path(target_root, rec["component_id"])
+                comp = entry_path(raiz, rec["component_id"])
                 if comp.is_file():
                     entrada = json.loads(comp.read_text(encoding="utf-8"))
                     if entrada.get("enabled"):
@@ -689,6 +707,7 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
                         tmp = comp.with_suffix(".tmp")
                         tmp.write_text(json.dumps(entrada, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                         tmp.replace(comp)
+                        alterados.add(f"registry/components/{rec['component_id']}.json")
                         evento(rec, tipo)
                         reapplied.append(entity)
                 return
@@ -723,87 +742,58 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
                 revisions.incrementar_alcance(
                     con, resource_project(rec["project_id"]) if rec.get("project_id") else "common", "corpus_rev")
                 evento(rec, tipo)
-            KnowledgeService(target_root, con, system).cleanup(entity)
+            KnowledgeService(raiz, con, system).cleanup(entity)
             reapplied.append(entity)
 
         for idx, (_, rec) in enumerate(linhas):
             reaplicar(idx, rec)
         # Escritores ativos na origem: o que entrou no registro durante a restauração também entra.
         for _rodada in range(5):
-            if mesmo_registro:
-                break
             atual = _ler_texto(Path(tombstone_log)) or ""
             if atual == texto:
                 break
             if not atual.startswith(texto):
-                return nao_liberar("registro de retiradas reescrito durante a restauração (não só acrescido): "
-                                   "não liberar; confira o registro e restaure de novo", reapplied=reapplied)
+                return {"recusa": "registro de retiradas reescrito durante a restauração (não só acrescido): não "
+                                  "liberar; confira o registro e restaure de novo", "reapplied": reapplied}
             try:
                 _, todas = _analisar_registro(atual, estrito=True)
             except ValidationError as exc:
-                return nao_liberar(f"registro de retiradas ilegível depois da cópia (linha {exc.details.get('linha')}):"
-                                   " não liberar", reapplied=reapplied)
+                return {"recusa": f"registro de retiradas ilegível depois da cópia (linha {exc.details.get('linha')}):"
+                                  " não liberar", "reapplied": reapplied}
             for idx in range(len(linhas), len(todas)):
                 reaplicar(idx, todas[idx][1])
             texto, linhas = atual, todas
         else:
-            return nao_liberar("registro de retiradas continua mudando durante a restauração: pare os escritores "
-                               "da origem e restaure de novo", reapplied=reapplied)
-        if not mesmo_registro:
-            # O destino segue com o registro NO MESMO CORTE do banco: o conteúdo reaplicado, não o arquivo vivo.
-            destino_log.write_bytes(texto.encode("utf-8"))
-        if livro is not None and Path(livro).is_file() and not (target_root / "state" / LIVRO_COPIAS).exists():
-            shutil.copy2(livro, target_root / "state" / LIVRO_COPIAS)  # a raiz restaurada conhece as âncoras
+            return {"recusa": "registro de retiradas continua mudando durante a restauração: pare os escritores da "
+                              "origem e restaure de novo", "reapplied": reapplied}
+        # O destino segue com o registro NO MESMO CORTE do banco: o conteúdo reaplicado, não o arquivo vivo.
+        destino_log.write_bytes(texto.encode("utf-8"))
+        if livro is not None and Path(livro).is_file():
+            shutil.copy2(livro, raiz / "state" / LIVRO_COPIAS)  # a raiz restaurada conhece as âncoras
         try:
             pendentes = flush_outbox(con, destino_log)  # decisões do banco copiado ainda não exportadas
         except (OSError, ValidationError) as exc:
-            return nao_liberar(f"decisões da cópia não puderam ir ao registro do destino ({type(exc).__name__}): "
-                               "não liberar", reapplied=reapplied)
+            return {"recusa": f"decisões da cópia não puderam ir ao registro do destino ({type(exc).__name__}): "
+                              "não liberar", "reapplied": reapplied}
         corte = {"linhas": len(linhas), "ultima_sha256": sha256_text(linhas[-1][0]) if linhas else None}
         events.emit(con, "restore_completed", subject=system.principal_id,
                     payload={"copia": manifest.get("label"), "registro": log_id, "reaplicadas": len(reapplied),
-                             "corte_do_registro": corte, "outbox_da_copia": pendentes["exportadas"],
-                             "ancora": check["ancora"]["situacao"],
-                             **({"ressalva": ressalva} if ressalva else {}),
-                             **({"ressalva_ancora": ressalva_ancora} if ressalva_ancora else {})})
-        summary = logical_summary(target_root / "state" / "state.sqlite")
+                             "corte_do_registro": corte, "outbox_da_copia": pendentes["exportadas"], **fim})
+        summary = logical_summary(raiz / "state" / "state.sqlite")
     finally:
         con.close()
-    released = summary["integrity_check"] == "ok"
-    if released:
-        marca.unlink()
-    result = {"released": released, "reapplied": reapplied, "registro": log_id, "nao_reaplicado": NAO_REAPLICADO,
-              "corte_do_registro": corte, "db": summary, "ancora": check["ancora"], "check": check}
-    if ressalva:
-        result["ressalva"] = ressalva
-    if check["ancora"]["situacao"] != "conferida":
-        result["aviso_ancora"] = AVISO_SEM_ANCORA
-    if ressalva_ancora:
-        result["ressalva_ancora"] = ressalva_ancora
-    if check.get("aviso"):
-        result["aviso_copia"] = check["aviso"]
-    from .. import KIT_VERSION  # import tardio: versão do kit que está restaurando
-    kit_copia = _versao_do_kit(target_root)
-    if kit_copia and kit_copia != KIT_VERSION:
-        # A raiz restaurada roda o kit que veio na cópia; o registro protegido pode ter tipos mais novos.
-        result["kit_da_copia"] = kit_copia
-        result["acao_necessaria"] = (f"a raiz restaurada traz o kit {kit_copia} da cópia (este é o {KIT_VERSION}); "
-                                     "antes de usá-la, atualize o kit nela (instalar_kit.py --destino <destino> "
-                                     "--atualizar) e rode `python -m fundacao init`")
-    alvo = str(target_root.resolve())
-    if alvo.startswith("\\\\?\\UNC\\") or (alvo.startswith("\\\\") and not alvo.startswith("\\\\?\\")):
-        result["aviso_destino"] = ("destino em pasta de rede: serve para conferir; para usar a fundação, restaure em "
-                                   "disco local (o SQLite em WAL não deve operar num compartilhamento de rede)")
-    return result
+    return {"reapplied": reapplied, "alterados": alterados, "corte": corte, "summary": summary,
+            "estado": {p.name: sha256_file(p) for p in (raiz / "state").iterdir()}}
 
 
 def _codigo_diferente_do_kit(manifest: dict) -> list[str]:
     """Arquivos de `fundacao/` em que a cópia difere do kit que está restaurando (#8). A raiz restaurada
-    executa o código da cópia; sem âncora, nada prova que ele é o código que foi copiado."""
+    executa o código da cópia; sem âncora, nada prova que ele é o código que foi copiado (e nem o código
+    igual dispensa a decisão explícita: a cópia pode ter banco e permissões forjados — #2)."""
     kit = Path(__file__).resolve().parents[1]
     proprio = {f"fundacao/{p.relative_to(kit).as_posix()}": sha256_file(p)
-               for p, ligacao in _percorrer(kit, EXCLUDE_PARTS)
-               if not ligacao and p.is_file() and _copiavel(p.name)}
+               for p, ligacao, st in preparo.percorrer(kit, EXCLUDE_PARTS)
+               if not ligacao and stat.S_ISREG(st.st_mode) and _copiavel(p.name)}
     da_copia = {f["path"]: f["sha256"] for f in manifest["files"] if f["path"].startswith("fundacao/")}
     return sorted(p for p in proprio.keys() | da_copia.keys() if proprio.get(p) != da_copia.get(p))
 

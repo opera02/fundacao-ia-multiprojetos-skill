@@ -5,10 +5,15 @@ versão quebrada não serve"; "não rodado" nunca vira "passou". Aqui nada roda 
 preparado e o avaliador de fatos (verificar_execucoes.py) é conferido contra uma execução que NÃO fez o trabalho
 — ele precisa mostrar que a afirmação da RETOMADA do E10 é falsa, que o E11 não deixou relatório e que o E12 não
 criou o projeto — e contra uma fundação alterada no E11, que precisa aparecer como alterada.
+
+Mudança de layout declarada na 1.7.7 (harness2, P2; everything-claude-code, proposta 4): o ambiente sai da bancada
+para a área do executor, com id neutro (o caminho vem do prompts.json), e os fatos passam a ser gravados por
+execução (`.../with_skill/run-1`). As propriedades conferidas são as mesmas; só o caminho e a chave mudam.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -27,25 +32,46 @@ def rodar(*args) -> subprocess.CompletedProcess:
                           errors="replace", timeout=900)
 
 
+def _modulo(nome: str, caminho: Path):
+    spec = importlib.util.spec_from_file_location(nome, caminho)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def setUpModule():
+    """Pasta temporária própria (base_temporaria.py; revisão de segurança da 1.7.7, terceira passada, R177C-T-01): a
+    área do executor e as pastas dos testes não dependem do que há na pasta temporária da máquina."""
+    unittest.addModuleCleanup(_modulo("base_temporaria", Path(__file__).with_name("base_temporaria.py")).ligar())
+
+
 class TestAvaliacoesE10aE12(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.ws = Path(tempfile.mkdtemp(prefix="avaliacoes-vct-"))
+        # Workspace e área do executor (desde a revisão R177-VAL-06, na pasta temporária do sistema, fora do pai do
+        # workspace). Nome neutro: o caminho entregue não pode dizer "avaliação".
+        cls.base = Path(tempfile.mkdtemp(prefix="vct-"))
+        cls.ws = cls.base / "ws"
         r = rodar(EVALS / "preparar_avaliacoes.py", "--workspace", cls.ws, "--iteracao", "1", "--so", "10,11,12")
         assert r.returncode == 0, r.stdout + r.stderr
         cls.it = cls.ws / "iteration-1"
+        cls.pedidos = json.loads((cls.it / "prompts.json").read_text(encoding="utf-8"))
+        cls.area = Path(json.loads((cls.it / "isolamento.json").read_text(encoding="utf-8"))["area"])
 
     @classmethod
     def tearDownClass(cls):
-        shutil.rmtree(cls.ws, ignore_errors=True)
+        shutil.rmtree(cls.area, ignore_errors=True)
+        shutil.rmtree(cls.base, ignore_errors=True)
 
     def ambiente(self, eid: int, nome: str) -> Path:
-        return self.it / f"eval-{eid}-{nome}" / "with_skill" / "run-1" / "ambiente"
+        self.assertTrue((self.it / f"eval-{eid}-{nome}" / "with_skill" / "run-1").is_dir())
+        return Path(self.pedidos[f"{eid}/with_skill/run-1"]["ambiente"])
 
     def fatos(self) -> dict:
         r = rodar(EVALS / "verificar_execucoes.py", "--iteracao", self.it, "--so", "10,11,12")
         self.assertEqual(r.returncode, 0, r.stdout[-400:] + r.stderr[-400:])
-        return json.loads((self.it / "_referencias" / "fatos.json").read_text(encoding="utf-8"))
+        fatos = json.loads((self.it / "_referencias" / "fatos.json").read_text(encoding="utf-8"))
+        return {chave.removesuffix("/run-1"): f for chave, f in fatos.items() if chave.endswith("/run-1")}
 
     def test_casos_definidos_com_expectativas(self):
         evals = {e["id"]: e for e in json.loads((EVALS / "evals.json").read_text(encoding="utf-8"))["evals"]}

@@ -251,7 +251,9 @@ class TestF12CorteCoerenteNaRestauracao(_Base):
     def _restaurar_com_escrita_na_origem(self, acao):
         copia = self.pasta("copia")
         backup.create_backup(self.root, copia, "antes")
-        original = backup.shutil.copytree
+        # A cópia é trazida para o preparo privado (1.7.7, auditoria da 1.7.6, #12; antes, shutil.copytree): a escrita
+        # na origem entra no mesmo ponto — depois de lido o registro, durante a cópia, antes da reaplicação.
+        original = backup.preparo.trazer_copia
         feito = []
 
         def copiando_enquanto_a_origem_muda(*a, **k):
@@ -262,8 +264,9 @@ class TestF12CorteCoerenteNaRestauracao(_Base):
             return r
 
         alvo = self.pasta("restaurada")
-        with mock.patch("fundacao.core.backup.shutil.copytree", side_effect=copiando_enquanto_a_origem_muda):
+        with mock.patch("fundacao.core.preparo.trazer_copia", side_effect=copiando_enquanto_a_origem_muda):
             res = backup.restore(copia, alvo, self.log)
+        self.assertTrue(feito, "a escrita na origem não entrou durante a restauração")
         return res, alvo
 
     def test_f12_retirada_durante_a_restauracao_entra_ou_impede_a_liberacao(self):

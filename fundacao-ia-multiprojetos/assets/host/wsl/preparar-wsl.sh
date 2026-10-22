@@ -11,10 +11,13 @@
 #  3. Claude Code fixado: cópia da versão em ~/.local/share/fundacao-ia/claude/<versão>/claude, que a limpeza
 #     automática de versões não apaga, com o SHA-256 conferido contra o informado (--claude-sha256, o do manifesto
 #     assinado da Anthropic) ou, sem ele, o do binário atual, registrado como não conferido;
-#  4. ligação da skill em ~/.claude/skills, se faltar, e conferência do perfil, dos hooks e da identidade da raiz;
-#  5. lançador (padrão ~/abrir-fundacao.sh, do modelo abrir-sessao.sh) com os SHA-256 do Claude Code, do perfil e
-#     dos hooks fixados.
-# Não instala o Claude Code nem faz o login (credencial do titular): se faltar, mostra o comando e para.
+#  4. ligação da skill em ~/.claude/skills, se faltar, e conferência do que o Windows deixou na raiz: o perfil igual ao
+#     que o modelo da skill gera (com os projetos da raiz negados), os hooks iguais aos da skill e o settings.local.json
+#     só com a identidade do titular (--titular) e o projeto, porque a sessão o carrega inteiro;
+#  5. lançador (padrão ~/abrir-fundacao.sh, do modelo abrir-sessao.sh) com os SHA-256 do Claude Code, do perfil, dos
+#     hooks e do settings.local.json e o titular fixados; o ajudante confere de novo os mesmos bytes cujo hash fixa.
+# O preparo só fixa o que conferiu inteiro [auditoria Codex Security da 1.7.6, #5]. Não instala o Claude Code nem faz
+# o login (credencial do titular): se faltar, mostra o comando e para.
 #
 # Códigos: 0 pronto (ou simulação sem erro) · 1 parou (veja a linha [erro]) · 2 uso incorreto
 #          · 3 falta algo que só o titular faz (instalar o Claude Code e fazer o login).
@@ -25,6 +28,7 @@ SKILL_DIR=$(cd "$AQUI/../../.." && pwd)
 AJUDANTE="$AQUI/../preparo_host.py"
 RAIZ=""
 PROJETO=""
+TITULAR=""
 SIMULAR=0
 CLAUDE_VERSAO=""
 CLAUDE_SHA256=""
@@ -37,9 +41,10 @@ DISTRO=${WSL_DISTRO_NAME:-Ubuntu}
 
 uso() {
   cat <<'FIM'
-Uso: bash preparar-wsl.sh --raiz "/mnt/d/IA/fundacao" --projeto <id> [--simular]
+Uso: bash preparar-wsl.sh --raiz "/mnt/d/IA/fundacao" --projeto <id> --titular <id> [--simular]
        [--claude-versao <versão>] [--claude-sha256 <hash do manifesto assinado>]
        [--lancador <arquivo>] [--wsl-conf <arquivo>] [--python <python3>]
+--titular é a sua identidade, a mesma do -Titular do preparar-maquina.ps1: o lançador só abre com ela.
 --simular só mostra o plano (nada é alterado). Sem --claude-versao, vale a versão para a qual ~/.local/bin/claude
 aponta. O hash oficial de cada versão está em platforms.linux-x64.checksum do manifesto
 https://downloads.claude.ai/claude-code-releases/<versão>/manifest.json, assinado (manifest.json.sig) pela chave de
@@ -51,11 +56,12 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --simular) SIMULAR=1; shift ;;
     -h|--ajuda|--help) uso; exit 0 ;;
-    --raiz|--projeto|--claude-versao|--claude-sha256|--lancador|--wsl-conf|--python)
+    --raiz|--projeto|--titular|--claude-versao|--claude-sha256|--lancador|--wsl-conf|--python)
       if [ $# -lt 2 ]; then uso >&2; exit 2; fi
       case "$1" in
         --raiz) RAIZ=$2 ;;
         --projeto) PROJETO=$2 ;;
+        --titular) TITULAR=$2 ;;
         --claude-versao) CLAUDE_VERSAO=$2 ;;
         --claude-sha256) CLAUDE_SHA256=$2 ;;
         --lancador) LANCADOR=$2 ;;
@@ -67,9 +73,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ -z "$RAIZ" ] || [ -z "$PROJETO" ]; then uso >&2; exit 2; fi
+if [ -z "$RAIZ" ] || [ -z "$PROJETO" ] || [ -z "$TITULAR" ]; then uso >&2; exit 2; fi
 if ! [[ $PROJETO =~ ^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$ ]]; then
   printf 'Projeto inválido: %s\n' "$PROJETO" >&2; exit 2
+fi
+if ! [[ $TITULAR =~ ^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$ ]]; then
+  printf 'Titular inválido: %s\n' "$TITULAR" >&2; exit 2
 fi
 if [ -n "$CLAUDE_SHA256" ] && ! [[ $CLAUDE_SHA256 =~ ^[0-9a-f]{64}$ ]]; then
   printf 'SHA-256 inválido (64 dígitos hexadecimais minúsculos): %s\n' "$CLAUDE_SHA256" >&2; exit 2
@@ -134,7 +143,7 @@ if [ "$SIMULAR" = 1 ]; then
 else
   echo 'Fundação de IA: preparo do Ubuntu (WSL2) para a sessão de dados reais'
 fi
-echo "Raiz: $RAIZ   Projeto: $PROJETO"
+echo "Raiz: $RAIZ   Projeto: $PROJETO   Titular: $TITULAR"
 
 # 0. Ambiente
 if em_wsl; then
@@ -183,7 +192,7 @@ else
 fi
 
 # 2. /etc/wsl.conf: um só bloco [interop] desligado
-if ! estado=$("$PY" -B "$AJUDANTE" wsl-conf --arquivo "$WSL_CONF"); then
+if ! estado=$("$PY" -I -B "$AJUDANTE" wsl-conf --arquivo "$WSL_CONF"); then
   relata erro wsl.conf "não consegui ler $WSL_CONF: $estado"
 elif printf '%s' "$estado" | grep -q '"mudou": false'; then
   relata igual wsl.conf "$WSL_CONF com um só bloco [interop] desligado"
@@ -193,7 +202,7 @@ elif [ "$SIMULAR" = 1 ]; then
 else
   tmp=$(mktemp)
   carimbo=$(date +%Y%m%dT%H%M%S)
-  if "$PY" -B "$AJUDANTE" wsl-conf --arquivo "$WSL_CONF" --saida "$tmp" >/dev/null &&
+  if "$PY" -I -B "$AJUDANTE" wsl-conf --arquivo "$WSL_CONF" --saida "$tmp" >/dev/null &&
      { [ ! -e "$WSL_CONF" ] || grava "$WSL_CONF" cp -p "$WSL_CONF" "$WSL_CONF.anterior-$carimbo"; } &&
      grava "$WSL_CONF" install -m 0644 "$tmp" "$WSL_CONF"; then
     relata atualizar wsl.conf "$WSL_CONF com um só bloco [interop] desligado; anterior em $WSL_CONF.anterior-$carimbo"
@@ -252,29 +261,34 @@ fi
 PERFIL="$RAIZ/.claude/settings.wsl.json"
 if [ ! -f "$PERFIL" ]; then
   relata erro perfil "$PERFIL não existe: rode antes, no PowerShell do Windows, o preparar-maquina.ps1 com -Projeto $PROJETO"
-elif saida=$("$PY" -B "$AJUDANTE" conferir-perfil-wsl --perfil "$PERFIL" --raiz "$RAIZ"); then
-  relata igual perfil "$PERFIL conferido (SHA-256 $(sha_de "$PERFIL"))"
+elif saida=$("$PY" -I -B "$AJUDANTE" conferir-perfil-wsl --perfil "$PERFIL" --raiz "$RAIZ" --projeto "$PROJETO"); then
+  relata igual perfil "$PERFIL igual ao do modelo da skill (SHA-256 $(sha_de "$PERFIL")); confira as vagas: $saida"
 else
-  relata erro perfil "$PERFIL não garante o sandbox provado no caso real ($saida): rode de novo o preparar-maquina.ps1 no Windows"
+  relata erro perfil "$PERFIL não é o que o modelo da skill gera para esta raiz ($saida): rode de novo o preparar-maquina.ps1 no Windows com -Projeto $PROJETO"
 fi
 for h in guarda_caminho.py guarda_identidade.py; do
-  if [ -f "$RAIZ/.claude/hooks/$h" ]; then
-    relata igual "hook $h" "SHA-256 $(sha_de "$RAIZ/.claude/hooks/$h")"
-  else
+  if [ ! -f "$RAIZ/.claude/hooks/$h" ]; then
     relata erro "hook $h" "ausente em $RAIZ/.claude/hooks: rode o preparar-maquina.ps1 no Windows"
+  elif cmp -s "$RAIZ/.claude/hooks/$h" "$SKILL_DIR/assets/hooks/$h"; then
+    relata igual "hook $h" "igual ao da skill (SHA-256 $(sha_de "$RAIZ/.claude/hooks/$h"))"
+  else
+    relata erro "hook $h" "difere do hook da skill ($SKILL_DIR/assets/hooks/$h): rode de novo o preparar-maquina.ps1 no Windows"
   fi
 done
-if [ -f "$RAIZ/.claude/settings.local.json" ]; then
-  relata igual identidade "$RAIZ/.claude/settings.local.json presente"
+LOCAL="$RAIZ/.claude/settings.local.json"
+if [ ! -f "$LOCAL" ]; then
+  relata erro identidade "$LOCAL ausente: rode o preparar-maquina.ps1 no Windows"
+elif saida=$("$PY" -I -B "$AJUDANTE" conferir-identidade --arquivo "$LOCAL" --titular "$TITULAR" --projeto "$PROJETO"); then
+  relata igual identidade "$LOCAL só com a identidade de $TITULAR (SHA-256 $(sha_de "$LOCAL"))"
 else
-  relata erro identidade "$RAIZ/.claude/settings.local.json ausente: rode o preparar-maquina.ps1 no Windows"
+  relata erro identidade "$LOCAL não serve para a sessão de dados reais, que o carrega inteiro ($saida): rode de novo, no Windows, o preparar-maquina.ps1 com -Titular $TITULAR -Projeto $PROJETO (ele deixa só a identidade e guarda o anterior em .claude/anteriores)"
 fi
 
-# 5. Lançador com os hashes fixados
+# 5. Lançador com os hashes fixados (o ajudante confere de novo os mesmos bytes cujo hash fixa)
 if [ "$CLAUDE_OK" = 1 ] && [ "$CODIGO" != 1 ]; then
-  args=(lancador --raiz "$RAIZ" --projeto "$PROJETO" --claude "$FIXO" --claude-versao "$CLAUDE_VERSAO"
+  args=(lancador --raiz "$RAIZ" --projeto "$PROJETO" --titular "$TITULAR" --claude "$FIXO" --claude-versao "$CLAUDE_VERSAO"
         --claude-sha256 "$CLAUDE_HASH" --origem-hash "$ORIGEM_HASH" --skill-md "$SKILL_DIR/SKILL.md")
-  if ! novo=$("$PY" -B "$AJUDANTE" "${args[@]}" --saida -); then
+  if ! novo=$("$PY" -I -B "$AJUDANTE" "${args[@]}" --saida -); then
     relata erro lancador "o modelo do lançador recusou: $novo"
   elif [ -f "$LANCADOR" ] && [ "$(cat "$LANCADOR")" = "$novo" ]; then
     relata igual lancador "$LANCADOR (SHA-256 $(sha_de "$LANCADOR"))"
@@ -282,9 +296,9 @@ if [ "$CLAUDE_OK" = 1 ] && [ "$CODIGO" != 1 ]; then
     acao=criar
     if [ -f "$LANCADOR" ]; then acao=atualizar; fi
     if [ "$SIMULAR" = 1 ]; then
-      relata "$acao" lancador "$LANCADOR, com os SHA-256 do Claude Code, do perfil e dos hooks fixados"
+      relata "$acao" lancador "$LANCADOR, com os SHA-256 do Claude Code, do perfil, dos hooks e da identidade fixados"
     elif { [ "$acao" = criar ] || cp -p "$LANCADOR" "$LANCADOR.anterior-$(date +%Y%m%dT%H%M%S)"; } &&
-         "$PY" -B "$AJUDANTE" "${args[@]}" --saida "$LANCADOR.novo" >/dev/null && chmod 0755 "$LANCADOR.novo" &&
+         "$PY" -I -B "$AJUDANTE" "${args[@]}" --saida "$LANCADOR.novo" >/dev/null && chmod 0755 "$LANCADOR.novo" &&
          mv -f "$LANCADOR.novo" "$LANCADOR"; then
       relata "$acao" lancador "$LANCADOR (SHA-256 $(sha_de "$LANCADOR"))"
     else

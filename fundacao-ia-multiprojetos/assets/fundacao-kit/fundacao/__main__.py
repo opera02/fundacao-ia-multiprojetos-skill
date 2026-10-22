@@ -18,8 +18,8 @@ from pathlib import Path
 from . import KIT_VERSION, TEMPLATE_VERSION
 from .core import backup, components, decisoes, events, memory, projects, routing
 from .core.auth import Policy, principal_from_env
-from .core.contracts import AccessDenied, FundacaoError
-from .core.db import connect, uri_somente_leitura
+from .core.contracts import FundacaoError
+from .core.db import connect
 from .core.tasks import Coordinator
 
 
@@ -221,24 +221,6 @@ def cmd_rota(args) -> dict:
     return routing.reconcile_cost(con, me, args.rota, args.tentativa, args.custo_usd, args.fonte)
 
 
-def _autorizar_pela_copia(origem: Path) -> str:
-    """Restaurar e verificar são autorizados contra o banco DA CÓPIA, aberto somente leitura:
-    funciona com o banco de origem corrompido ou perdido e não cria nem migra nada na origem.
-    A negativa aqui não vai para a trilha (a cópia é somente leitura; a origem pode estar danificada)."""
-    db = Path(origem) / "state" / "state.sqlite"
-    if not db.is_file():
-        raise FundacaoError("cópia sem banco de estado: não é possível autorizar a operação")
-    con = sqlite3.connect(uri_somente_leitura(db, imutavel=True), uri=True)  # '#', '%', espaços, rede; sem -wal/-shm
-    try:
-        me = principal_from_env(con)
-        if not Policy(con).allowed(me.principal_id, "admin", "foundation"):
-            raise AccessDenied("restauração e verificação exigem administração da fundação (conferida na cópia)",
-                               action="admin", resource="foundation")
-    finally:
-        con.close()
-    return me.principal_id
-
-
 def cmd_backup(args) -> dict:
     # Backup copia todos os projetos e o estado: só a administração da fundação.
     if args.acao == "criar":
@@ -253,19 +235,25 @@ def cmd_backup(args) -> dict:
         return backup.create_backup(args.raiz, args.destino, args.rotulo)
     if not args.origem:
         raise FundacaoError("informe --origem (pasta da cópia)")
-    quem = _autorizar_pela_copia(args.origem)
+    # Âncora (#8): a informada ou a do livro de cópias — desta raiz, ao verificar; ao lado do registro, ao restaurar.
+    livro = (args.raiz / "state" / backup.LIVRO_COPIAS if args.acao == "verificar"
+             else args.retiradas.parent / backup.LIVRO_COPIAS if args.retiradas else None)
+    # Quem verifica ou restaura (#2): a política da fundação viva; sem ela, a da cópia autenticada pela âncora. A
+    # resposta mostra a raiz resolvida que decidiu (R177-KIT-02).
+    autorizacao = backup.autorizar(args.raiz, args.origem, sha256_manifesto=args.sha256_manifesto, livro=livro)
     if args.acao == "verificar":
-        # Âncora (#8): a informada ou a do livro de cópias desta raiz.
-        return backup.verify_backup(args.origem, sha256_manifesto=args.sha256_manifesto,
-                                    livro=args.raiz / "state" / backup.LIVRO_COPIAS)
+        return {**backup.verify_backup(args.origem, sha256_manifesto=args.sha256_manifesto, livro=livro),
+                "autorizacao": autorizacao}
     if not args.destino:
         raise FundacaoError("informe --destino (pasta nova)")
-    resultado = backup.restore(args.origem, args.destino, args.retiradas, executado_por=quem,
+    resultado = backup.restore(args.origem, args.destino, args.retiradas, executado_por=autorizacao["identidade"],
                                aceitar_registro_nao_comprovado=args.aceitar_registro_nao_comprovado,
-                               sha256_manifesto=args.sha256_manifesto,
+                               sha256_manifesto=args.sha256_manifesto, livro=livro,
                                aceitar_copia_sem_ancora=args.aceitar_copia_sem_ancora)
-    if resultado.get("released") and resultado.get("aviso_ancora"):
-        sys.stderr.write(json.dumps({"aviso": {"code": "W_COPIA_SEM_ANCORA", "message": resultado["aviso_ancora"]}},
+    resultado["autorizacao"] = autorizacao
+    if resultado.get("released") and resultado.get("aviso_ancora"):  # sem âncora, ou a do livro (R177-KIT-01)
+        codigo = "W_ANCORA_DO_LIVRO" if resultado["ancora"]["situacao"] == "conferida" else "W_COPIA_SEM_ANCORA"
+        sys.stderr.write(json.dumps({"aviso": {"code": codigo, "message": resultado["aviso_ancora"]}},
                                     ensure_ascii=False) + "\n")
     return resultado
 
@@ -333,9 +321,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "identidade comprovada (cópia de kit anterior ou registro recriado); fica na trilha")
     s.add_argument("--sha256-manifesto", help="âncora da cópia: o sha256_manifesto devolvido pelo `backup criar`, "
                                               "guardado fora da cópia (verificar e restaurar)")
-    s.add_argument("--aceitar-copia-sem-ancora", action="store_true",
+    s.add_argument("--aceitar-copia-sem-ancora", metavar="MOTIVO",
                    help="decisão do administrador, depois de conferir de onde veio a cópia: restaura cópia sem "
-                        "âncora que não consta no livro de cópias ou cujo código difere do kit; fica na trilha")
+                        "âncora externa, com o motivo; fica na resposta e na trilha")
     s.set_defaults(func=cmd_backup)
     s = sub.add_parser("decisao", help="decisões do titular sobre entregas (assinatura ssh-keygen -Y)")
     s.add_argument("acao", choices=["preparar", "verificar", "registrar", "conferir-ancora", "comando"])

@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from apoio import ENV, SCRIPTS, rodar_script, versao_do_kit
+from apoio import ENV, SCRIPTS, SKILL, rodar_script, versao_do_kit
 
 IDENTIDADE = "FUNDACAO_" + "PRINCIPAL"
 TESTE_LOCAL = '''import unittest
@@ -59,8 +59,8 @@ class TestAtualizarFundacao(unittest.TestCase):
                 item["sha256"] = sha(init)
         reg.write_text(json.dumps(historico, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def atualizar(self, *args, env=None) -> tuple:
-        r = subprocess.run([sys.executable, "-B", str(SCRIPTS / "atualizar_fundacao.py"), *map(str, args)],
+    def atualizar(self, *args, env=None, script: Path | None = None) -> tuple:
+        r = subprocess.run([sys.executable, "-B", str(script or SCRIPTS / "atualizar_fundacao.py"), *map(str, args)],
                            env=env or self.env, capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=900)
         try:
@@ -110,13 +110,26 @@ class TestAtualizarFundacao(unittest.TestCase):
         self.assertEqual(code, 0, des)
         self.assertEqual(versao_do_kit(self.raiz), "1.0.0")
         self.assertEqual(des["devolvidos"], ["fundacao/__init__.py"])
+        # 1.7.7: o registro da instalação volta a descrever o código devolvido; antes, o `checar` seguinte acusava o
+        # arquivo devolvido como "alterado localmente" e a nova atualização ficava bloqueada.
+        code, chk = self.atualizar("checar", "--raiz", self.raiz)
+        self.assertEqual(code, 0, chk)
+        self.assertEqual((chk["mudancas"]["atualizar"], chk["mudancas"]["alterados_localmente"]),
+                         (["fundacao/__init__.py"], []))
 
     def test_regressao_no_ensaio_nao_toca_a_raiz(self):
+        # Desde a 1.7.7, teste que o kit não instalou faz o `checar` recusar antes de qualquer importação (auditoria
+        # Codex Security da 1.7.6, #8; test_auditoria_1_7_6_atualizador.py): o teste que regride vem no kit novo,
+        # numa cópia da skill, como um teste do próprio kit.
+        skill = self.tmp / "skill"
+        shutil.copytree(SKILL, skill, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "evals"))
         self.versao_antiga()
-        (self.raiz / "tests" / "test_local_versao.py").write_text(TESTE_LOCAL, encoding="utf-8")
+        for base in (skill / "assets" / "fundacao-kit", self.raiz):
+            (base / "tests" / "test_local_versao.py").write_text(TESTE_LOCAL, encoding="utf-8")
         antes = self.foto()
         code, res = self.atualizar("aplicar", "--raiz", self.raiz, "--backups", self.backups,
-                                   "--padrao-testes", "test_local_*.py")
+                                   "--padrao-testes", "test_local_*.py",
+                                   script=skill / "scripts" / "atualizar_fundacao.py")
         self.assertEqual((code, res["etapa"]), (1, "ensaio"), res)
         self.assertEqual(res["regressoes"], ["test_local_versao.TestLocal.test_versao_antiga"])
         self.assertTrue(Path(res["registro"]).name.startswith("falha-atualizacao-kit-"))

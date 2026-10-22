@@ -79,13 +79,17 @@ novos (`PRAGMA user_version` + scripts numerados; *expand/contract*); reverter c
 não reverte dados. Versão declarada ≠ versão carregada pelo host: recarregue e confira.
 Fixe versões de CLIs, SDKs e modelos no perfil "dados reais".
 Kit, em um comando [Decisão; 1.5.0]: `python <skill>/scripts/atualizar_fundacao.py checar --raiz <raiz>`
-(só lê: versões, o que muda, alteração local pelo hash registrado na instalação, identidade, cadeia) e
+(só lê, sem executar nada da raiz: versões, o que muda, alteração local pelo hash registrado na instalação,
+executável desconhecido, identidade, cadeia) e
 `aplicar --raiz <raiz> --backups <outro disco>`: backup ANTES verificado → ensaio do kit novo numa cópia
 restaurada (`init`, cadeia, suíte; falha que já existia não bloqueia, regressão bloqueia sem tocar a raiz)
 → promoção → instruções da raiz (`AGENTS.md` e `CLAUDE.md` regenerados, com os anteriores guardados em
 `registry/kit_backup/instrucoes-<data>/`; `AGENTS.md` escrito à mão não é tocado e o resumo traz o comando com
 `--adotar`) → backup DEPOIS (que as leva) → registro em `evidence/atualizacoes/`; `desfazer --registro <arq>`
-devolve o código, e as instruções não editadas depois, se o `user_version` do banco não mudou.
+devolve o código, e as instruções não editadas depois, se o `user_version` do banco não mudou e o registro confere
+com a âncora. Kit igual, skill nova [Decisão; defeito anotado na liberação da 1.7.6]: o `aplicar` confere o texto
+que `instrucoes_raiz.py gerar` produziria e, se for outro, regenera só as instruções da raiz, pelas mesmas regras
+(anteriores guardados, registro com o hash antes e depois, `desfazer` aceito); sem diferença, não escreve nada.
 Catraca [Decisão; 1.7.0]: no ensaio, teste que passava e some ou passa a ser pulado também é regressão, salvo
 retirada declarada pelo kit novo em `tests/testes_retirados.json` (ID → versão e motivo); o arquivo de código que
 o kit anterior instalou e o novo não tem mais (órfão) sai da raiz guardado no backup da promoção e volta no
@@ -95,6 +99,58 @@ vira órfão e faz o `checar` recusar; caminho que passa por ligação ou junç�
 `.claude`) também recusa (instalação: código 4); o `desfazer` só aceita o registro da própria raiz, com cópias em
 `registry/kit_backup/`, caminhos sem ligação no meio e instruções só em `AGENTS.md` e `CLAUDE.md`, e confere tudo
 antes de alterar qualquer arquivo.
+Nada da raiz roda antes de conferido [Decisão; auditoria Codex Security da 1.7.6, #8]: o `checar` não importa o
+pacote da raiz; a cadeia de eventos é recalculada pelo kit da skill, com o banco aberto somente leitura, e vale
+`cadeia_integra` (o `eventos verificar` sai com código 0 mesmo com a cadeia quebrada). Executável nas áreas de
+código (`fundacao/`, `templates/`, `tests/`: `.py`, `.pyc` fora do `__pycache__`, `.pyd`, `.so`) que nem o kit novo
+nem o registro da instalação conhecem, ou com outro hash, e ligação nelas fazem o `checar` recusar
+(`executaveis_a_mais`) — inclusive teste local em `tests/` que o kit não instalou: retire-o ou mova-o para fora
+dessas pastas. O código ANTES (backup ANTES e restauração do ensaio) roda de uma cópia conferida por hash; `init`,
+cadeia e backup DEPOIS, do kit da skill; sempre com `python -I`. As duas suítes do ensaio rodam de cópias conferidas,
+com os módulos enumerados da lista, nunca da árvore viva; de `registry/` levam a configuração, não as cópias do código
+que a promoção guarda em `registry/kit_backup/` [revisão de segurança da 1.7.7, R177-ATU-01]. O `__pycache__` não é
+conferido nem recusa (o Python o refaz da fonte), mas `.pyc` plantado ali rodaria no lugar da fonte: o `checar` o
+lista em `bytecode_a_apagar` e a promoção o apaga das áreas de código, sem seguir ligação; `__pycache__` que é
+ligação recusa [mudança de critério; R177-ATU-02]. Com o kit igual, o `aplicar` não o apaga: apagar o `__pycache__`
+é sempre seguro. O primeiro nível da raiz também é conferido [mudança de critério; segunda passada, R177B-B-06]: o
+uso normal (`python -m fundacao` com a raiz como pasta atual) a põe no caminho de importação, à frente da biblioteca
+padrão, e um `argparse.py` ali rodaria no lugar do módulo. Módulo (`.py`, `.pyw`, `.pyc`, `.pyd`, `.so`), `.pth` e
+pacote (pasta com `__init__` executável) do primeiro nível que nem o kit novo nem o registro conhecem fazem o `checar`
+recusar (`executaveis_a_mais`): tire-os da raiz ou ponha-os numa subpasta que não seja pacote; ligação com esses nomes
+ou com o de `__pycache__` também recusa, e o `__pycache__` do primeiro nível sai na promoção, como o das áreas de
+código. A pasta `mcp/` (o nome de primeiro nível que o kit importa de fora da biblioteca padrão, comparado sem caixa)
+entra mesmo sem `__init__` [terceira passada, R177C-B-03]: sem o SDK do MCP instalado, o Python a monta como pacote de
+namespace, e o servidor MCP do kit rodaria o que ela tiver; executável dela e ligação com esse nome ou dentro dela
+recusam, e o próprio servidor trata esse namespace como SDK ausente. As demais pastas sem `__init__` continuam fora do
+inventário. O que for plantado na raiz depois do `checar` ele não vê: rode sem outra sessão gravando nela. Limite: o
+hash registrado vem do `registry/kit_install.json`, que a mesma conta grava; quem troca código e registro juntos passa
+por versão anterior (`references/seguranca-isolamento.md` §6).
+Plano do `desfazer` autenticado [Decisão; auditoria Codex Security da 1.7.6, #10]: o `aplicar` anota o SHA-256 de
+cada registro que o `desfazer` pode usar (atualização promovida, mesmo com falha depois) em
+`registry/atualizacoes.jsonl`, fora de `evidence/`. Vale também para a promoção que o instalador interrompeu depois de
+gravar (saída sem `nada_escrito`, como o código 3 com o registro da instalação não gravado — ligação no lugar dele, ou
+histórico ilegível ou trocado, que o instalador não lê como histórico nem refaz): o `aplicar` apaga o
+`__pycache__`, grava o registro com a promoção marcada como interrompida e o ancora antes de parar, com o comando
+pronto em `para_voltar`; com `nada_escrito`, para sem tocar a raiz; sem saída legível do instalador, não há plano, e a
+volta é a cópia ANTES (C9) [terceira passada, R177C-B-04]. A promoção que falhou e o próprio instalador desfez (código
+5, `desfeito`, composição `nao_alterada`; no Windows, por exemplo, arquivo preso pelo antivírus) conta como
+`nada_escrito`: o código da raiz é o de antes, o `aplicar` para sem âncora e sem tocar a raiz e diz isso; resolva o
+que está em `erros` e repita [quarta passada, R177D-5]. Registro alterado depois, forjado ou de versão anterior do
+atualizador não confere, e a volta é a cópia ANTES (C9); a âncora fica em `registry/`, com o mesmo limite acima.
+Substituídos, copiados e órfãos retirados só podem estar
+nas áreas de código — nunca `state/`, `projects/`, os dados de `registry/` nem `evidence/`. O `desfazer` acrescenta a
+volta ao `registry/kit_install.json`, e o `checar` seguinte vê de novo a versão anterior a atualizar, não "alterado
+localmente" [achado na validação da 1.7.7]. Ele só devolve se o código ainda é o que a atualização deixou
+(`sha256_novo`): repetido, ou depois de outra atualização, recusa sem alterar nada.
+Gravação sem seguir ligação [Decisão; revisão de segurança da 1.7.7, R177-ATU-03]: o atualizador e o
+`instrucoes_raiz.py` gravam por temporário de nome imprevisível, criado com exclusividade e posto no lugar com
+`os.replace`; registro novo com exclusividade; âncora acrescentada sem seguir ligação nem vínculo físico. Ligação no
+caminho ou vínculo físico em `registry/kit_backup`, `registry/kit_install.json`, `registry/atualizacoes.jsonl` ou
+`evidence/atualizacoes` faz o `checar` e o `desfazer` recusarem, e o `aplicar` confere de novo logo antes da promoção:
+o que apareceu durante o ensaio para na etapa `promocao`, sem tocar a raiz; o `instalar_kit.py` grava o
+`registry/kit_install.json` pelo mesmo padrão [segunda passada, R177B-B-05]. `AGENTS.md` ou `CLAUDE.md` que é ligação
+não é lido nem gravado (o resumo avisa). O inventário do host roda depois do registro e da âncora, com 120 s: travar
+ou falhar aparece no resumo como "inventário do host não conferido", e a atualização registrada fica [R177-VAL-04].
 Etapa deixada em `running` pelo kit anterior é refeita
 quando a posse vence (o recibo antigo não basta): reconcilie efeitos externos antes de retomar.
 Passo a passo: `python <skill>/scripts/instalar_kit.py --destino <raiz>` monta o plano antes de
@@ -165,11 +221,22 @@ reconstruível (modelos, ambientes virtuais) ficam fora; destino dentro de pasta
 Âncora da cópia [varredura da 1.4.5, #8]: o `backup criar` devolve `sha256_manifesto` e o anota em
 `state/copias.jsonl`, ao lado do registro protegido; guarde o código fora da pasta da cópia e o
 livro junto do registro. A restauração confere a cópia por ele (`--sha256-manifesto` ou o livro ao
-lado de `--retiradas`): âncora errada não libera; cópia fora do livro, ou com código `fundacao/`
-diferente do kit que restaura, só com `--aceitar-copia-sem-ancora` (decisão do administrador,
-registrada); sem livro e com o mesmo código, libera com aviso `W_COPIA_SEM_ANCORA`.
-A restauração é autorizada pelo banco **da cópia**, aberto somente leitura — funciona com o
-banco de origem corrompido ou perdido e não cria nada na origem. Não libera (código 3) quando
+lado de `--retiradas`): âncora errada não libera; sem âncora, não libera — nem com o código
+`fundacao/` igual ao do kit — salvo `--aceitar-copia-sem-ancora "<motivo>"` (decisão do
+administrador, com o motivo na resposta e na trilha, e aviso `W_COPIA_SEM_ANCORA`) [Decisão;
+auditoria Codex Security da 1.7.6, #2]. O livro só vale tanto quanto `state/` está protegido (no perfil
+de dados reais do WSL, a sessão grava `state/` e a pasta de backups): a conferência por ele sai com
+`aviso_ancora` (`W_ANCORA_DO_LIVRO`), e, depois de suspeita de comprometimento, vale só o
+`--sha256-manifesto` guardado fora; livro e registro dentro da própria cópia não valem [revisão de
+segurança da 1.7.7, R177-KIT-01].
+Quem verifica e restaura [auditoria da 1.7.6, #2]: com a fundação viva, a política dela (quem perdeu
+a administração depois da cópia não restaura; administração forjada na cópia não conta); com o
+banco de origem corrompido ou perdido, a política da cópia, só se a âncora a autenticar — sem
+fundação viva e sem âncora, ninguém (código 2): guarde o `sha256_manifesto` fora da cópia, é ele a
+prova na recuperação de desastre. Nada é criado na origem. Preparo privado [auditoria da 1.7.6,
+#12]: a restauração monta a raiz numa pasta de preparo ao lado do destino, lendo a cópia sem seguir
+ligação, confere de novo antes de promovê-la (renomeação atômica) e só então o destino a recebe;
+ligação no caminho da cópia ou do destino recusa. Não libera (código 3) quando
 o registro de retiradas não foi informado, não existe no caminho dado, é ilegível, tem
 identidade diferente da anotada na cópia (outra fundação ou registro recriado) ou não alcança
 as linhas conhecidas na cópia — e, nesses casos, nada é copiado para o destino. Retiradas de
@@ -218,8 +285,11 @@ Code ou Codex — a atualização automática conta), os hooks, as instruções 
 rode de novo as avaliações E3 (retomada), E10 (RETOMADA desatualizada) e E12 (pergunta de andamento) e o
 cenário CEN-13 (hooks), numa sessão aberta **fora** de uma fundação com os hooks do host (os guardas da raiz
 bloqueiam a escrita e a identidade de ensaio e distorcem o resultado). O avaliador fica fora do alcance de quem
-é avaliado; avaliação não rodada fica "não rodada", nunca "passou"; uma rodada que passa é teste de fumaça, não
-taxa de confiabilidade. Caso novo nasce de falha real observada, não para engordar a bateria.
+é avaliado: bancada do avaliador e área do executor separadas, cópia da skill sem `evals/` e um alarme antes de
+entregar o pedido; execução cujo rastro leu o gabarito fica "contaminada" [Decisão; harness2, P2]. Avaliação não
+rodada fica "não rodada", nunca "passou"; uma rodada que passa é teste de fumaça, não taxa de confiabilidade; com k
+execuções, a de segurança só passa se passar em todas (pass^k) [Decisão; everything-claude-code, proposta 4]. Caso
+novo nasce de falha real observada, não para engordar a bateria.
 
 ## C11 — Avaliação final e fechamento da matriz [Livro A36 p178–181]
 Reconcile cada requisito com implementação, integração, teste, evidência, estado e

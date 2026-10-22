@@ -444,6 +444,10 @@ class TestN1EmpacotarNaoSegueLigacoes(unittest.TestCase):
         (self.creator / "scripts" / "package_skill.py").write_text("# dublê fictício\n", encoding="utf-8")
         self.mod = carregar_empacotador()
         self.mod.DIST, self.mod.SKILL = self.dist, self.skill
+        # Dublê registrado (desde a 1.7.7 só a ferramenta registrada roda; Codex Security da 1.7.6, #6): estes testes
+        # tratam da ligação na árvore, recusada antes de a ferramenta rodar.
+        self.mod.FERRAMENTA_ESPERADA = {
+            "scripts/package_skill.py": sha256(self.creator / "scripts" / "package_skill.py")}
 
     def rodar(self):
         def gerar(cmd, **kw):

@@ -196,6 +196,14 @@ def conectar_somente_leitura(path: Path) -> sqlite3.Connection:
     return con
 
 
+def conectar_copia(path: Path) -> sqlite3.Connection:
+    """Conexão só de leitura ao banco de uma CÓPIA, que não muda (imutável: lê só o arquivo do banco, sem criar
+    `-wal`/`-shm`), com linhas por nome. Abra só o arquivo já conferido pelo hash do manifesto ancorado."""
+    con = sqlite3.connect(uri_somente_leitura(Path(path), imutavel=True), uri=True)
+    con.row_factory = sqlite3.Row
+    return con
+
+
 def migrate(con: sqlite3.Connection) -> int:
     current = con.execute("PRAGMA user_version").fetchone()[0]
     for number, script in enumerate(MIGRATIONS, start=1):

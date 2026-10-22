@@ -33,6 +33,11 @@ com "fundação": escreva sempre "o projeto <nome>" × "a fundação".
 - Um bloco por comando, pronto para copiar, **no shell em que ele vai rodar**: PowerShell
   usa `E:\pasta`; o bash do WSL usa `/mnt/e/pasta`. Diga onde abrir (PowerShell comum ou como
   administrador; terminal do Ubuntu) e o que deve aparecer no fim.
+- O comando roda colado de qualquer pasta: script com o caminho completo e todo caminho entre
+  aspas duplas (a raiz real, `<pasta-de-desenvolvimento>`, tem espaços); `;` entre comandos, nunca `&&`
+  (não existe no PowerShell 5.1). Os comandos que o `atualizar_fundacao.py` sugere já vêm assim;
+  caminho com `$`, crase, `!` ou aspas não vira comando (cite-o à mão) [revisão de segurança da
+  1.7.7, terceira passada].
 - Nunca dentro de uma pergunta ("rodou o /reset como administrador?"): primeiro o comando e o
   resultado esperado; a pergunta, se houver, vem depois.
 - Mais de dois passos seguidos → um script único da skill (versionado, com hash conferível),

@@ -9,6 +9,10 @@ Estes testes rodam o script num PowerShell de verdade, em pastas descartáveis, 
 no teste: o script nunca recebe nem repassa senha). O que exige administrador não é simulado como real: roda-se a
 simulação (`-Simular`/`-WhatIf`), o modo `-SemUAC` (a âncora fica pendente, código 3) e as peças que não exigem
 administrador (sondagem sem alterar nada, ACL sem a troca de dono, recusa da etapa elevada sem administrador).
+
+Desde a 1.7.7 o script confere o python.exe antes de rodá-lo (auditoria Codex Security da 1.7.6, #3): o Python que
+roda estes testes, passado em -Python, tem de ser o do instalador oficial (python.org), assinado pela Python Software
+Foundation. O python.exe falso dos testes é compilado aqui, sem assinatura, e deixa uma marca se chegar a rodar.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from apoio import ENV, SKILL
+from apoio import ENV, SKILL, criar_ligacao_dir
 
 PS1 = SKILL / "assets" / "host" / "windows" / "preparar-maquina.ps1"
 POWERSHELL = shutil.which("powershell.exe") if os.name == "nt" else None
@@ -79,12 +83,12 @@ class _Base(unittest.TestCase):
         subprocess.run(["icacls", str(self.base), "/reset", "/T", "/C", "/Q"], capture_output=True, timeout=120)
         shutil.rmtree(self.base, ignore_errors=True)
 
-    def rodar(self, *args, relatorio: bool = True):
+    def rodar(self, *args, relatorio: bool = True, python: str | Path | None = sys.executable):
         self.n += 1
         rel = self.base / f"relatorio-{self.n}.json"
         cmd = [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(PS1),
                "-Raiz", str(self.raiz), "-Titular", "titular", "-Chave", str(self.chave), "-Ancora", str(self.ancora),
-               "-Python", sys.executable, *map(str, args)]
+               *(["-Python", str(python)] if python else []), *map(str, args)]
         if relatorio:
             cmd += ["-Relatorio", str(rel)]
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=ENV,
@@ -106,6 +110,18 @@ class _Base(unittest.TestCase):
                            env=env)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         return json.loads(p.stdout.strip().splitlines()[-1])
+
+    def python_falso(self) -> Path:
+        """python.exe sem assinatura que, se rodar, grava `executado.txt` ao lado (prova de que foi executado)."""
+        exe = self.base / "falso" / "python.exe"
+        exe.parent.mkdir(exist_ok=True)
+        fonte = ('public static class Programa { public static int Main(string[] a) { System.IO.File.WriteAllText('
+                 'System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "executado.txt"), '
+                 'string.Join(" ", a)); return 0; } }')
+        self.ps(f"Add-Type -TypeDefinition '{fonte}' -OutputAssembly '{exe}' -OutputType ConsoleApplication\n"
+                "@{ ok = $true } | ConvertTo-Json -Compress")
+        self.assertTrue(exe.is_file())
+        return exe
 
 
 @unittest.skipIf(ELEVADO, "o script recusa rodar elevado (código 2), por desenho: este ensaio exige a conta comum")
@@ -229,6 +245,66 @@ class SemUac(_Base):
         self.assertEqual(dados, {"sandbox": {"enabled": True}, "env": {"FUNDACAO_PRINCIPAL": "titular"}})
         self.assertEqual(self.item(rel, "settings.local.json")["acao"], "atualizar")
 
+    def test_com_projeto_o_settings_local_fica_so_com_a_identidade(self):
+        """Auditoria Codex Security da 1.7.6, #5: com -Projeto, a sessão de dados reais do WSL carrega este arquivo;
+        o preparo deixa nele só a identidade e o projeto (o anterior fica em .claude/anteriores)."""
+        local = self.raiz / ".claude" / "settings.local.json"
+        local.parent.mkdir()
+        local.write_text('{"permissions": {"allow": ["Bash(curl:*)"]}, "env": {"FUNDACAO_PRINCIPAL": "titular", '
+                         '"FUNDACAO_PERMITIR_TROCA_IDENTIDADE": "1"}}' + chr(10), encoding="utf-8")
+        p, rel = self.rodar("-SemUAC", "-Projeto", "caso-real")
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        self.assertEqual(json.loads(local.read_text(encoding="utf-8")),
+                         {"env": {"FUNDACAO_PRINCIPAL": "titular", "FUNDACAO_PROJECT": "caso-real"}})
+        item = self.item(rel, "settings.local.json")
+        self.assertEqual(item["acao"], "atualizar")
+        self.assertIn("FUNDACAO_PERMITIR_TROCA_IDENTIDADE", Path(item["anterior"]).read_text(encoding="utf-8"))
+
+    def test_o_que_o_windows_grava_passa_na_conferencia_do_wsl(self):
+        """1.7.7: o preparar-wsl.sh só fixa o perfil igual ao que o modelo gera e o settings.local.json só com a
+        identidade; o que este script grava (com backups, pasta só de leitura e skill negada) tem de passar."""
+        p, _rel = self.rodar("-SemUAC", "-Projeto", "caso-real", "-Backups", str(self.base / "Backups"),
+                             "-SomenteLeitura", str(self.base / "Origem"), "-NegarSkill", "skill-da-copia")
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        claude = self.raiz / ".claude"
+        ajudante = str(SKILL / "assets" / "host" / "preparo_host.py")
+        for args in (("conferir-perfil-wsl", "--perfil", claude / "settings.wsl.json", "--raiz", self.raiz),
+                     ("conferir-identidade", "--arquivo", claude / "settings.local.json", "--titular", "titular")):
+            with self.subTest(args[0]):
+                r = subprocess.run([sys.executable, "-I", "-B", ajudante, *map(str, args), "--projeto", "caso-real"],
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_interpretador_do_perfil_existente_nao_e_usado_nem_executado(self):
+        """Auditoria Codex Security da 1.7.6, #3: sem -Python, o preparo rodava o python.exe que um hook do
+        .claude/settings.json existente apontasse, justamente o arquivo que ele existe para refazer pelo modelo."""
+        falso = self.python_falso()
+        claude = self.raiz / ".claude"
+        claude.mkdir()
+        gancho = {"type": "command", "command": str(falso), "args": ["-B", "x.py"]}
+        (claude / "settings.json").write_text(
+            json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [gancho]}]}}), encoding="utf-8")
+        p, rel = self.rodar("-SemUAC", python=None)
+        self.assertFalse((falso.parent / "executado.txt").exists(), "o python.exe do perfil foi executado")
+        if p.returncode == 2:  # máquina sem Python oficial registrado nem no PATH: para, sem usar o do perfil
+            self.assertIn("Python", rel["mensagem"])
+            return
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        novo = json.loads((claude / "settings.json").read_text(encoding="utf-8"))
+        comandos = {h["command"] for g in novo["hooks"]["PreToolUse"] for h in g["hooks"]}
+        self.assertEqual(comandos, {rel["python"]})
+        self.assertNotIn(str(falso), comandos)
+        self.assertIn(str(falso), self.item(rel, "settings.json")["detalhe"])  # o relatório mostra o que foi trocado
+
+    def test_python_informado_sem_assinatura_e_recusado_sem_executar(self):
+        """Auditoria Codex Security da 1.7.6, #3: -Python só era conferido quanto a existir."""
+        falso = self.python_falso()
+        p, rel = self.rodar("-SemUAC", "-Projeto", "caso-real", python=falso)
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertFalse((falso.parent / "executado.txt").exists(), "o python.exe informado foi executado")
+        self.assertFalse((self.raiz / ".claude").exists())
+        self.assertIn("assinatura", rel["mensagem"])
+
 
 @unittest.skipIf(ELEVADO, "o script recusa rodar elevado (código 2), por desenho: este ensaio exige a conta comum")
 class ChaveSemSenha(_Base):
@@ -317,6 +393,73 @@ class Funcoes(_Base):
         env = {**os.environ, "PSModulePath": str(modulo.parent) + os.pathsep + os.environ.get("PSModulePath", "")}
         dados = self.ps(f"@{{ dono = (Get-Acl -LiteralPath '{self.base}').Owner }} | ConvertTo-Json -Compress", env=env)
         self.assertTrue(dados["dono"])
+
+
+class Interpretador(_Base):
+    """Auditoria Codex Security da 1.7.6, #3: o python.exe que roda o ajudante (e os hooks das sessões do Windows) é
+    conferido antes de rodar: o próprio python.exe, sem ligação no caminho, assinado pela Python Software
+    Foundation e sem escrita para qualquer conta comum. A conferência não executa nada."""
+
+    def conferir(self, caminho) -> dict:
+        return self.ps(f"Test-Interpretador -Caminho '{caminho}' | ConvertTo-Json -Compress -Depth 4")
+
+    def copia_do_python(self) -> Path:
+        """Cópia do python.exe que roda os testes (a assinatura vai junto) numa pasta só desta conta."""
+        pasta = self.base / "py-copia"
+        pasta.mkdir()
+        shutil.copy2(sys.executable, pasta / "python.exe")
+        return pasta / "python.exe"
+
+    def test_python_oficial_e_aceito(self):
+        dados = self.conferir(self.copia_do_python())
+        self.assertEqual(dados["Motivos"], [], dados)
+        self.assertEqual(dados["Assinante"], "Python Software Foundation")
+        self.assertRegex(dados["Sha256"], r"^[0-9a-f]{64}$")
+
+    def test_python_sem_assinatura_e_recusado_sem_rodar(self):
+        falso = self.python_falso()
+        dados = self.conferir(falso)
+        self.assertTrue(any("assinatura" in m for m in dados["Motivos"]), dados)
+        self.assertFalse((falso.parent / "executado.txt").exists())
+
+    def test_pasta_gravavel_por_qualquer_conta_e_recusada(self):
+        exe = self.copia_do_python()
+        subprocess.run(["icacls", str(exe.parent), "/grant", "*S-1-5-11:(OI)(CI)M"], check=True, capture_output=True,
+                       timeout=60)  # Usuários autenticados: o clássico C:\Python3xx, herdado da raiz do disco
+        dados = self.conferir(exe)
+        self.assertTrue(any("S-1-5-11" in m for m in dados["Motivos"]), dados)
+
+    def test_ligacao_no_caminho_e_recusada(self):
+        exe = self.copia_do_python()
+        ligada = self.base / "ligada"
+        criar_ligacao_dir(ligada, exe.parent)
+        dados = self.conferir(ligada / "python.exe")
+        self.assertTrue(any("ligação" in m for m in dados["Motivos"]), dados)
+
+    def test_outro_nome_ou_caminho_relativo_e_recusado(self):
+        exe = self.copia_do_python()
+        outro = exe.with_name("pythonw-falso.exe")
+        shutil.copy2(exe, outro)
+        for caminho in (outro, "python.exe"):
+            with self.subTest(caminho=str(caminho)):
+                self.assertTrue(self.conferir(caminho)["Motivos"])
+
+    def test_sem_python_informado_so_sai_interpretador_conferido(self):
+        dados = self.ps("$r = Find-Python -Indicado ''\n"
+                        "@{ achou = [bool]($r -and $r.Caminho); motivos = @(if ($r) { $r.Motivos }); "
+                        "assinante = $(if ($r) { $r.Assinante }); origem = $(if ($r) { $r.Origem }) } | "
+                        "ConvertTo-Json -Compress")
+        if dados["achou"]:  # depende da máquina: instalação registrada ou no PATH
+            self.assertEqual(dados["motivos"], [], dados)
+            self.assertEqual(dados["assinante"], "Python Software Foundation")
+            self.assertIn(dados["origem"], ("registro do Windows (HKLM)", "registro do Windows (HKCU)", "PATH"))
+
+    def test_fonte_nao_le_o_interpretador_do_perfil(self):
+        texto = PS1.read_text(encoding="utf-8-sig")
+        escolha = texto[texto.index("function Get-SshKeygen"):texto.index("function Invoke-Ajudante")]
+        self.assertIn("function Find-Python", escolha)
+        self.assertNotIn("settings.json", escolha)
+        self.assertNotIn("ConvertFrom-Json", escolha)
 
 
 @unittest.skipUnless(ELEVADO, "só num processo elevado: a recusa do script quando roda como administrador")

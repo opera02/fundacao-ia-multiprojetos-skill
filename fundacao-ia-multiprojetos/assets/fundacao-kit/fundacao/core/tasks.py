@@ -36,7 +36,6 @@ de idempotência do destino ou reconciliação antes de repetir.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import threading
 import time
@@ -55,6 +54,7 @@ from .db import transaction, utcnow
 from .ids import new_id
 from .paths import contained, validate_id
 from .projects import project_root
+from .publicacao import publicar
 
 
 @dataclass(frozen=True)
@@ -460,18 +460,15 @@ class Coordinator:
         run_dir = self._run_dir(run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
         out = self._output_path(run_id, step_id, input_hash, execution)  # conferida de novo depois de criar
-        tmp = out.with_suffix(".tmp")
-        tmp.write_bytes(data)
-        os.replace(tmp, out)
+        # Temporário imprevisível e exclusivo, nunca por ligação plantada na pasta do projeto (Codex 1.7.6, #11).
+        publicar(out, data)
         digest = sha256_bytes(data)
         # O recibo é registro para quem audita a pasta; NÃO comprova nada na retomada (quem escreve na
         # pasta do projeto poderia forjá-lo). A prova é a reserva gravada no banco antes do arquivo (#14).
         receipt = {"run_id": run_id, "step_id": step_id, "input_hash": input_hash, "output_hash": digest}
         if execution is not None:
             receipt["execution"] = execution
-        rtmp = out.with_suffix(".receipt.tmp")
-        rtmp.write_text(canonical_json(receipt), encoding="utf-8")
-        os.replace(rtmp, out.with_suffix(".receipt.json"))
+        publicar(out.with_suffix(".receipt.json"), canonical_json(receipt).encode("utf-8"))
         return self._ref(out), digest
 
     def _descartar_saida(self, run_id: str, step_id: str, input_hash: str, execution: int) -> None:
