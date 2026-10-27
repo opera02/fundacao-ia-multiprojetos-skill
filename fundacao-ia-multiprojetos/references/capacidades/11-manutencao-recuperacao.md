@@ -244,6 +244,10 @@ Use identificador e política de idempotência. Revalide aprovações (hash) na 
 | Atualização com retorno | retorno em ambiente isolado preserva leitura do estado |
 
 ## Com o kit e scripts
+Para migrar memória para o esquema 5, retornar uma instalação da 1.7.9 ou adotar o livro de cópias assinado,
+leia [compatibilidade e retorno](../atualizacao-1.7.9.md). O modo estrito usa `--exigir-livro-assinado`;
+preparar o documento não assina nem aprova a entrada. A chave continua com o titular.
+
 `fundacao/core/backup.py` (`create_backup`, `verify_backup`, `restore` com reaplicação),
 `fundacao/core/ancora_copia.py` (âncora e quem verifica ou restaura), `fundacao/core/preparo.py`
 (preparo privado), `scripts/manifesto.py`, `scripts/backup_sqlite.py`, `scripts/instalar_kit.py --atualizar`

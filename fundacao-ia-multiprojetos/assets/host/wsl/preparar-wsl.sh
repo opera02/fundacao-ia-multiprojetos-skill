@@ -266,7 +266,7 @@ elif saida=$("$PY" -I -B "$AJUDANTE" conferir-perfil-wsl --perfil "$PERFIL" --ra
 else
   relata erro perfil "$PERFIL não é o que o modelo da skill gera para esta raiz ($saida): rode de novo o preparar-maquina.ps1 no Windows com -Projeto $PROJETO"
 fi
-for h in guarda_caminho.py guarda_identidade.py; do
+for h in guarda_caminho.py guarda_identidade.py sinais_sessao.py; do
   if [ ! -f "$RAIZ/.claude/hooks/$h" ]; then
     relata erro "hook $h" "ausente em $RAIZ/.claude/hooks: rode o preparar-maquina.ps1 no Windows"
   elif cmp -s "$RAIZ/.claude/hooks/$h" "$SKILL_DIR/assets/hooks/$h"; then

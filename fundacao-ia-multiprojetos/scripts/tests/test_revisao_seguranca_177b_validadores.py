@@ -18,8 +18,11 @@ revisado (4c11fed) e passa depois da correção; os controles mostram o uso leg�
 from __future__ import annotations
 
 import json
+import io
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 import test_auditoria_1_7_6_validadores as base_176  # o módulo, não as classes: os testes dela não rodam de novo aqui
 from apoio import rodar_script
@@ -144,7 +147,39 @@ class TestPastaDaRetomada(_Pastas):
                 codigo, res, saida = self.validar_em(pasta, f"Histórico arquivado: {rel} (sha256 {h})")
                 self.assertEqual(codigo, 1, res)
                 self.assertNotIn(SEGREDO, saida, "o validar leu o histórico protegido e entregou o item")
-                self.assertIn("protegido", res["historicos"][0]["estado"])
+                if pasta == self.base:
+                    self.assertIn("protegido", res["historicos"][0]["estado"])
+                else:
+                    # A recusa mais recente protege a própria RETOMADA antes de ler o ponteiro.
+                    self.assertEqual(set(res), {"ok", "erro"})
+                    self.assertFalse(res["ok"])
+                    self.assertIn("host nega à leitura", res["erro"])
+                    self.assertIn("nada foi lido nem gravado", res["erro"])
+
+    def test_retomada_protegida_recusa_antes_dos_leitores_e_sem_oraculo_de_existencia(self):
+        retomada = carregar("retomada")
+        for pasta in (self.raiz / "state", self.raiz / "projects" / "b" / "data"):
+            arq = pasta / "RETOMADA.md"
+            arq.parent.mkdir(parents=True, exist_ok=True)
+            respostas = []
+            for presente in (True, False):
+                with self.subTest(pasta=pasta.name, presente=presente):
+                    if presente:
+                        arq.write_text(SEGREDO, encoding="utf-8")
+                    else:
+                        arq.unlink()
+                    saida = io.StringIO()
+                    with mock.patch.object(retomada, "ler_retomada", side_effect=AssertionError("leu RETOMADA")), \
+                         mock.patch.object(retomada, "ler_historico", side_effect=AssertionError("leu histórico")), \
+                         mock.patch.object(retomada.sys, "argv", ["retomada.py", "validar", "--arquivo", str(arq)]), \
+                         redirect_stdout(saida):
+                        codigo = retomada.main()
+                    self.assertEqual(codigo, 1)
+                    respostas.append(json.loads(saida.getvalue()))
+                    self.assertNotIn(SEGREDO, saida.getvalue())
+            self.assertEqual(respostas[0], respostas[1])
+            self.assertEqual(set(respostas[0]), {"ok", "erro"})
+            self.assertFalse(respostas[0]["ok"])
 
     def test_arquivar_acima_da_raiz_nao_grava_em_caminho_protegido(self):
         arq = self.base / "RETOMADA.md"

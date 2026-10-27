@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from . import events
@@ -37,6 +36,8 @@ from .canon import sha256_bytes
 from .contracts import ValidationError
 from .db import transaction, utcnow
 from .ids import new_id
+from .gastos_rotas import route_spending, route_spending_exact, spending_report, reconcile_cost, texto_do_custo
+from .modelos_tarefa import alvos_da_tarefa
 from .politica_rotas import desvio_sem_decisao, validar_politica
 from .usage import custo_decimal
 
@@ -93,7 +94,7 @@ class Router:
         self.adapters = adapters  # rota -> adaptador
 
     def _gasto_da_rota(self, route: str) -> tuple[float, int, list[str]]:
-        return route_spending(self.con, route)
+        return route_spending_exact(self.con, route)
 
     def candidate_routes(self, task_kind: str) -> list[tuple[str, str]]:
         """[(rota, motivo_de_exclusao_ou_'ok')]"""
@@ -108,7 +109,7 @@ class Router:
                 out.append((route, "rota desabilitada na política"))
             elif cfg.get("only_titular") and self.principal.principal_id != self.policy.get("titular"):
                 out.append((route, "rota restrita ao titular"))
-            elif route not in self.adapters:
+            elif route not in self.adapters and not any(isinstance(k, tuple) and k[0] == route for k in self.adapters):
                 out.append((route, "adaptador não configurado"))
             else:
                 motivo = self._teto(route, cfg)
@@ -152,7 +153,7 @@ class Router:
         return reserva, None
 
     def _registrar(self, route: str, request, *, provider_id: str, state: str, simulated: bool,
-                   dispatched: bool, custo, reserva: str | None) -> str:
+                   dispatched: bool, custo, reserva: str | None, model: str = "unknown") -> str:
         """Tentativa registrada e reserva finalizada NA MESMA transação; finalização idempotente por ID
         (`AND state = 'reserved'`): repetir não conta duas vezes. Custo inválido (negativo, NaN,
         infinito, booleano) é gravado como não medido: a rota com teto fica bloqueada até reconciliar."""
@@ -162,7 +163,9 @@ class Router:
                                  subject=self.principal.principal_id, run_id=request.run_id,
                                  payload={"route": route, "provider_id": provider_id, "state": state,
                                           "simulated": simulated, "dispatched": dispatched,
-                                          "cost_usd": f"{custo:.6f}" if custo is not None else None,
+                                          "model": model, "model_requested": request.model or "unknown",
+                                          "effort_requested": request.effort or "unknown",
+                                          "cost_usd": texto_do_custo(custo) if custo is not None else None,
                                           **({"reservation_id": reserva} if reserva else {})})
             if reserva:
                 self.con.execute(
@@ -173,12 +176,21 @@ class Router:
 
     def call(self, task_kind: str, request) -> dict:
         attempts = []
-        for route, reason in self.candidate_routes(task_kind):
+        motivos = dict(self.candidate_routes(task_kind))
+        for route, adapter, pedido in alvos_da_tarefa(self.policy, task_kind, self.adapters, request):
+            reason = motivos.get(route, "rota não autorizada")
             if reason != "ok":
                 attempts.append({"route": route, "skipped": reason})
                 continue
-            adapter = self.adapters[route]
+            if adapter is None:
+                attempts.append({"route": route, "skipped": "provedor não configurado"})
+                continue
             cfg = self.policy["routes"].get(route) or {}
+            # /1 e /2: saldo contábil não substitui o mecanismo preventivo por chamada.
+            # O mecanismo da CLI usa estimativa do cliente; não garante fatura máxima.
+            if cfg.get("max_usd") is not None and not hasattr(adapter, "max_budget_usd"):
+                attempts.append({"route": route, "skipped": "provedor sem teto financeiro por chamada verificável"})
+                continue
             reserva = None
             if cfg.get("max_calls") is not None or cfg.get("max_usd") is not None:
                 reserva, motivo = self._reservar(route, cfg, request)
@@ -186,20 +198,21 @@ class Router:
                     attempts.append({"route": route, "skipped": motivo})
                     continue
             if cfg.get("max_usd") is not None and hasattr(adapter, "max_budget_usd"):
-                adapter.max_budget_usd = cfg["max_usd"] - self._gasto_da_rota(route)[0]  # saldo do teto
+                adapter.max_budget_usd = custo_decimal(cfg["max_usd"]) - self._gasto_da_rota(route)[0]
             try:
-                result = adapter.call(request)
+                result = adapter.call(pedido)
             except BaseException:
                 if reserva:
                     # Desfecho desconhecido: conta como chamada que saiu, com custo não medido (falha
                     # fechada); a administração reconcilia pelo `rota custo`.
-                    self._registrar(route, request, provider_id="desconhecido", state="interrompida",
+                    self._registrar(route, pedido, provider_id="desconhecido", state="interrompida",
                                     simulated=False, dispatched=True, custo=None, reserva=reserva)
                 raise
             custo = (result.usage or {}).get("custo_usd")
             attempts.append({"route": route, "state": result.state, "simulated": result.simulated})
-            self._registrar(route, request, provider_id=result.provider_id, state=result.state,
-                            simulated=result.simulated, dispatched=result.dispatched, custo=custo, reserva=reserva)
+            self._registrar(route, pedido, provider_id=result.provider_id, state=result.state,
+                            simulated=result.simulated, dispatched=result.dispatched, custo=custo, reserva=reserva,
+                            model=result.model)
             if result.state == "succeeded":
                 # Simulação nunca vira "sucesso" indistinto: o estado diz que foi simulada.
                 estado = "succeeded_simulated" if result.simulated else "succeeded"
@@ -208,107 +221,3 @@ class Router:
         events.emit(self.con, "provider_blocked", project_id=request.project_id, run_id=request.run_id,
                     payload={"attempts": attempts})
         return {"state": "blocked", "result": None, "attempts": attempts}
-
-
-def _reservas_em_andamento(con: sqlite3.Connection, route: str) -> list[str]:
-    try:
-        return [r[0] for r in con.execute("SELECT reservation_id FROM route_reservation WHERE route = ?"
-                                          " AND state = 'reserved' ORDER BY created_at", (route,))]
-    except sqlite3.OperationalError:  # banco sem a migração 4 (só leitura de cópia antiga)
-        return []
-
-
-def route_spending(con: sqlite3.Connection, route: str) -> tuple[float, int, list[str]]:
-    """Gasto das tentativas REAIS da rota: (custo, chamadas, tentativas sem custo medido).
-    Não contam: simulação e tentativa que não saiu (dispatched=false). Tentativa antiga sem o
-    campo conta como saída (conservador). Custo reconciliado pela administração prevalece.
-    Reserva em andamento (chamada ainda no adaptador, ou processo que caiu no meio) conta como
-    chamada e como custo não medido: o teto vale também para chamadas simultâneas (F10).
-    Custo gravado inválido (negativo, NaN, infinito — kit anterior) também conta como não medido (#17)."""
-    total, chamadas, pendentes = _gasto_registrado(con, route)
-    reservas = _reservas_em_andamento(con, route)
-    return total, chamadas + len(reservas), pendentes + reservas
-
-
-def _gasto_registrado(con: sqlite3.Connection, route: str) -> tuple[float, int, list[str]]:
-    reconciliado = {}
-    for (payload,) in con.execute("SELECT payload_json FROM event WHERE kind = 'provider_cost_reconciled'"):
-        p = json.loads(payload)
-        reconciliado[p["attempt_event_id"]] = p["cost_usd"]
-    total, chamadas, pendentes = Decimal(0), 0, []
-    for event_id, payload in con.execute(
-            "SELECT event_id, payload_json FROM event WHERE kind = 'provider_attempt' ORDER BY seq"):
-        p = json.loads(payload)
-        if p.get("route") != route or p.get("simulated") or p.get("dispatched") is False:
-            continue
-        chamadas += 1
-        # Decimal em texto (JSON canônico não aceita float); negativo, NaN ou infinito = não medido.
-        custo = custo_decimal(reconciliado.get(event_id, p.get("cost_usd")), texto=True)
-        if custo is not None:
-            total += custo
-        else:
-            pendentes.append(event_id)
-    return float(total), chamadas, pendentes
-
-
-def spending_report(con: sqlite3.Connection, route: str) -> dict:
-    total, chamadas, pendentes = _gasto_registrado(con, route)
-    reservas = _reservas_em_andamento(con, route)
-    return {"rota": route, "chamadas": chamadas, "gasto_usd": f"{total:.6f}", "sem_custo_medido": pendentes,
-            "reservas_em_andamento": reservas}
-
-
-def reconcile_cost(con: sqlite3.Connection, admin: Principal, route: str, attempt_event_id: str,
-                   cost_usd: str, fonte: str) -> dict:
-    """Registra o custo de uma tentativa sem custo medido, conferido pela administração numa fonte
-    externa (painel ou fatura do provedor). Libera o teto de custo da rota; uma vez por tentativa."""
-    Policy(con).require(admin, "admin", "foundation")
-    try:
-        valor = Decimal(str(cost_usd))
-    except InvalidOperation:
-        raise ValidationError("custo inválido: use decimal em dólares, ex.: 0.0123") from None
-    if not valor.is_finite() or valor < 0:
-        raise ValidationError("custo inválido: use decimal em dólares, ex.: 0.0123")
-    if not str(fonte).strip():
-        raise ValidationError("informe a fonte do custo (ex.: painel do provedor, fatura)")
-    if str(attempt_event_id).startswith("rsv_"):
-        attempt_event_id = _fechar_reserva(con, admin, route, attempt_event_id)
-    row = con.execute("SELECT payload_json FROM event WHERE kind = 'provider_attempt' AND event_id = ?",
-                      (attempt_event_id,)).fetchone()
-    if row is None:
-        raise ValidationError("tentativa inexistente", attempt_event_id=attempt_event_id)
-    p = json.loads(row[0])
-    if p.get("route") != route or p.get("simulated"):
-        raise ValidationError("a tentativa não é uma chamada real desta rota", attempt_event_id=attempt_event_id)
-    if custo_decimal(p.get("cost_usd"), texto=True) is not None:  # custo gravado inválido pode ser reconciliado
-        raise ValidationError("a tentativa já tem custo medido", attempt_event_id=attempt_event_id)
-    for (payload,) in con.execute("SELECT payload_json FROM event WHERE kind = 'provider_cost_reconciled'"):
-        if json.loads(payload).get("attempt_event_id") == attempt_event_id:
-            raise ValidationError("custo desta tentativa já reconciliado", attempt_event_id=attempt_event_id)
-    texto = f"{valor:.6f}"
-    events.emit(con, "provider_cost_reconciled", subject=admin.principal_id,
-                payload={"attempt_event_id": attempt_event_id, "route": route, "cost_usd": texto,
-                         "fonte": str(fonte).strip()[:200]})
-    return {"reconciliado": attempt_event_id, "custo_usd": texto, **spending_report(con, route)}
-
-
-def _fechar_reserva(con: sqlite3.Connection, admin: Principal, route: str, reservation_id: str) -> str:
-    """Reserva que ficou aberta (processo caiu durante a chamada) vira tentativa registrada, de custo
-    não medido, para a administração reconciliar. Idempotente por ID: reserva já fechada devolve a
-    tentativa que a fechou."""
-    with transaction(con):
-        row = con.execute("SELECT state, project_id, attempt_event_id FROM route_reservation"
-                          " WHERE reservation_id = ? AND route = ?", (reservation_id, route)).fetchone()
-        if row is None:
-            raise ValidationError("reserva inexistente nesta rota", attempt_event_id=reservation_id)
-        if row["state"] != "reserved":
-            if not row["attempt_event_id"]:
-                raise ValidationError("reserva liberada sem chamada: não há custo", attempt_event_id=reservation_id)
-            return row["attempt_event_id"]
-        evento = events.emit(con, "provider_attempt", project_id=row["project_id"], subject=admin.principal_id,
-                             payload={"route": route, "provider_id": "desconhecido", "state": "interrompida",
-                                      "simulated": False, "dispatched": True, "cost_usd": None,
-                                      "reservation_id": reservation_id, "fechada_pela_administracao": True})
-        con.execute("UPDATE route_reservation SET state = 'finalized', finalized_at = ?, attempt_event_id = ?"
-                    " WHERE reservation_id = ? AND state = 'reserved'", (utcnow(), evento, reservation_id))
-    return evento

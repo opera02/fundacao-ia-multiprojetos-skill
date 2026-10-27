@@ -13,7 +13,9 @@ O que faz, nesta ordem, conferindo antes o que já existe (rodar de novo não re
     arquivo herdando da pasta (nada de "(OI)(CI)" em arquivo) com dono Administradores e a linha do titular no
     namespace fundacao-decisao. Esta é a única etapa com UAC. Depois, a sondagem desta conta confere que ela não
     altera a âncora (dono, direitos de escrita e de troca de permissões, herança) e que a linha é a da chave.
- 3. Hooks guarda_caminho.py e guarda_identidade.py da skill em <raiz>\.claude\hooks.
+ 3. Hooks guarda_caminho.py, guarda_identidade.py e sinais_sessao.py da skill em <raiz>\.claude\hooks.
+    O último lembra a conferência da RETOMADA após compactação e mostra somente o projeto do lançador na linha
+    de status; não lê conteúdo, identidade ou caso. Esta cópia da skill só está preparada; executar o preparo ativa.
  4. <raiz>\.claude\settings.json (sessões do Windows) e, com -Projeto, <raiz>\.claude\settings.wsl.json (sessão
     de dados reais no WSL2), gerados pelos modelos da skill; <raiz>\.claude\settings.local.json com a identidade e,
     com -Projeto, o projeto autenticado das sessões (FUNDACAO_PROJECT) e nada mais, porque a sessão de dados reais
@@ -21,7 +23,9 @@ O que faz, nesta ordem, conferindo antes o que já existe (rodar de novo não re
     dados (scripts/instrucoes_aninhadas.py lista quais).
 O Python que roda o ajudante e os hooks do Windows é o de -Python ou, sem ele, o das instalações registradas do
 Windows e do PATH, nunca o do perfil existente; antes de rodar, o script confere que é o python.exe do instalador
-oficial (assinatura da Python Software Foundation), sem ligação no caminho e sem escrita para outras contas comuns.
+oficial (Authenticode Valid, sujeito e emissor completos e pin do certificado comprovado para a release em
+pins-python.json), sem ligação no caminho e sem escrita para outras contas comuns. Certificado/release novos exigem
+novo pin datado de artefato oficial: não há fallback só pelo nome. Timestamp válido não é recusado pelo NotAfter.
 Arquivo trocado vai antes para <raiz>\.claude\anteriores\<data>. Imprime a impressão digital da chave e os SHA-256
 e grava um relatório JSON (-Relatorio; no modo real, padrão em <raiz>\evidence\host).
 
@@ -70,7 +74,7 @@ $SID_SISTEMA = 'S-1-5-18'
 $SID_USUARIOS = 'S-1-5-32-545'
 $SKILL = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
 $AJUDANTE = Join-Path $SKILL 'assets\host\preparo_host.py'
-$HOOKS = @('guarda_caminho.py', 'guarda_identidade.py')
+$HOOKS = @('guarda_caminho.py', 'guarda_identidade.py', 'sinais_sessao.py')
 $IDENTIFICADOR = '^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$'
 $BARRA = [char]92
 $DIREITOS_ARQUIVO = [ordered]@{ WRITE_DAC = 0x40000; WRITE_OWNER = 0x80000; DELETE = 0x10000; GENERIC_WRITE = 0x40000000 }
@@ -331,6 +335,49 @@ function Test-CaminhoAncora([string] $Ancora) {
     $null
 }
 
+function Test-CertificadoPython($Assinatura, [string] $Versao, $Politica = $null) {
+    # R177-HOST-01 / 1.7.9: Valid continua sendo decisão do Authenticode do Windows, inclusive o timestamp.
+    # A lista não deriva do Python instalado: pins-python.json registra o artefato oficial não executado, hash e data.
+    # Emissor + sujeito completos + thumbprint + release precisam corresponder ao MESMO pin. Nunca há fallback por CN.
+    # Não comparar NotAfter com o relógio: uma assinatura timestamped antiga ainda pode ser Authenticode Valid.
+    $motivos = New-Object System.Collections.Generic.List[string]
+    $aceito = $null
+    try {
+        if ($null -eq $Politica) {
+            $Politica = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'pins-python.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+        }
+        if ($Politica.schema_version -cne '1') { throw 'schema de pins desconhecido' }
+        $pins = @($Politica.pins)
+        foreach ($pin in $pins) {
+            if ($pin.python_version -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -or
+                $pin.thumbprint -cnotmatch '^[0-9A-F]{40}$' -or
+                -not $pin.subject -or -not $pin.issuer -or
+                $pin.verified_on -cnotmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' -or
+                $pin.source_url -cnotmatch '^https://www\.python\.org/ftp/python/' -or
+                $pin.source_sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                $pin.python_exe_sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'pin sem proveniencia completa' }
+        }
+        if ([string]$Assinatura.Status -cne 'Valid' -or $null -eq $Assinatura.SignerCertificate) {
+            $motivos.Add('assinatura Authenticode precisa ser Valid antes de conferir o pin')
+        } else {
+            $cert = $Assinatura.SignerCertificate
+            foreach ($pin in $pins) {
+                if ($Versao -ceq $pin.python_version -and $cert.Thumbprint -ceq $pin.thumbprint -and
+                    $cert.Subject -ceq $pin.subject -and $cert.Issuer -ceq $pin.issuer) { $aceito = $pin; break }
+            }
+            if ($null -eq $aceito) {
+                $motivos.Add('certificado ou release sem pin comprovado: o titular precisa incorporar em pins-python.json ' +
+                    'o pin de um artefato oficial publicado em https://www.python.org/ftp/python/ e conferido com ' +
+                    'Get-AuthenticodeSignature -LiteralPath <python.exe-extraido-sem-executar>; depois, refazer o preparo')
+            }
+        }
+    } catch {
+        $motivos.Add('manifesto de pins ausente ou invalido: o preparo recusa sem fallback pelo nome do assinante')
+    }
+    [pscustomobject]@{ Ok = ($motivos.Count -eq 0 -and $null -ne $aceito); Motivos = $motivos.ToArray()
+                       Thumbprint = $(if ($null -ne $aceito) { $aceito.thumbprint } else { $null }) }
+}
+
 function Get-SshKeygen {
     # O do sistema, por caminho fixo, como a conferência das decisões (um ssh-keygen posto antes no PATH não decide).
     $sistema = Join-Path $env:SystemRoot 'System32\OpenSSH\ssh-keygen.exe'
@@ -350,7 +397,8 @@ function Test-Interpretador([string] $Caminho) {
     # Escrita dada a uma conta ou grupo nominal vai para Avisos. Só confere: nada é executado aqui.
     $motivos = New-Object System.Collections.Generic.List[string]
     $avisos = New-Object System.Collections.Generic.List[string]
-    $r = [ordered]@{ Caminho = $Caminho; Origem = $null; Motivos = $null; Avisos = $null; Assinante = $null; Sha256 = $null }
+    $r = [ordered]@{ Caminho = $Caminho; Origem = $null; Motivos = $null; Avisos = $null; Assinante = $null; Sha256 = $null
+                    Versao = $null; CertificadoThumbprint = $null }
     try {
         if (-not $Caminho -or -not [IO.Path]::IsPathRooted($Caminho) -or $Caminho.StartsWith('\\')) {
             $motivos.Add("caminho absoluto num disco local esperado: $Caminho")
@@ -375,6 +423,10 @@ function Test-Interpretador([string] $Caminho) {
             } elseif ($r.Assinante -cne $ASSINANTE_PYTHON) {
                 $motivos.Add("assinatura de $($r.Assinante), não da $ASSINANTE_PYTHON")
             }
+            $r.Versao = [Diagnostics.FileVersionInfo]::GetVersionInfo($r.Caminho).ProductVersion
+            $pin = Test-CertificadoPython -Assinatura $a -Versao $r.Versao
+            foreach ($motivo in @($pin.Motivos)) { $motivos.Add($motivo) }
+            $r.CertificadoThumbprint = $pin.Thumbprint
             $confiaveis = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, $SID_ADMINS, $SID_SISTEMA, $SID_INSTALADOR)
             $pasta = Split-Path -Parent $r.Caminho
             foreach ($par in @(@($r.Caminho, $MASCARA_ESCRITA), @($pasta, $MASCARA_ESCRITA), @((Split-Path -Parent $pasta), $MASCARA_TROCA))) {
@@ -661,6 +713,7 @@ function Invoke-Preparo {
     if ($faltam.Count -gt 0) { return (Complete-Preparo $rel 2 ('arquivos da skill ausentes: ' + ($faltam -join ', ')) $sim $carimbo) }
     $rel.python = $py
     $rel.python_conferencia = [ordered]@{ origem = $interp.Origem; assinante = $interp.Assinante; sha256 = $interp.Sha256
+                                          versao = $interp.Versao; certificado_thumbprint = $interp.CertificadoThumbprint
                                           avisos = @($interp.Avisos) }
 
     # 1. Chave do titular

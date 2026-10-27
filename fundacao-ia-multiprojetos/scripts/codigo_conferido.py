@@ -55,6 +55,11 @@ EXECUTAVEIS_NA_RAIZ = EXECUTAVEIS + (".pth",)  # no primeiro nível da raiz, tam
 # como o Windows compara; tests/test_revisao_seguranca_177c_atualizador.py os deriva dos fontes do kit pela árvore
 # sintática e para se divergirem (R177C-B-03).
 IMPORTADOS_DE_FORA = ("mcp",)
+# Pastas de dados e nomes protegidos nunca sao sondados como pacotes Python.
+DADOS_NA_RAIZ = frozenset({"projects", "state", "registry", "evidence", "docs", "logs", "data",
+                            "outputs", "modelos", ".git", ".claude", ".agents", ".codex", ".ssh"})
+NOMES_PROTEGIDOS = (".env*", "secrets", "*.pem", "*.key", "*.pfx", "*.p12", "id_rsa*",
+                    "*credentials*", "*secret*", "*.kdbx", "auth.json")
 MODULO_VALIDO = re.compile(r"[_a-z]\w*\.py$", re.IGNORECASE)  # o mesmo filtro de nomes do unittest discover
 SUBSTITUTA_DE_NOME = 0x20000000  # Windows: junção, link simbólico e afins (bit 29 da etiqueta de reparse)
 
@@ -132,17 +137,29 @@ def percorrer(base: Path, areas: tuple = AREAS_DE_CODIGO) -> tuple[dict, list]:
 
 
 def primeiro_nivel(base: Path) -> tuple[dict, list]:
-    """Executáveis do primeiro nível de `base`, fora das áreas de código (caminho relativo -> caminho): módulo ou `.pth`
-    solto e o `__init__` de pasta que é pacote; e as ligações com esses nomes ou com o de `__pycache__`. Sem seguir
-    ligação, salvo para ver se a pasta do outro lado é pacote (R177B-B-06). A pasta com nome de IMPORTADOS_DE_FORA
-    entra mesmo sem `__init__` (pacote de namespace), com todos os executáveis dela, como uma área de código; a
-    ligação com esse nome ou dentro dela, sem seguir (R177C-B-03)."""
+    """Executaveis e pacotes do primeiro nivel, sem entrar nas pastas de dados nem seguir elos.
+    Pastas de nome IMPORTADOS_DE_FORA entram mesmo sem __init__ (namespace), com seus executaveis;
+    ligacoes sao anotadas sem consultar a pasta do outro lado. Dados/estado/projetos nunca sao sondados.
+    """
     base, arquivos, ligacoes = Path(base), {}, []
     try:
         nomes = sorted(os.listdir(base))
     except OSError:
         return arquivos, ligacoes
     for nome in nomes:
+        if nome.casefold() in DADOS_NA_RAIZ:
+            continue
+        if any(fnmatch.fnmatchcase(nome.casefold(), g) for g in NOMES_PROTEGIDOS):
+            try:
+                st = os.lstat(base / nome)
+            except OSError:
+                st = None
+            # Dados comuns nao importaveis continuam fora do inventario, sem leitura de conteudo.
+            if st is not None and stat.S_ISREG(st.st_mode) and not nome.lower().endswith(EXECUTAVEIS_NA_RAIZ):
+                continue
+            # Modulo, diretorio ou elo protegido pode sombrear imports. Recuse sem abrir ou enumerar.
+            ligacoes.append(nome + " (nome protegido, sem leitura)")
+            continue
         caminho = base / nome
         if nome in AREAS_DE_CODIGO or nome == "__pycache__":  # as áreas têm o inventário delas; o `bytecode`, este
             if nome == "__pycache__" and ligacao(caminho):
@@ -159,7 +176,10 @@ def primeiro_nivel(base: Path) -> tuple[dict, list]:
             elif caminho.is_file():
                 arquivos[nome] = caminho
             continue
-        try:  # pacote: pasta com `__init__` executável (o `os.listdir` lê a pasta do outro lado da ligação, sem rodar)
+        if ligacao(caminho):
+            ligacoes.append(nome)
+            continue
+        try:  # Pasta comum, ja examinada sem seguir elos: veja apenas os nomes dos __init__.
             inits = [n for n in sorted(os.listdir(caminho)) if n.lower().startswith("__init__.") and executavel(n)]
         except OSError:
             continue  # não é pasta

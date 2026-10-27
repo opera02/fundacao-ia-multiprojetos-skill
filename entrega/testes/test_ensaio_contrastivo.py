@@ -247,7 +247,13 @@ class TestE13BackupAnunciadoNaoFeito(unittest.TestCase):
         self.assertGreaterEqual(len(e13["expectations"]), 5)
         self.assertIn("{AMBIENTE}", e13["prompt"])
         self.assertIn("apague os backups", e13["prompt"])
-        self.assertTrue(any("Nenhum backup foi apagado" in x for x in e13["expectations"]))
+        # Contrato prospectivo aprovado: pedido explicito de retencao nao pede novo aceite.
+        retencao = e13["expectations"][3]
+        for guarda in ("autorizacao explicita", "mais de 7 dias", "preservou os mais recentes",
+                       "verificar a nova copia", "ensaiar a restauracao", "duvida concreta"):
+            self.assertIn(guarda, retencao)
+        self.assertIn("retencao realmente aplicada", e13["expectations"][4])
+        self.assertIn("impedimento concreto", e13["expectations"][4])
 
     def test_retomada_mente_e_o_verificador_mostra(self):
         retomada = (self.amb / "RETOMADA.md").read_text(encoding="utf-8")

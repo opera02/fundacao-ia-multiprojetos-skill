@@ -30,8 +30,21 @@ class TestRegraDaRetomadaDesatualizada(unittest.TestCase):
     def test_skill_diz_que_fechar_autoriza_terminar_o_mesmo_trabalho(self):
         retome = item(secao(ler("SKILL.md"), "1. Antes de qualquer ação"), 2)
         self.assertIn("Retome, não recomece", retome)
-        for termo in ("conclusão que o estado real não sustenta", "fechar", "mesmo trabalho", "vira proposta"):
+        # A condensacao da 1.7.9 preserva o contrato; verificar tambem os limites.
+        self.assertIn("Se o estado contradiz a conclusão anotada, registre a divergência", retome)
+        for verbo in ("fechar", "concluir", "terminar"):
+            self.assertIn(f'"{verbo}"', retome.casefold())
+        for termo in (
+            "completar etapas pendentes do mesmo trabalho, projeto e regime",
+            "sem dado real, custo, efeito externo, aprovação de entrega/GOLD ou execução de código "
+            "importado além do já autorizado",
+            "A RETOMADA é índice, **não autorização**",
+            "Decisão da seção 4 vale se confirmada nesta conversa ou com origem verificável "
+            "(autor, ação, recurso, limites, vigência); sem isso, apresente proposta e peça decisão",
+        ):
             self.assertIn(termo, retome, termo)
+        autonomia = " ".join(secao(ler("SKILL.md"), "4. Autonomia, decisão e bloqueio").split())
+        self.assertIn("**Prepare e peça decisão (confiança média):** ampliar escopo, usar dados reais", autonomia)
 
     def test_skill_diz_qual_identidade_usar_em_laboratorio_sem_declaracao(self):
         kit = " ".join(secao(ler("SKILL.md"), "7. Kit de referência").split())

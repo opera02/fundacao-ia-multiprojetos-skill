@@ -46,7 +46,17 @@ class TestCliAutorizacao(FoundationTestCase):
         self.assertIn("E_ACCESS_DENIED", p.stderr)
         self.assertFalse(destino.exists())
         p = self._cli("operador-engenharia", "eventos", "verificar")
-        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.returncode, 2, p.stdout)
+        error = json.loads(p.stderr)["error"]
+        self.assertEqual((error["code"], error["action"], error["resource"]),
+                         ("E_ACCESS_DENIED", "audit", "foundation"))
+        self.policy.grant(self.admin, "revisor-juridico", "foundation", "audit")
+        for principal in ("revisor-juridico", "operador-lab"):
+            with self.subTest(principal=principal):
+                p = self._cli(principal, "eventos", "verificar")
+                self.assertEqual(p.returncode, 0, p.stderr)
+                self.assertEqual(json.loads(p.stdout), {
+                    "cadeia_integra": True, "primeiro_evento_quebrado": None})
         p = self._cli("operador-lab", "eventos", "exportar", "--destino", str(destino))
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertTrue(destino.exists())

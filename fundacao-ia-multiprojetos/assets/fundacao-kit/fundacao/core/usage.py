@@ -50,7 +50,8 @@ def _get(d: dict, key: str) -> Any:
 
 def normalize(provider: str, usage: dict | None, *, route: str, run_id: str,
               duration_ms: int | None = None, state: str = "succeeded",
-              model: str | None = None, cost_usd: float | None = None) -> dict:
+              model: str | None = None, cost_usd: float | None = None,
+              model_requested: str | None = None, effort_requested: str | None = None) -> dict:
     usage = usage or {}
     if provider in ("claude-cli", "claude-api"):
         parts = [usage.get("input_tokens"), usage.get("cache_creation_input_tokens"),
@@ -79,6 +80,8 @@ def normalize(provider: str, usage: dict | None, *, route: str, run_id: str,
         "provider_id": provider,
         "route": route,
         "model": model or UNKNOWN,
+        "model_requested": model_requested or UNKNOWN,
+        "effort_requested": effort_requested or UNKNOWN,
         "tokens": tokens,
         "duration_ms": UNKNOWN if duration_ms is None else duration_ms,
         "state": state,

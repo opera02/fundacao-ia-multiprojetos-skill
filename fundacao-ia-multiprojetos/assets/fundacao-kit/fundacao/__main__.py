@@ -112,18 +112,18 @@ def _componentes_visiveis(root: Path, con, me, autorizados: list[str]) -> list[d
 def cmd_status(args) -> dict:
     con = _con(args.raiz)
     me = principal_from_env(con)
-    ok, bad = events.verify_chain(con)
+    diagnostico_global = any(Policy(con).allowed(me.principal_id, a, "foundation") for a in ("audit", "admin"))
+    ok, bad = events.verify_chain(con) if diagnostico_global else (None, None)
     autorizados = [p["project_id"] for p in projects.list_projects(con, me)]
     marcas = ",".join("?" * len(autorizados))
     tarefas = ({r[0]: r[1] for r in con.execute(
         f"SELECT state, COUNT(*) FROM task WHERE project_id IN ({marcas}) GROUP BY state", autorizados)}
         if autorizados else {})
-    return {
-        "identidade": me.principal_id,
-        "projetos_autorizados": autorizados,
+    return {"identidade": me.principal_id, "projetos_autorizados": autorizados,
         "componentes": _componentes_visiveis(args.raiz, con, me, autorizados),
         "tarefas_por_estado": tarefas,  # só dos projetos que a identidade pode ler
         "eventos_cadeia_integra": ok, "primeiro_evento_quebrado": bad,
+        "eventos_diagnostico_global": "medido" if diagnostico_global else "nao_medido_sem_permissao",
     }
 
 
@@ -199,11 +199,11 @@ def _exigir(con, me, *permissoes: tuple[str, str]) -> None:
 def cmd_eventos(args) -> dict:
     con = _con(args.raiz)
     me = principal_from_env(con)
+    # Verificar e exportar leem metadados globais: autorize antes de qualquer leitura.
+    _exigir(con, me, ("audit", "foundation"), ("admin", "foundation"))
     if args.acao == "verificar":
         ok, bad = events.verify_chain(con)
         return {"cadeia_integra": ok, "primeiro_evento_quebrado": bad}
-    # Exportar copia metadados de todos os projetos: só auditoria ou administração da fundação.
-    _exigir(con, me, ("audit", "foundation"), ("admin", "foundation"))
     if not args.destino:
         raise FundacaoError("informe --destino")
     return {"exportados": events.export_jsonl(con, args.destino)}
@@ -222,40 +222,16 @@ def cmd_rota(args) -> dict:
 
 
 def cmd_backup(args) -> dict:
-    # Backup copia todos os projetos e o estado: só a administração da fundação.
-    if args.acao == "criar":
-        if not args.destino:
-            raise FundacaoError("informe --destino (pasta nova ou vazia para a cópia)")
-        if not (args.raiz / "state" / "state.sqlite").is_file():
-            raise FundacaoError("fundação sem banco de estado nesta raiz: nada a copiar")
-        con = _con(args.raiz)
-        me = principal_from_env(con)
-        _exigir(con, me, ("admin", "foundation"))
+    from .cli_backup import executar
+    return executar(args, _con)
+
+
+def cmd_extensao(args):
+    con = _con(args.raiz)
+    try:
+        return args.executor(args, con, principal_from_env(con), args.raiz / "state" / "retiradas.jsonl")
+    finally:
         con.close()
-        return backup.create_backup(args.raiz, args.destino, args.rotulo)
-    if not args.origem:
-        raise FundacaoError("informe --origem (pasta da cópia)")
-    # Âncora (#8): a informada ou a do livro de cópias — desta raiz, ao verificar; ao lado do registro, ao restaurar.
-    livro = (args.raiz / "state" / backup.LIVRO_COPIAS if args.acao == "verificar"
-             else args.retiradas.parent / backup.LIVRO_COPIAS if args.retiradas else None)
-    # Quem verifica ou restaura (#2): a política da fundação viva; sem ela, a da cópia autenticada pela âncora. A
-    # resposta mostra a raiz resolvida que decidiu (R177-KIT-02).
-    autorizacao = backup.autorizar(args.raiz, args.origem, sha256_manifesto=args.sha256_manifesto, livro=livro)
-    if args.acao == "verificar":
-        return {**backup.verify_backup(args.origem, sha256_manifesto=args.sha256_manifesto, livro=livro),
-                "autorizacao": autorizacao}
-    if not args.destino:
-        raise FundacaoError("informe --destino (pasta nova)")
-    resultado = backup.restore(args.origem, args.destino, args.retiradas, executado_por=autorizacao["identidade"],
-                               aceitar_registro_nao_comprovado=args.aceitar_registro_nao_comprovado,
-                               sha256_manifesto=args.sha256_manifesto, livro=livro,
-                               aceitar_copia_sem_ancora=args.aceitar_copia_sem_ancora)
-    resultado["autorizacao"] = autorizacao
-    if resultado.get("released") and resultado.get("aviso_ancora"):  # sem âncora, ou a do livro (R177-KIT-01)
-        codigo = "W_ANCORA_DO_LIVRO" if resultado["ancora"]["situacao"] == "conferida" else "W_COPIA_SEM_ANCORA"
-        sys.stderr.write(json.dumps({"aviso": {"code": codigo, "message": resultado["aviso_ancora"]}},
-                                    ensure_ascii=False) + "\n")
-    return resultado
 
 
 def cmd_decisao(args) -> dict:
@@ -325,6 +301,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="decisão do administrador, depois de conferir de onde veio a cópia: restaura cópia sem "
                         "âncora externa, com o motivo; fica na resposta e na trilha")
     s.set_defaults(func=cmd_backup)
+    s.add_argument("--exigir-livro-assinado", action="store_true", help="só aceita âncora do livro com assinatura válida do titular")
+    from . import cli_conhecimento, cli_copias, cli_memoria
+    for modulo in (cli_memoria, cli_copias, cli_conhecimento):
+        modulo.registrar_parser(sub).set_defaults(func=cmd_extensao, executor=modulo.executar)
     s = sub.add_parser("decisao", help="decisões do titular sobre entregas (assinatura ssh-keygen -Y)")
     s.add_argument("acao", choices=["preparar", "verificar", "registrar", "conferir-ancora", "comando"])
     s.add_argument("--projeto"); s.add_argument("--tarefa"); s.add_argument("--tipo", choices=list(decisoes.TIPOS))

@@ -254,7 +254,7 @@ def pasta_recusada(arquivo: Path) -> str | None:
     `.ssh` e `.codex` em qualquer lugar, o resto sem raiz de fundação acima (R177C-B-01 e R177D-1). Decidido antes de
     abrir a RETOMADA ou o histórico: a resposta não diz se existem."""
     pasta = Path(os.path.realpath(Path(arquivo).parent))
-    if negado([_nome(Path(arquivo).name)]) or negado_no_perfil(pasta) or caminho_negado(pasta, raizes_acima(pasta)):
+    if negado([_nome(Path(arquivo).name)]) or protegido_na_fundacao(pasta, [Path(arquivo).name]):
         return ("a RETOMADA fica em caminho que o host nega à leitura (nome de segredo da lista de negação ou nome "
                 "curto 8.3): nada foi lido nem gravado")
     return None

@@ -25,7 +25,9 @@ daquele projeto (revisão de segurança da 1.7.7, R177-VAL-10).
 - Nomes no texto: vibe-coding-toolkit
 - Aproveitamento: trecho
 - Trechos, traduzidos e adaptados: `assets/templates/REVISAO-SEGURANCA.md` segue o modelo de revisão de segurança do
-  toolkit — a ordem das seções, os campos de escopo, cobertura, achado e pendências e o parágrafo final de limites.
+  toolkit — a ordem das seções, os campos de escopo, cobertura, achado e pendências e o parágrafo final de limites;
+  `assets/templates/AUDITORIA-SEGURANCA.md` reaproveita, em versão enxuta, a ordem das seções, os campos de
+  achado e de pendências e a frase final de limites.
   Frases de regras, mais curtas, estão na regra de ondas de `references/capacidades/02-agentes-subagentes.md`, nas
   regras de continuidade de `assets/templates/AGENTS-RAIZ.md`, na reavaliação do comportamento do C10 em
   `references/fluxo-c-operar.md` e na nota de achados de `assets/templates/AUDITORIA.md`.

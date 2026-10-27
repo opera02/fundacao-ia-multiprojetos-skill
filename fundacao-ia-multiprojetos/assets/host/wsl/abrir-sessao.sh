@@ -2,7 +2,7 @@
 # Lançador da sessão de dados reais da fundação no WSL2. Gerado pelo preparar-wsl.sh a partir do modelo da skill
 # fundacao-ia-multiprojetos (assets/host/wsl/abrir-sessao.sh): não edite à mão; para mudar, rode o preparar-wsl.sh.
 #
-# Antes de abrir, confere o Claude Code fixado, o perfil do WSL, os dois hooks da raiz e a identidade do titular
+# Antes de abrir, confere o Claude Code fixado, o perfil do WSL, os três hooks da raiz e a identidade do titular
 # (.claude/settings.local.json), todos pelo SHA-256 gravado no preparo, o titular fixado aqui e a interoperabilidade
 # com o Windows desligada. Qualquer diferença: a sessão não abre. A identidade vem do settings.local.json
 # (--setting-sources local), que a sessão carrega inteiro: por isso o hash dele também é fixado [auditoria Codex
@@ -19,6 +19,7 @@ CLAUDE_ORIGEM_HASH='{{CLAUDE_ORIGEM_HASH}}'
 PERFIL_SHA256='{{PERFIL_SHA256}}'
 HOOK_CAMINHO_SHA256='{{HOOK_CAMINHO_SHA256}}'
 HOOK_IDENTIDADE_SHA256='{{HOOK_IDENTIDADE_SHA256}}'
+HOOK_SINAIS_SHA256='{{HOOK_SINAIS_SHA256}}'
 LOCAL_SHA256='{{LOCAL_SHA256}}'
 SKILL_MD='{{SKILL_MD}}'
 PERFIL="$RAIZ/.claude/settings.wsl.json"
@@ -43,6 +44,7 @@ confere "$CLAUDE_BIN" "$CLAUDE_SHA256" "o Claude Code $CLAUDE_VERSAO fixado"
 confere "$PERFIL" "$PERFIL_SHA256" "o perfil do WSL (.claude/settings.wsl.json)"
 confere "$RAIZ/.claude/hooks/guarda_caminho.py" "$HOOK_CAMINHO_SHA256" "o hook guarda_caminho.py"
 confere "$RAIZ/.claude/hooks/guarda_identidade.py" "$HOOK_IDENTIDADE_SHA256" "o hook guarda_identidade.py"
+confere "$RAIZ/.claude/hooks/sinais_sessao.py" "$HOOK_SINAIS_SHA256" "o hook sinais_sessao.py"
 confere "$LOCAL" "$LOCAL_SHA256" "a identidade do titular (.claude/settings.local.json)"
 # O titular fixado aqui tem de ser o do settings.local.json (o preparo só fixa o arquivo com a identidade dele).
 PRINCIPAL_LOCAL=$(grep -o '"FUNDACAO_PRINCIPAL"[[:space:]]*:[[:space:]]*"[^"]*"' "$LOCAL" |

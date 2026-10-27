@@ -36,6 +36,21 @@
     "DISABLE_AUTOUPDATER": "1"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3",
+            "args": ["-I", "-B", "{{HOOK_SINAIS}}"],
+            "timeout": 3,
+            "onFailure": "block",
+            "statusMessage": "sinais_sessao: lembrando a retomada após compactação"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
@@ -65,6 +80,7 @@
       }
     ]
   },
+  "statusLine": {"type": "command", "command": "{{STATUS_SINAIS}}"},
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,

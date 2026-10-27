@@ -302,6 +302,26 @@ def hooks(perfil: Path, raiz: Path | None, nao_lidos: list | None = None) -> lis
     return out
 
 
+def status_lines(perfil: Path, raiz: Path | None) -> list[dict]:
+    """Presenca, tipo e impressao do comando; nunca grava o comando, seus argumentos ou sua saida."""
+    arquivos = [("perfil", perfil / ".claude/settings.json")]
+    if raiz:
+        arquivos += [("raiz", raiz / ".claude" / n) for n in ("settings.json", "settings.local.json", "settings.wsl.json")]
+    out = []
+    for origem, arquivo in arquivos:
+        onde = f"{origem}:{arquivo.name}"
+        dados = ler_json(arquivo, PLUGINS.FORMAS["settings.json"]) or {}
+        presente = "statusLine" in dados
+        sinal = dados.get("statusLine")
+        sinal = sinal if isinstance(sinal, dict) else {}
+        comando = sinal.get("command")
+        tipo = "command" if sinal.get("type") == "command" else "invalido" if presente else None
+        out.append({"origem": onde, "presente": presente, "tipo": tipo,
+                    "comando_sha256": hashlib.sha256(comando.encode("utf-8", "surrogatepass")).hexdigest()
+                    if isinstance(comando, str) else None})
+    return out
+
+
 def inventario(perfil: Path, raiz: Path | None) -> dict:
     lista = skills(perfil, raiz)
     dentro = PLUGINS.ler(perfil, nome_do_executavel, _mcp)  # um só lugar decide o que sai de comando e de MCP
@@ -313,6 +333,7 @@ def inventario(perfil: Path, raiz: Path | None) -> dict:
            "skills": lista, "duplicatas": duplicatas(lista), "plugins": plugins(perfil) + dentro["sincronizados"],
            "catalogos": catalogos(perfil, nao_lidos), "mcp": mcp(perfil, raiz, nao_lidos) + dentro["mcp"],
            "hooks": hooks(perfil, raiz, nao_lidos) + dentro["hooks"], "skills_de_plugins": dentro["skills"],
+            "status_lines": status_lines(perfil, raiz),
            "arquivos_nao_lidos": nao_lidos,
            "custo_de_contexto_estimado": {
                "skills_de_plugins": sum(s["skills"] for s in dentro["skills"]), "caracteres_descricao": caracteres,
@@ -343,6 +364,7 @@ def matcher_na_chave(h: dict) -> str:
 FORMA_DO_INVENTARIO = {"perfil": str, "raiz": str, "skills": [{"local": str}], "plugins": [{"id": str}],
                        "catalogos": [{"nome": str}], "mcp": [{"cliente": str, "onde": str, "nome": str}],
                        "hooks": [{"origem": str, "evento": str}], "skills_de_plugins": [{"origem": str}],
+                       "status_lines": [{"origem": str, "presente": None, "tipo": str, "comando_sha256": str}],
                        "plugins_nao_lidos": [{"origem": str, "motivo": str, "sha256": str}],
                        "arquivos_nao_lidos": [{"origem": str, "motivo": str, "sha256": str}]}
 
@@ -358,6 +380,7 @@ def chaves(inv: dict) -> dict:
             "catalogos": {f"{c.get('nome')}": c for c in inv.get("catalogos") or []},
             "mcp": {f"{m.get('cliente')}|{m.get('onde')}|{m.get('nome')}": m for m in inv.get("mcp") or []},
             "hooks": hooks_por_chave,
+            "status_lines": {s["origem"]: s for s in inv.get("status_lines") or []},
             "skills_de_plugins": {f"{s.get('origem')}": s for s in inv.get("skills_de_plugins") or []},
             # o SHA-256 do arquivo não lido entra na chave: qualquer mudança nele aparece (quarta passada, R177D-3)
             "plugins_nao_lidos": {f"{n.get('origem')}|{n.get('item')}|{n.get('motivo')}|{n.get('sha256')}": n
@@ -424,13 +447,17 @@ def main(argv: list | None = None) -> int:
     agora = inventario(perfil, raiz)
     dif = diferencas(antes, agora)
     mudou = any(lista for cat in dif.values() for lista in cat.values())
-    saida = {"ok": not mudou, "diferencas": dif, "alertas": ALERTAS.resumo(agora["alertas"])}
+    pendente = "status_lines" not in antes
+    saida = {"ok": not mudou and not pendente, "diferencas": dif, "alertas": ALERTAS.resumo(agora["alertas"])}
+    if pendente:
+        saida.update({"conferencia_pendente": True,
+                      "motivo": "inventario anterior sem statusLine; confira e regrave o inventario"})
     if antes.get("schema_version") != ESQUEMA:
         saida["aviso"] = (f"inventário gravado no esquema {antes.get('schema_version')}: as diferenças mostram "
                           "também o que o esquema 2 passou a ver (hooks, MCP e skills dos plugins); confira e "
                           "regrave com gravar --substituir")
     print(json.dumps(saida, ensure_ascii=False, indent=1))
-    return 1 if mudou else 0
+    return 1 if mudou or pendente else 0
 
 
 if __name__ == "__main__":

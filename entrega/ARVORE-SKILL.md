@@ -1,6 +1,6 @@
 # Árvore da skill e finalidade de cada componente
 
-Raiz: `fundacao-ia-multiprojetos/` · 269 arquivos. Pastas com muitos arquivos de mesma natureza são descritas uma vez. `evals/` fica fora do pacote `.skill` (vai no pacote completo).
+Raiz: `fundacao-ia-multiprojetos/` · 290 arquivos. Pastas com muitos arquivos de mesma natureza são descritas uma vez. `evals/` fica fora do pacote `.skill` (vai no pacote completo).
 
 | Caminho | Finalidade |
 |---|---|
@@ -10,15 +10,20 @@ Raiz: `fundacao-ia-multiprojetos/` · 269 arquivos. Pastas com muitos arquivos d
 | `assets/fundacao-kit/fundacao/__init__.py` | Versão do kit. |
 | `assets/fundacao-kit/fundacao/__main__.py` | CLI da fundação (init, status, projeto, tarefa, decisao, componente, acl, eventos, backup). |
 | `assets/fundacao-kit/fundacao/adapters/` (4 arquivos) | Adaptadores de provedores: contrato base, simulado (rotulado) e CLIs Claude/Codex (código presente, não executado). |
+| `assets/fundacao-kit/fundacao/cli_backup.py` | Entrada dos comandos de backup e do modo estrito, com autorização da fundação viva antes da leitura e recuperação de desastre autenticada. |
+| `assets/fundacao-kit/fundacao/cli_copias.py` | Prepara e registra assinaturas do titular no livro de cópias; não assina pelo executor. |
+| `assets/fundacao-kit/fundacao/cli_memoria.py` | Operações de memória e consulta de lições pela identidade do lançador e autorização do serviço. |
 | `assets/fundacao-kit/fundacao/components/` (2 arquivos) | Componentes substituíveis registrados (exemplo: manifesto de fontes). |
-| `assets/fundacao-kit/fundacao/core/` (28 arquivos) | Núcleo do kit de referência (Python + SQLite): banco e migrações, identidade e ACL, projetos, tarefas/orquestração, componentes, memória, conhecimento (GOLD/RAG), cache, uso, backup, rotas (política validada ao carregar), eventos e decisões assinadas do titular. |
+| `assets/fundacao-kit/fundacao/core/` (33 arquivos) | Núcleo do kit de referência (Python + SQLite): banco e migrações, identidade e ACL, projetos, tarefas/orquestração, componentes, memória, conhecimento (GOLD/RAG), cache, uso, backup, rotas (política validada ao carregar), eventos e decisões assinadas do titular. |
 | `assets/fundacao-kit/fundacao/mcp_servidor.py` | Servidor MCP de leitura da fundação (listar_projetos, listar_documentos, buscar) pela camada de autorização. |
 | `assets/fundacao-kit/registry/` (3 arquivos) | Registro de componentes (desligados por padrão), política de rotas e política de decisões. |
 | `assets/fundacao-kit/templates/project/` (3 arquivos) | Modelo de projeto (instruções, contrato de entregas, exemplo fictício). |
-| `assets/fundacao-kit/tests/` (48 arquivos) | Suíte de conformidade (testes positivos e negativos, incluídas as regressões da auditoria externa da 1.3.4 em test_auditoria_*.py, as da auditoria final da 1.4.2 em test_auditoria_final_1_4_2.py, as da 1.5.0 em test_auditoria_1_5_0_*.py, as decisões assinadas em test_decisoes*.py, na 1.7.0, fronteiras do código, canários das falhas, política de rotas e configuração decidida e, na 1.7.7, as da auditoria Codex Security da 1.7.6 em test_auditoria_1_7_6_*.py e test_auditoria_1_7_7_*.py e as da revisão de segurança em test_revisao_1_7_7*.py; até 5 pulados: links simbólicos que o sistema não permite criar, por falta de privilégio no Windows ou em volume exFAT, e o ensaio do comando de assinatura no bash, que só roda no Linux ou no WSL). |
+| `assets/fundacao-kit/tests/` (52 arquivos) | Suíte de conformidade (testes positivos e negativos, incluídas as regressões da auditoria externa da 1.3.4 em test_auditoria_*.py, as da auditoria final da 1.4.2 em test_auditoria_final_1_4_2.py, as da 1.5.0 em test_auditoria_1_5_0_*.py, as decisões assinadas em test_decisoes*.py, na 1.7.0, fronteiras do código, canários das falhas, política de rotas e configuração decidida e, na 1.7.7, as da auditoria Codex Security da 1.7.6 em test_auditoria_1_7_6_*.py e test_auditoria_1_7_7_*.py e as da revisão de segurança em test_revisao_1_7_7*.py; até 5 pulados: links simbólicos que o sistema não permite criar, por falta de privilégio no Windows ou em volume exFAT, e o ensaio do comando de assinatura no bash, que só roda no Linux ou no WSL). |
 | `assets/hooks/guarda_caminho.py` | Hook preventivo (PreToolUse) que nega escrita fora do projeto autenticado e ferramentas MCP não liberadas; falha fechada. |
 | `assets/hooks/guarda_identidade.py` | Hook PreToolUse (Bash/PowerShell) do regime de dados reais: nega troca de FUNDACAO_PRINCIPAL pela sessão; falha fechada. |
+| `assets/hooks/sinais_sessao.py` | Lembrete de compactação e linha de status com metadados da sessão, sem ler conteúdo do projeto. |
 | `assets/host/preparo_host.py` | Ajudante (biblioteca padrão): gera settings.json, settings.wsl.json e settings.local.json pelos modelos, normaliza o /etc/wsl.conf e monta o lançador; nega skills aninhadas por nome e entrega o projeto autenticado. |
+| `assets/host/` (7 arquivos) | Preparo do host para dados reais (Windows e WSL2): scripts que o titular roda no próprio terminal, modelos de perfil e o ajudante que os preenche. |
 | `assets/host/windows/preparar-maquina.ps1` | PowerShell do titular: chave das decisões, âncora allowed_signers com dono Administradores e herança cortada (UAC só aí), hooks e perfis em <raiz>/.claude; simulação, -SemUAC e relatório JSON. |
 | `assets/host/windows/settings.json` | Modelo do perfil das sessões do Windows: negações de segredos e de state/, pastas data/ fora das instruções, MCP do aplicativo e os dois hooks. |
 | `assets/host/wsl/abrir-sessao.sh` | Modelo do lançador: confere Claude Code, perfil e hooks pelo hash, a identidade e a interoperabilidade desligada; abre com o prompt de retomada. |
@@ -33,6 +38,7 @@ Raiz: `fundacao-ia-multiprojetos/` · 269 arquivos. Pastas com muitos arquivos d
 | `evals/fixtures/legado-incompativel/` (2 arquivos) | Sistema fictício incompatível (caminho absoluto, escape, credencial, rede). |
 | `evals/fixtures/legado-squad/` (15 arquivos) | Projeto legado fictício (squad de petições) com defeitos didáticos para o Fluxo B. |
 | `evals/isolamento.py` | Alarme de isolamento (gabarito, caso, braço e frase de expectativa fora do alcance do executor), cópia da skill sem evals/, impressão dos ambientes dos braços e hash da skill. |
+| `evals/juiz_codex.py` | P7 local: prepara pacote cego com limites, valida notas e gera recibo de concordância; sem execução de modelo. |
 | `evals/livro_avaliacoes.py` | Livro-caixa das rodadas reais de avaliação: autorização, teto (a partida interrompida conta), modelo e custo lidos do rastro e validade do resultado para o texto atual da skill. |
 | `evals/medidas_do_rastro.py` | Modelo, custo informado pelo cliente, turnos, duração e consumo de uma partida, lidos do rastro stream-json do claude -p com a regra do kit (ausente = unknown). |
 | `evals/partidas_da_bancada.py` | Partidas do livro-caixa amarradas às execuções da bancada: execução sem partida concluída que confira não é cegada nem contada. |
@@ -41,6 +47,7 @@ Raiz: `fundacao-ia-multiprojetos/` · 269 arquivos. Pastas com muitos arquivos d
 | `evals/resumo_k.py` | pass@k e pass^k a partir das notas por execução; avaliação de segurança só passa com pass^k. |
 | `evals/trigger-evals.json` | 20 consultas de acionamento (10 devem acionar, 10 não). |
 | `evals/verificar_execucoes.py` | Coleta fatos objetivos de todas as execuções (run-*) de cada braço (origem intacta, vazamentos, banco, ACL, acesso ao gabarito no trace e, em E7/E9, acessos ao outro projeto; em E11, fundação inalterada e relatório privado; em E13, backups apagados, novos e ensaios de restauração); recolhe as saídas da área do executor. |
+| `references/atualizacao-1.7.9.md` | Compatibilidade da migração 5, retorno por cópia anterior e adoção explícita do livro assinado. |
 | `references/autonomia-e-escalonamento.md` | Quando decidir sozinho, preparar e pedir decisão ou bloquear; formato de pergunta e de bloqueio. |
 | `references/capacidades/01-orquestracao.md` | Orquestração: escolha de framework × própria, estados, checkpoints, recibos, retomada, cancelamento, decisão humana. |
 | `references/capacidades/02-agentes-subagentes.md` | Agentes e subagentes: papéis, contratos, orçamento, contexto autorizado, paralelismo em ondas e divergências. |
@@ -99,5 +106,6 @@ Raiz: `fundacao-ia-multiprojetos/` · 269 arquivos. Pastas com muitos arquivos d
 | `scripts/registro_atualizacao.py` | Apoio do atualizador: registro e âncora da atualização e o desfazer (só registro ancorado, nas áreas de código, com o código ainda igual ao que a atualização deixou). |
 | `scripts/retomada.py` | Cria, valida e arquiva o registro de retomada (campos mínimos, avisos de tamanho, histórico arquivado conferido por hash). |
 | `scripts/sinais_compatibilidade.py` | Sinais objetivos de compatibilidade (caminho absoluto, escape, credencial, rede, dependências) e classe sugerida. |
-| `scripts/tests/` (57 arquivos) | Testes dos scripts da skill (instalação e atualização do kit, caracterização, manifesto, backup SQLite, matriz, retomada, inventário, hooks, conformidade com configuração local, referências das decisões, preparo do host em PowerShell e bash reais e, na 1.7.0, instruções da raiz e aninhadas, inventário do host, catraca e órfãos da atualização e comandos citados), em pastas descartáveis; rodar com python -B -m unittest discover -s scripts/tests -t scripts/tests. |
+| `scripts/tests/` (61 arquivos) | Testes dos scripts da skill (instalação e atualização do kit, caracterização, manifesto, backup SQLite, matriz, retomada, inventário, hooks, conformidade com configuração local, referências das decisões, preparo do host em PowerShell e bash reais e, na 1.7.0, instruções da raiz e aninhadas, inventário do host, catraca e órfãos da atualização e comandos citados), em pastas descartáveis; rodar com python -B -m unittest discover -s scripts/tests -t scripts/tests. |
+| `scripts/verificar_fundacao.py` | Conferências de rotina com preflight de leitura, estados explícitos e saída nova sem sobrescrita. |
 | `scripts/verificar_referencias.py` | Confere links e caminhos citados pela skill e os comandos citados contra o argparse dos scripts. |

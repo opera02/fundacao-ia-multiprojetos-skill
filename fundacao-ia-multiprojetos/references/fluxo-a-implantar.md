@@ -343,7 +343,7 @@ python <skill>/scripts/atualizar_fundacao.py desfazer --registro <arq>  # volta 
 # Códigos: 0 composição verificada · 3 incompleta (conflito; --manter-conflitos = estado misto registrado)
 #          4 ligação/junção para fora do destino (nada escrito) · 5 falha na promoção (desfeita; com
 #          `desfeito: false` o retorno também falhou: siga `erros` e `acao_necessaria`)
-cd <raiz>
+# Os comandos abaixo rodam com a raiz como pasta atual, sem mudar a do shell (SKILL.md §1): ( cd <raiz> && ... )
 python -m fundacao init --admin <id-titular>      # estado, 1º administrador e registro de retiradas com identidade
 # Identidade com dados reais: o lançador define FUNDACAO_PRINCIPAL antes da sessão (PowerShell: $env:FUNDACAO_PRINCIPAL="<id>").
 # No laboratório (dados fictícios), use a identidade declarada pelo usuário e registre a origem (SKILL.md §7).
@@ -357,6 +357,8 @@ python -m fundacao decisao registrar --arquivo <decisão>    # confere a assinat
 python -m fundacao tarefa concluir --decisao <aceite>       # só o aceite válido, registrado e mais recente conclui
 python -m fundacao decisao conferir-ancora                  # sonda a âncora sem alterar; desprotegida = código 3
 python -m fundacao status                          # recortado pela identidade
+python -m fundacao conhecimento listar --projeto <p>                # catálogo, pela autorização da fundação
+python -m fundacao conhecimento buscar --projeto <p> --consulta "..."  # trechos aprovados; negativa = access_denied
 python -m fundacao componente listar | habilitar --id source_manifest
 python -m fundacao eventos verificar
 python -m fundacao eventos exportar --destino <raiz>/evidence/eventos.jsonl      # audit ou admin na fundação

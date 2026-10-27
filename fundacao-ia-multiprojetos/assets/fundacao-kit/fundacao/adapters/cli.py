@@ -66,6 +66,7 @@ import tempfile
 
 from ..core import usage as usage_mod
 from ..core.contracts import LimiteExcedido
+from ..core.modelos_tarefa import flags_do_modelo, texto_do_saldo
 from ..core.processo import executar as _processo  # executor de árvore com prazo e teto (testes o substituem aqui)
 from .base import ProviderRequest, ProviderResult, Timer, build_prompt
 
@@ -130,13 +131,16 @@ def parse_claude_json(stdout: str) -> dict:
     data = json.loads(stdout)
     if not isinstance(data, dict):
         raise ValueError("saída JSON inesperada do claude -p")
+    modelos = data.get("modelUsage") or {}
+    modelos = list(modelos) if isinstance(modelos, dict) else []
     return {
         "text": data.get("result", ""),
         "is_error": bool(data.get("is_error", False)),
         "call_id": data.get("session_id", "unknown"),
         "usage": data.get("usage") or {},
         "cost_usd": data.get("total_cost_usd"),
-        "model": next(iter((data.get("modelUsage") or {}).keys()), "unknown"),
+        "model": modelos[0] if len(modelos) == 1 else "unknown",
+        "models_observed": modelos,
     }
 
 
@@ -180,8 +184,8 @@ class ClaudeCLIProvider:
                 "--tools", "", "--disallowedTools", "mcp__*", "--strict-mcp-config", "--restricted",
                 "--max-turns", "1", "--no-session-persistence", "--permission-prompts", "none"]
         if self.max_budget_usd is not None:
-            args += ["--max-budget-usd", f"{max(self.max_budget_usd, 0):.2f}"]
-        return args + self.extra_args
+            args += ["--max-budget-usd", texto_do_saldo(self.max_budget_usd)]
+        return args + self.extra_args + flags_do_modelo(self.provider_id, request, self.extra_args)
 
     def call(self, request: ProviderRequest) -> ProviderResult:
         exe = shutil.which(self.executable)
@@ -204,7 +208,9 @@ class ClaudeCLIProvider:
             state="failed" if parsed["is_error"] else "succeeded", text=parsed["text"],
             model=parsed["model"], call_id=parsed["call_id"], duration_ms=ms,
             usage=usage_mod.normalize("claude-cli", parsed["usage"], route=self.route,
-                                      run_id=request.run_id, duration_ms=ms, cost_usd=parsed["cost_usd"]),
+                                      run_id=request.run_id, duration_ms=ms, cost_usd=parsed["cost_usd"],
+                                      model=parsed["model"], model_requested=request.model,
+                                      effort_requested=request.effort),
         )
 
 
@@ -227,7 +233,8 @@ class CodexCLIProvider:
         # Sandbox somente leitura, sem persistir sessão, sem config.toml do usuário (servidores MCP)
         # nem regras .rules, sem exigir repositório Git; `-` = instruções pela entrada padrão.
         return [exe, "exec", "--json", "--sandbox", "read-only", "--ephemeral", "--ignore-user-config",
-                "--ignore-rules", "--skip-git-repo-check", *self.extra_args, "-"]
+                "--ignore-rules", "--skip-git-repo-check", *self.extra_args,
+                *flags_do_modelo(self.provider_id, request, self.extra_args), "-"]
 
     def call(self, request: ProviderRequest) -> ProviderResult:
         if not self.isolamento_leitura:
@@ -256,5 +263,6 @@ class CodexCLIProvider:
             provider_id=self.provider_id, route=self.route, state=state, text=parsed["text"],
             call_id=parsed["call_id"], duration_ms=ms, diagnostic=parsed["failed"] or "",
             usage=usage_mod.normalize("codex-cli", parsed["usage"], route=self.route,
-                                      run_id=request.run_id, duration_ms=ms),
+                                      run_id=request.run_id, duration_ms=ms, model_requested=request.model,
+                                      effort_requested=request.effort),
         )

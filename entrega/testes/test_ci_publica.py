@@ -6,6 +6,7 @@ biblioteca padrão não tem YAML)."""
 
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from pathlib import Path
@@ -34,7 +35,11 @@ class TestCIPublica(unittest.TestCase):
     def test_duas_plataformas_cinco_rodadas_python_3_12(self):
         self.assertRegex(self.texto, r"os:\s*\[windows-latest,\s*ubuntu-latest\]")
         self.assertRegex(self.texto, r"rodada:\s*\[1,\s*2,\s*3,\s*4,\s*5\]")
-        self.assertIn('python-version: "3.12"', self.texto)
+        versao = re.search(r'python-version:\s*"([^"]+)"', self.texto).group(1)
+        self.assertRegex(versao, r"^3\.12\.\d+$")  # release exata, sem alias mutável da série
+        pins = json.loads((RAIZ / "fundacao-ia-multiprojetos/assets/host/windows/pins-python.json")
+                          .read_text(encoding="utf-8"))["pins"]
+        self.assertIn(versao, {p["python_version"] for p in pins})
         self.assertIn("fail-fast: false", self.texto)
 
     def test_as_verificacoes_seguintes_rodam_mesmo_depois_de_uma_falha(self):

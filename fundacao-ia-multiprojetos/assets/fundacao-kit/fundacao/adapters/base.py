@@ -26,6 +26,8 @@ class ProviderRequest:
     objective: str
     context: list[dict] = field(default_factory=list)  # [{id, sha256, text}] já autorizados
     max_seconds: int = 120
+    model: str | None = None  # pedido da política; não prova o modelo observado
+    effort: str | None = None
 
 
 @dataclass

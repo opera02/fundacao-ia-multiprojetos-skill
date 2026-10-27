@@ -4,7 +4,9 @@
 O banco vem de quem foi avaliado (auditoria 1.5.0, achado 5): o esquema pode trazer visão que não termina, tabela
 virtual, gatilho ou coluna gerada que consome tempo e memória. Revisão de segurança da 1.7.7 (R177-VAL-09): um
 `event` plantado como visão recursiva travava a coleta. Aqui:
-- o banco abre somente leitura (URI `mode=ro`), com `query_only` e `trusted_schema=OFF` (função não inócua não roda
+- banco e auxiliares passam pela guarda de arquivos e são copiados para temporário privado; nenhum caminho
+  avaliado é entregue ao SQLite. Exige executor encerrado e árvore quieta; não é isolamento de SO da mesma conta;
+- a cópia abre somente leitura (URI `mode=ro`), com `query_only` e `trusted_schema=OFF` (função não inócua não roda
   a partir do esquema);
 - maior texto ou blob que uma consulta pode montar: `TETO_VALOR` bytes;
 - tempo limite por banco aberto (`LIMITE_S`), conferido a cada `PASSOS` instruções do SQLite
@@ -17,6 +19,7 @@ virtual, gatilho ou coluna gerada que consome tempo e memória. Revisão de segu
 from __future__ import annotations
 
 import re
+import importlib.util
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -26,6 +29,10 @@ LIMITE_S = 5.0
 PASSOS = 1000
 TETO_VALOR = 10_000_000
 CREATE_VIRTUAL = re.compile(r"\s*CREATE(?:\s|/\*.*?\*/|--[^\n]*\n)+VIRTUAL\b", re.IGNORECASE | re.DOTALL)
+
+_spec = importlib.util.spec_from_file_location('_leitura_do_banco_avaliado', Path(__file__).with_name('leitura_avaliada.py'))
+leitura = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(leitura)
 
 
 def uri_somente_leitura(caminho: Path) -> str:
@@ -39,18 +46,21 @@ def uri_somente_leitura(caminho: Path) -> str:
 
 
 @contextmanager
-def aberto(caminho: Path):
+def aberto(caminho: Path, *, raiz: Path | None = None):
     """Conexão somente leitura, sem confiar no esquema e com tempo limite (o limite começa a contar aqui)."""
-    con = sqlite3.connect(uri_somente_leitura(caminho), uri=True)
-    try:
-        prazo = time.monotonic() + LIMITE_S
-        con.set_progress_handler(lambda: int(time.monotonic() > prazo), PASSOS)
-        con.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, TETO_VALOR)
-        con.execute("PRAGMA trusted_schema = OFF")
-        con.execute("PRAGMA query_only = ON")
-        yield con
-    finally:
-        con.close()
+    # A raiz padrão é lexical; mesmo no uso isolado todos os ancestrais são
+    # conferidos. Nunca resolver o caminho avaliado antes da guarda.
+    with leitura.copia_banco(raiz if raiz is not None else Path(caminho).parent, caminho) as privado:
+        con = sqlite3.connect(uri_somente_leitura(privado), uri=True)
+        try:
+            prazo = time.monotonic() + LIMITE_S
+            con.set_progress_handler(lambda: int(time.monotonic() > prazo), PASSOS)
+            con.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, TETO_VALOR)
+            con.execute("PRAGMA trusted_schema = OFF")
+            con.execute("PRAGMA query_only = ON")
+            yield con
+        finally:
+            con.close()
 
 
 def nao_tabelas(con: sqlite3.Connection, nomes: tuple[str, ...]) -> list[str]:

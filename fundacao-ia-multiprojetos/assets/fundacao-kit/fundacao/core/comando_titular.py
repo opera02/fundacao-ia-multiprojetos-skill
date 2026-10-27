@@ -84,13 +84,17 @@ def _aspas_bash(texto: str) -> str:
     return "'" + texto.replace("'", "'" + chr(92) + "''") + "'"
 
 
-def comando_para_o_titular(decisao, *, assinante: str, ancora, shell: str | None = None, chave=None) -> dict:
+def comando_para_o_titular(decisao, *, assinante: str, ancora, shell: str | None = None, chave=None,
+                          namespace: str | None = None) -> dict:
     """Comandos prontos para copiar, no shell em que o titular vai rodar (references/comunicacao-leigo.md §3):
     `assinar` pede a senha da chave e grava `<decisão>.sig`; `conferir` repete `ssh-keygen -Y verify` contra a
     âncora, sem depender do kit. O ssh-keygen vai pelo caminho do sistema. `chave` só para ensaio: o padrão é a chave
     do titular em ~/.ssh/fundacao_titular."""
     from .decisoes import (CHAVE_DO_TITULAR, NAMESPACE, SSH_KEYGEN_WINDOWS,  # tardio: decisoes importa este módulo
                            DecisaoInvalida, ssh_keygen_do_sistema)
+    NAMESPACE = namespace or NAMESPACE
+    if NAMESPACE not in {"fundacao-decisao", "fundacao-copia"}:
+        raise DecisaoInvalida("namespace de assinatura não suportado")
     shell = shell or shell_padrao()
     if shell not in SHELLS:
         raise DecisaoInvalida("shell deve ser um de " + ", ".join(SHELLS), shell=shell)

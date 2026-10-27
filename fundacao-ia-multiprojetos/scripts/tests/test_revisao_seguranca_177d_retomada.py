@@ -32,6 +32,29 @@ class TestRetomadaDeNomeProtegidoOuVinculo(_Fundacoes):
     def conteudo(self) -> str:
         return self.texto_retomada([], [f"- Item {SEGREDO}: não deveria ser copiado"])
 
+    def test_d2_area_protegida_nao_revela_existencia_tamanho_nem_copia(self):
+        raiz = self.fundacao("fundacao-ficticia")
+        for relativo in ("state", "projects/outro-projeto/data"):
+            pasta = raiz / relativo
+            pasta.mkdir(parents=True, exist_ok=True)
+            arq = pasta / "RETOMADA.md"
+            arq.write_text(self.conteudo(), encoding="utf-8")
+            antes = sha_de(arq)
+            for acao in ("validar", "arquivar"):
+                respostas = []
+                for alvo in (arq, pasta / "AUSENTE.md"):
+                    with self.subTest(pasta=relativo, acao=acao, arquivo=alvo.name):
+                        extras = ("--historico", pasta / "hist") if acao == "arquivar" else ()
+                        codigo, res, saida = self.json_de("retomada.py", acao, "--arquivo", alvo, *extras)
+                        respostas.append(res)
+                        self.assertEqual(codigo, 1, res)
+                        self.assertNotIn(SEGREDO, saida)
+                        self.assertNotIn("tamanho", res)
+                        self.assertIn("nada foi lido", res["erro"])
+                self.assertEqual(respostas[0], respostas[1], "a resposta revela existência ou tamanho")
+            self.assertEqual(sha_de(arq), antes)
+            self.assertFalse((pasta / "hist").exists())
+
     def test_nome_protegido_recusado_antes_de_ler_exista_ou_nao(self):
         comum = self.base / "comum"  # pasta sem raiz de fundação acima
         comum.mkdir()

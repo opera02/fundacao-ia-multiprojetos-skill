@@ -189,7 +189,7 @@ def ssh_keygen() -> str:
     return exe
 
 
-def verificar_assinatura(arquivo, ancora, identidade: str, dados: bytes | None = None) -> dict:
+def verificar_assinatura(arquivo, ancora, identidade: str, dados: bytes | None = None, *, namespace: str = NAMESPACE) -> dict:
     """Assinatura `<arquivo>.sig` conferida contra a âncora, na identidade e no namespace da barreira. `dados`: os bytes
     da decisão que quem chama já leu e conferiu; o `ssh-keygen` confere esses bytes, e a assinatura é lida uma vez só
     (cópia numa pasta temporária): trocar os arquivos no meio não muda o que é conferido (revisão independente da 1.6.0)."""
@@ -208,8 +208,8 @@ def verificar_assinatura(arquivo, ancora, identidade: str, dados: bytes | None =
     except ValueError:
         return {**res, "motivo": "assinatura ilegível"}
     res.update(impressao_digital=campos["impressao_digital"], namespace=campos["namespace"])
-    if campos["namespace"] != NAMESPACE:
-        return {**res, "motivo": f"assinatura feita em outro namespace ({campos['namespace']}), não em {NAMESPACE}"}
+    if campos["namespace"] != namespace:
+        return {**res, "motivo": f"assinatura feita em outro namespace ({campos['namespace']}), não em {namespace}"}
     donos = [linha for linha in ler_ancora(ancora) if linha["impressao_digital"] == campos["impressao_digital"]]
     if not donos:
         return {**res, "motivo": "assinatura de uma chave que não está na âncora"}
@@ -219,7 +219,7 @@ def verificar_assinatura(arquivo, ancora, identidade: str, dados: bytes | None =
     with tempfile.TemporaryDirectory(prefix="fundacao-assinatura-") as pasta:
         copia = Path(pasta) / "decisao.sig"
         copia.write_bytes(bruto_sig)
-        r = subprocess.run([exe, "-Y", "verify", "-f", str(ancora), "-I", identidade, "-n", NAMESPACE,
+        r = subprocess.run([exe, "-Y", "verify", "-f", str(ancora), "-I", identidade, "-n", namespace,
                             "-s", str(copia)], input=dados, capture_output=True, timeout=30)
     res.update(ssh_keygen=exe, ssh_keygen_do_sistema=exe == ssh_keygen_do_sistema(),
                saida=(r.stdout + r.stderr).decode("utf-8", "replace").strip())

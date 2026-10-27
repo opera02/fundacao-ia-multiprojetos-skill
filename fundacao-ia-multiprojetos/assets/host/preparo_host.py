@@ -38,12 +38,14 @@ inválida (nada gravado).
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 import hashlib
 import json
 import ntpath
 import posixpath
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -52,7 +54,7 @@ MODELO_WINDOWS = AQUI / "windows" / "settings.json"
 MODELO_WSL = AQUI / "wsl" / "settings.wsl.json"
 MODELO_LANCADOR = AQUI / "wsl" / "abrir-sessao.sh"
 MODELO_HOOKS = AQUI.parent / "hooks"  # os hooks da skill, que o preparo do Windows copia para <raiz>/.claude/hooks
-HOOKS = ("guarda_caminho.py", "guarda_identidade.py")
+HOOKS = ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py")
 ANCORA_BASE_WSL = "/mnt/c/ProgramData/FundacaoIA"  # a pasta da âncora do Windows (allowed_signers), vista do WSL
 MONTAGEM = "/mnt/"  # [automount] root padrão do WSL
 IDENTIFICADOR = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$")
@@ -65,6 +67,7 @@ NOME_DE_SKILL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 EXCLUSAO_DE_DADOS = "**/projects/*/data/**"
 CHAVES_DO_LANCADOR = ("RAIZ", "PROJETO", "TITULAR", "CLAUDE_BIN", "CLAUDE_VERSAO", "CLAUDE_SHA256",
                       "CLAUDE_ORIGEM_HASH", "PERFIL_SHA256", "HOOK_CAMINHO_SHA256", "HOOK_IDENTIDADE_SHA256",
+                      "HOOK_SINAIS_SHA256",
                       "LOCAL_SHA256", "SKILL_MD")
 
 
@@ -163,14 +166,31 @@ def negar_skills(perfil: dict, nomes=()) -> dict:
 
 
 def perfil_windows(*, raiz: str, python: str, modelo: dict | None = None, negar=()) -> dict:
-    """`.claude/settings.json` da raiz (sessões do Windows): negações, MCP do aplicativo e os dois hooks."""
+    """`.claude/settings.json` da raiz: guardas, sinais após compactação e linha com projeto do lançador.
+    A geração prepara o perfil; só o preparo feito pelo titular o ativa no host."""
     if not ntpath.isabs(str(raiz)) or not ntpath.isabs(str(python)):
         raise EntradaInvalida("raiz e python precisam ser caminhos absolutos do Windows")
     raiz, python = ntpath.normpath(str(raiz)), ntpath.normpath(str(python))  # barras do Windows nos caminhos
     pasta = ntpath.join(raiz, ".claude", "hooks")
     valores = {"PYTHON": python, "HOOK_CAMINHO": ntpath.join(pasta, "guarda_caminho.py"),
-               "HOOK_IDENTIDADE": ntpath.join(pasta, "guarda_identidade.py")}
+               "HOOK_IDENTIDADE": ntpath.join(pasta, "guarda_identidade.py"),
+               "HOOK_SINAIS": ntpath.join(pasta, "sinais_sessao.py"),
+               "STATUS_SINAIS": comando_status_windows(python, ntpath.join(pasta, "sinais_sessao.py"))}
     return negar_skills(renderizar(modelo or ler_modelo(MODELO_WINDOWS), valores), negar)
+
+
+def comando_status_windows(python: str, hook: str) -> str:
+    """StatusLine usa shell (não args). EncodedCommand evita que os dois shells possíveis no Windows (Git Bash
+    e PowerShell) interpretem espaços, dólar, crase ou aspas dos caminhos. O comando codificado é só um argv fixo
+    para o interpretador conferido; não contém entrada JSON, dado de projeto ou segredo. Fonte: /docs/en/statusline.
+    PowerShell encaminha stdin ao processo nativo; o hook conserva seu prazo interno de leitura."""
+    def literal(caminho):
+        if any(c in caminho for c in ("\n", "\r", "\0")):
+            raise EntradaInvalida("caminho da linha de status com quebra de linha")
+        return "'" + caminho.replace("\\", "/").replace("'", "''") + "'"
+    texto = f"& {literal(python)} -I -B {literal(hook)} --status-line; exit $LASTEXITCODE"
+    codificado = base64.b64encode(texto.encode("utf-16le")).decode("ascii")
+    return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + codificado
 
 
 def perfil_wsl(*, raiz: str, projeto: str, perfil_windows: str, outros_projetos, backups=(), somente_leitura=(),
@@ -198,7 +218,10 @@ def _montar_perfil_wsl(raiz_wsl: str, perfil_windows: str, ancora_base: str, out
     """O modelo do WSL preenchido com caminhos já no formato do WSL (para gerar e para conferir)."""
     valores = {"RAIZ": raiz_wsl, "PERFIL_WINDOWS": perfil_windows, "ANCORA_BASE": ancora_base,
                "HOOK_CAMINHO": raiz_wsl + "/.claude/hooks/guarda_caminho.py",
-               "HOOK_IDENTIDADE": raiz_wsl + "/.claude/hooks/guarda_identidade.py"}
+               "HOOK_IDENTIDADE": raiz_wsl + "/.claude/hooks/guarda_identidade.py",
+               "HOOK_SINAIS": raiz_wsl + "/.claude/hooks/sinais_sessao.py",
+               "STATUS_SINAIS": "/usr/bin/python3 -I -B " + shlex.quote(raiz_wsl + "/.claude/hooks/sinais_sessao.py")
+                                + " --status-line"}
     listas = {"OUTROS_PROJETOS": list(outros), "BACKUPS": list(backups), "SOMENTE_LEITURA": list(somente_leitura)}
     return negar_skills(renderizar(modelo or ler_modelo(MODELO_WSL), valores, listas), negar)
 
@@ -301,11 +324,11 @@ def invariantes_perfil_wsl(perfil, raiz_wsl: str) -> list[str]:
         problemas.append("WebFetch e WebSearch liberados: saída de dados que o sandbox de rede não cobre")
     if EXCLUSAO_DE_DADOS not in _lista(perfil.get("claudeMdExcludes")):
         problemas.append("instruções de pastas de dados (CLAUDE.md, AGENTS.md) carregáveis: falta claudeMdExcludes")
-    comandos = [_objeto(h) for g in _lista(_objeto(perfil.get("hooks")).get("PreToolUse"))
+    comandos = [_objeto(h) for grupos in _objeto(perfil.get("hooks")).values() for g in _lista(grupos)
                 for h in _lista(_objeto(g).get("hooks"))]
     esperados = {raiz_wsl.rstrip("/") + "/.claude/hooks/" + n for n in HOOKS}
     if not esperados <= {a for h in comandos for a in _lista(h.get("args")) if isinstance(a, str)}:
-        problemas.append("hooks guarda_caminho e guarda_identidade da raiz ausentes")
+        problemas.append("hooks guarda_caminho, guarda_identidade e sinais_sessao da raiz ausentes")
     return problemas
 
 
@@ -478,7 +501,8 @@ def lancador(valores: dict, modelo: str | None = None) -> str:
     for k in ("RAIZ", "CLAUDE_BIN", "SKILL_MD"):
         if not str(valores[k]).startswith("/"):
             raise EntradaInvalida(f"{k} precisa ser caminho absoluto do Linux: {valores[k]!r}")
-    for k in ("CLAUDE_SHA256", "PERFIL_SHA256", "HOOK_CAMINHO_SHA256", "HOOK_IDENTIDADE_SHA256", "LOCAL_SHA256"):
+    for k in ("CLAUDE_SHA256", "PERFIL_SHA256", "HOOK_CAMINHO_SHA256", "HOOK_IDENTIDADE_SHA256",
+              "HOOK_SINAIS_SHA256", "LOCAL_SHA256"):
         if not SHA256.match(str(valores[k])):
             raise EntradaInvalida(f"{k} não é um SHA-256 em hexadecimal minúsculo: {valores[k]!r}")
     identificador(str(valores["PROJETO"]), "projeto")
@@ -533,6 +557,7 @@ def valores_conferidos(raiz, projeto: str, titular: str) -> dict:
     return {"TITULAR": titular, "PERFIL_SHA256": hashlib.sha256(perfil).hexdigest(),
             "HOOK_CAMINHO_SHA256": ganchos["guarda_caminho.py"],
             "HOOK_IDENTIDADE_SHA256": ganchos["guarda_identidade.py"],
+            "HOOK_SINAIS_SHA256": ganchos["sinais_sessao.py"],
             "LOCAL_SHA256": hashlib.sha256(local).hexdigest()}
 
 

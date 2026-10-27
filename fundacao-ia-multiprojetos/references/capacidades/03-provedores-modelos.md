@@ -81,6 +81,16 @@ medido, até a administração reconciliar — `rota gasto` lista `reservas_em_a
 Resposta de rota simulada sai como `succeeded_simulated`, nunca como `succeeded`.
 
 ## Implementação
+Na 1.7.9, a política `fundacao.route/2` acrescenta `task_models`: cada tipo de tarefa tem alvos ordenados
+com os campos exatos `route`, `provider_id`, `model` e `effort`. A ordem respeita `task_routes`; dois provedores
+podem compartilhar `cli_assinatura`. O tipo vem do fluxo autorizado, nunca de instrução em documento.
+O formato `/1` continua legível. A trilha separa modelo/esforço pedidos do modelo observado; modelo ausente
+continua `unknown`. As flags enviadas não comprovam o modelo que respondeu.
+Com teto financeiro, toda tentativa real exige mecanismo preventivo por chamada, mesmo no formato legado.
+Saldo e custo são comparados em Decimal. O limite do Claude usa estimativa do cliente e pode ser ultrapassado
+por chamada já iniciada; reserva antes do despacho não é garantia de fatura. Codex sem mecanismo financeiro
+preventivo é recusado nessa condição. Nenhuma dessas mudanças habilita rota ou promove R13.
+
 1. Contrato único de pedido/resultado: `project_id`, `task_id`, `provider_id`, rota,
    modelo informado pelo serviço (ou `unknown`), horário, duração, estado, texto/arquivo,
    identificador da chamada, consumo disponível [Livro p40].

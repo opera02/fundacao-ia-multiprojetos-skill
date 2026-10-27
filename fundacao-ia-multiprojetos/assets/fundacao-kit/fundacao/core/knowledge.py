@@ -27,6 +27,7 @@ from . import events, revisions
 from .auth import Policy, Principal, resource_case, resource_project
 from .canon import canonical_json, sha256_file, sha256_text
 from .contracts import NotFound, RevisionConflict, ValidationError
+from .citacoes import fonte_autorizada, verificar_citacao
 from .db import transaction, utcnow
 from .paths import contained, validate_id
 from .projects import verified_project_dir
@@ -118,19 +119,7 @@ class KnowledgeService:
         return len(rows)
 
     def _source(self, source_id: str, version: int) -> sqlite3.Row:
-        row = self.con.execute(
-            "SELECT * FROM source_version WHERE source_id = ? AND version = ?", (source_id, version)
-        ).fetchone()
-        if row is not None:
-            resource = self._resource(row["project_id"], row["case_id"])
-            if not self.policy.allowed(self.principal.principal_id, "read", resource):
-                # Fonte alheia responde igual a inexistente (não revela que existe); a sondagem fica registrada.
-                events.emit(self.con, "access_denied", subject=self.principal.principal_id,
-                            payload={"action": "read", "resource": resource, "source": self.principal.source})
-                row = None
-        if row is None:
-            raise NotFound("fonte não encontrada")
-        return row
+        return fonte_autorizada(self.con, self.policy, self.principal, source_id, version)
 
     # ------------------------------------------------------------ origem
     def register_source(self, project_id: str, source_id: str, version: int, rel_path: str,
@@ -353,23 +342,7 @@ class KnowledgeService:
     def verify_citation(self, chunk_id: str) -> dict:
         """Confere existência, vigência e acesso do trecho citado (o suporte semântico
         da afirmação continua exigindo revisão)."""
-        row = self.con.execute("SELECT * FROM chunk WHERE chunk_id = ?", (chunk_id,)).fetchone()
-        if row is not None and not self.policy.allowed(self.principal.principal_id, "read", row["resource"]):
-            events.emit(self.con, "access_denied", subject=self.principal.principal_id,
-                        payload={"action": "read", "resource": row["resource"], "source": self.principal.source})
-            row = None  # trecho alheio responde igual a inexistente
-        if row is None:
-            return {"chunk_id": chunk_id, "valid": False, "reason": "trecho inexistente ou sem acesso"}
-        src = self._source(row["source_id"], row["version"])
-        if src["status"] != "approved" or not src["is_current"]:
-            return {"chunk_id": chunk_id, "valid": False, "reason": f"fonte {src['status']}"}
-        if not src["approved_hash"] or src["prepared_hash"] != src["approved_hash"]:
-            return {"chunk_id": chunk_id, "valid": False, "reason": "aprovação de outro texto preparado"}
-        if self.con.execute("SELECT 1 FROM tombstone WHERE entity_id IN (?, ?)",
-                            (chunk_id, f"{row['source_id']}@{row['version']}")).fetchone():
-            return {"chunk_id": chunk_id, "valid": False, "reason": "retirada"}
-        return {"chunk_id": chunk_id, "valid": True, "citation": f"{row['source_id']}@{row['version']}, p. {row['page']}",
-                "body": row["body"]}
+        return verificar_citacao(self.con, self.policy, self.principal, self._source, chunk_id)
 
     # ------------------------------------------------------------ ciclo de vida
     def derived(self, entity_id: str) -> list[str]:

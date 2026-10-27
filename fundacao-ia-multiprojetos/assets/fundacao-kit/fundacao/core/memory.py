@@ -29,14 +29,14 @@ import re
 import sqlite3
 from pathlib import Path
 
-from . import events, revisions
+from . import events, licoes, memory_queries, revisions
 from .auth import Policy, Principal, resource_case, resource_project
 from .canon import sha256_text
 from .contracts import AccessDenied, NotFound, RevisionConflict, ValidationError
 from .db import transaction, utcnow
 from .ids import new_id
 
-KINDS = {"fato", "hipotese", "decisao", "preferencia", "procedimento"}
+KINDS = {"fato", "hipotese", "decisao", "preferencia", "procedimento", "licao"}
 ORIGINS = {"humano", "ia", "documento"}
 CHANGE_KINDS = {"correcao", "mudanca_decisao"}
 _ID_COM_VERSAO = re.compile(r"(.+)@([0-9]+)")
@@ -118,6 +118,7 @@ class MemoryService:
             raise ValidationError("memória sem origem é recusada; informe source_ref")
         if not body.strip():
             raise ValidationError("conteúdo vazio")
+        dados_licao = licoes.validar_proposta(kind, scope, project_id, case_id, body, source_ref, effective_from)
         resource = self._resource(scope, project_id, case_id)
         self.policy.require(self.principal, "write", resource)
         chave = f"{resource}::{op_id}"  # operação idempotente DENTRO do escopo
@@ -139,6 +140,7 @@ class MemoryService:
                 (memory_id, 1, body, digest, source_ref, "criação", "criacao",
                  self.principal.principal_id, now, "proposed", None, None),
             )
+            licoes.indexar(self.con, memory_id, 1, project_id, dados_licao)
             self.con.execute("INSERT INTO op_key VALUES (?,?,?,?)", (chave, "memory.propose", memory_id, now))
             events.emit(self.con, "memory_proposed", project_id=project_id, subject=self.principal.principal_id,
                         payload={"memory_id": memory_id, "scope": scope, "origin": origin})
@@ -214,30 +216,12 @@ class MemoryService:
     def query(self, *, project_id: str | None = None, case_id: str | None = None,
               include_common: bool = True, text: str | None = None) -> list[dict]:
         """Somente revisões vigentes aprovadas que a identidade pode ler."""
-        out = []
-        for row in self.con.execute(
-            "SELECT * FROM memory_item WHERE status = 'approved' ORDER BY recorded_at"
-        ).fetchall():
-            if row["scope"] == "common":
-                if not include_common:
-                    continue
-            elif row["project_id"] != project_id:
-                continue
-            if row["scope"] == "case" and row["case_id"] != case_id:
-                continue
-            resource = self._resource(row["scope"], row["project_id"], row["case_id"])
-            if not self.policy.allowed(self.principal.principal_id, "read", resource):
-                continue  # filtrado antes de qualquer entrega
-            if self.con.execute("SELECT 1 FROM tombstone WHERE entity_id = ?", (row["memory_id"],)).fetchone():
-                continue
-            if text and text.lower() not in row["body"].lower():
-                continue
-            out.append({
-                "memory_id": row["memory_id"], "revision": row["revision"], "scope": row["scope"],
-                "kind": row["kind"], "origin": row["origin"], "body": row["body"],
-                "source_ref": row["source_ref"], "approved_by": row["approved_by"],
-            })
-        return out
+        return memory_queries.consultar(self, project_id=project_id, case_id=case_id,
+                                        include_common=include_common, text=text)
+
+    def query_licoes(self, *, project_id: str, gatilho: str) -> list[dict]:
+        """Lições aprovadas vigentes, por gatilho autorizado do projeto."""
+        return memory_queries.consultar_licoes(self, project_id=project_id, gatilho=gatilho)
 
     def revise(self, memory_id: str, *, expected_revision: int, body: str, source_ref: str,
                reason: str, change_kind: str) -> int:
@@ -248,6 +232,7 @@ class MemoryService:
         row = self._row(memory_id)
         resource = self._resource(row["scope"], row["project_id"], row["case_id"])
         self.policy.require(self.principal, "write", resource)
+        dados_licao = licoes.validar(body, source_ref) if row["kind"] == "licao" else None
         with transaction(self.con):
             self.policy.recheck(self.principal, "write", resource)  # revogação no intervalo (auditoria #11)
             latest = self._latest_revision(memory_id)["revision"]
@@ -263,6 +248,7 @@ class MemoryService:
                 (memory_id, new_rev, body, sha256_text(body), source_ref, reason, change_kind,
                  self.principal.principal_id, now, "proposed", None, None),
             )
+            licoes.indexar(self.con, memory_id, new_rev, row["project_id"], dados_licao)
             for dep in self.con.execute(
                 "SELECT child_id FROM dependency WHERE parent_id = ?", (f"{memory_id}@{row['revision']}",)
             ).fetchall():

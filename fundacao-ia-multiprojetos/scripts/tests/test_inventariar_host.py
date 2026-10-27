@@ -74,6 +74,54 @@ class TestInventarioDoHost(unittest.TestCase):
         except ValueError:
             self.fail("saída não é JSON: " + p.stdout[-400:] + p.stderr[-400:])
 
+    def test_statusline_tem_presenca_tipo_hash_sem_expor_comando(self):
+        import hashlib
+        comando = "powershell.exe -Command SEGREDO-FICTICIO-STATUS"
+        cfg = self.raiz / ".claude/settings.json"
+        dados = json.loads(cfg.read_text(encoding="utf-8"))
+        dados["statusLine"] = {"type": "command", "command": comando}
+        cfg.write_text(json.dumps(dados), encoding="utf-8")
+        code, _ = self.rodar("gravar", "--saida", self.saida)
+        self.assertEqual(code, 0)
+        bruto = self.saida.read_text(encoding="utf-8")
+        self.assertNotIn("SEGREDO-FICTICIO-STATUS", bruto)
+        sinais = {s["origem"]: s for s in json.loads(bruto).get("status_lines", [])}
+        self.assertEqual(sinais.get("raiz:settings.json"), {
+            "origem": "raiz:settings.json", "presente": True, "tipo": "command",
+            "comando_sha256": hashlib.sha256(comando.encode()).hexdigest()})
+        self.assertEqual(sinais.get("perfil:settings.json"), {
+            "origem": "perfil:settings.json", "presente": False, "tipo": None, "comando_sha256": None})
+
+    def test_statusline_trocada_removida_ou_com_outro_tipo_aparece(self):
+        cfg = self.raiz / ".claude/settings.json"
+        original = json.loads(cfg.read_text(encoding="utf-8"))
+        original["statusLine"] = {"type": "command", "command": "python sinais_sessao.py --status-line"}
+        cfg.write_text(json.dumps(original), encoding="utf-8")
+        self.rodar("gravar", "--saida", self.saida)
+        for nova in ({"type": "command", "command": "powershell.exe OUTRO-COMANDO-FICTICIO"},
+                     {"type": "outro", "command": original["statusLine"]["command"]}, None):
+            with self.subTest(status=nova):
+                dados = dict(original)
+                if nova is None:
+                    dados.pop("statusLine")
+                else:
+                    dados["statusLine"] = nova
+                cfg.write_text(json.dumps(dados), encoding="utf-8")
+                code, res = self.rodar("verificar", "--inventario", self.saida)
+                self.assertEqual(code, 1, res)
+                self.assertEqual(res.get("diferencas", {}).get("status_lines", {}).get("alterados"),
+                                 ["raiz:settings.json"])
+
+    def test_inventario_anterior_sem_statusline_fica_pendente(self):
+        self.rodar("gravar", "--saida", self.saida)
+        antes = json.loads(self.saida.read_text(encoding="utf-8"))
+        antes.pop("status_lines", None)
+        self.saida.write_text(json.dumps(antes), encoding="utf-8")
+        code, res = self.rodar("verificar", "--inventario", self.saida)
+        self.assertEqual(code, 1, res)
+        self.assertIs(res.get("ok"), False)
+        self.assertIs(res.get("conferencia_pendente"), True)
+
     def test_gravar_inventaria_sem_segredos(self):
         code, res = self.rodar("gravar", "--saida", self.saida)
         self.assertEqual(code, 0, res)

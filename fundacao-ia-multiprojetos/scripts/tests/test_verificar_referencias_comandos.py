@@ -121,6 +121,39 @@ class TestComandosCitados(unittest.TestCase):
         self.assertEqual(res["comandos_com_problema"], [], "comandos citados que não rodam como escritos")
         self.assertGreater(res["comandos_conferidos"], 40)
 
+    def test_extensoes_da_cli_registradas_no_laco_sao_lidas(self):
+        # 1.7.9 (R179-37): subcomando de módulo de extensão (`for m in (...): m.registrar_parser(sub)`) é conferido;
+        # módulo fora do laço não vira subcomando.
+        with tempfile.TemporaryDirectory() as tmp:
+            pasta = Path(tmp)
+            (pasta / "principal.py").write_text(textwrap.dedent('''
+                import argparse
+
+
+                def montar():
+                    p = argparse.ArgumentParser()
+                    sub = p.add_subparsers(dest="cmd", required=True)
+                    sub.add_parser("status")
+                    from . import cli_a
+                    for modulo in (cli_a,):
+                        modulo.registrar_parser(sub).set_defaults(executor=modulo.executar)
+                    return p
+            '''), encoding="utf-8")
+            (pasta / "cli_a.py").write_text(textwrap.dedent('''
+                def registrar_parser(subparsers):
+                    p = subparsers.add_parser("conhecimento")
+                    p.add_argument("acao", choices=("listar", "buscar"))
+                    p.add_argument("--projeto", required=True)
+                    return p
+            '''), encoding="utf-8")
+            (pasta / "cli_fora.py").write_text(
+                'def registrar_parser(subparsers):\n    subparsers.add_parser("fora")\n', encoding="utf-8")
+            parser = vr.estrutura_argparse(pasta / "principal.py")
+        self.assertEqual(sorted(parser.subcomandos), ["conhecimento", "status"])
+        self.assertEqual(vr.conferir_comando(parser, ["conhecimento", "listar", "--projeto", "<p>"]), [])
+        self.assertEqual(vr.conferir_comando(parser, ["conhecimento", "ler"]), [("ler", "ação inexistente")])
+        self.assertEqual(vr.conferir_comando(parser, ["fora"]), [("fora", "subcomando inexistente")])
+
 
 if __name__ == "__main__":
     unittest.main()

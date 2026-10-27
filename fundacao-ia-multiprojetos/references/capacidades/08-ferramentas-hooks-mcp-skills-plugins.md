@@ -200,7 +200,8 @@ Procedimento [Livro p62–63; 3.0 R4.7–R4.13]:
 5. HTTP local: bind 127.0.0.1 e validação de `Origin`; remoto exige OAuth 2.1 (fora do
    laboratório). Endpoint FastAPI isolado ≠ servidor MCP [Livro p63].
 No kit: `fundacao/mcp_servidor.py` (ferramentas de leitura `listar_projetos`,
-`listar_documentos`, `buscar`, todas pela autorização da fundação; identidade do processo)
+`listar_documentos`, `buscar`, todas pela autorização da fundação; identidade do processo;
+as duas últimas também na CLI, `python -m fundacao conhecimento listar|buscar`)
 e o ensaio `python <skill>/scripts/mcp_ensaio.py --raiz <raiz> --projeto <autorizado> --outro <nao-autorizado>`,
 que sobe o servidor em processo separado (stdio), descobre as ferramentas, faz a chamada
 autorizada, confere a negativa entre projetos (registrada na trilha) e encerra, sem rede.

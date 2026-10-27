@@ -1,5 +1,16 @@
 # Fontes verificadas e fatos voláteis
 
+## Conferência adicional da 1.7.9 — 22/10/2026
+
+| Fato | Limite da conclusão | Fonte oficial |
+|---|---|---|
+| Claude Code aceita modelo e esforço explícitos por CLI; aliases e limites da organização podem mudar o resultado efetivo. | Registrar pedido e observado separadamente; flags não comprovam o modelo que respondeu. | [Configuração](https://code.claude.com/docs/en/model-config) |
+| O limite financeiro do modo print usa estimativa do cliente e pode ser ultrapassado por uma chamada. | Não garantir fatura máxima; manter margem, teto de partidas e reconciliação. | [CLI](https://code.claude.com/docs/en/cli-reference) |
+| Fable usa cota ou créditos conforme plano e limite disponível. | Acesso ao modelo não comprova gratuidade nem autoriza consumo. | [Fable no plano](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan) |
+
+Esta leitura não consultou saldo, credenciais nem permissões da conta. O preparo
+da 1.7.9 não fez chamada a provedor nem habilitou uma rota.
+
 Data da conferência: **18/10/2026** (mesma data das referências do livro 2.0 e da
 proposta 3.0). Conferência feita por leitura das páginas oficiais nesta data; reconfira
 antes de instalar, atualizar, autenticar ou gastar. Situação: **confirma** o livro/3.0 ·
@@ -37,6 +48,7 @@ Janela de atualidade declarada: 3 meses (metadados da skill).
 | Sandbox no Linux e no WSL2: depende de `bubblewrap` e `socat` (`sudo apt-get install bubblewrap socat`); no Ubuntu 24.04 ou mais novo, com `kernel.apparmor_restrict_unprivileged_userns` = 1, perfil do AppArmor para o `bwrap` (`/etc/apparmor.d/bwrap`, `userns`) e `sudo systemctl reload apparmor`; no WSL2, abrir programa do Windows passa por socket Unix, que só o filtro seccomp opcional bloqueia | novo (base do `assets/host/wsl/preparar-wsl.sh`) | code.claude.com/docs/en/sandboxing (conferido em 2026-10-21) |
 | Caminhos do sandbox: `/abs` e `~/` (as regras Read/Edit usam `//` para absoluto); `allowRead` reabre leitura dentro de `denyRead` (o caminho mais estreito vale); fonte excluída por `--setting-sources` não entra no sandbox (v2.1.246+); a precedência entre `allowWrite` e `denyWrite` sobrepostos não está documentada, por isso o perfil nega os outros projetos um a um | novo (base do `assets/host/wsl/settings.wsl.json`) | code.claude.com/docs/en/sandboxing (conferido em 2026-10-21) |
 | Observado na implantação real (2.1.302): `Read(./state/**)` em `permissions.deny` também nega a leitura no sandbox, e `state/` aparece vazio e gravável (tmpfs) até ganhar `allowRead` e `allowWrite` (perfis v1 a v3) | executado | implantação de referência, 2026-10-20 |
+| Observado no Claude Code 2.1.304 (Ubuntu/WSL, sandbox ligado): antes de cada comando de shell, a CLI cria `.claude/.cc-writes` (modo 700; `.claude`, se faltar, com o modo padrão) na pasta em que a sessão começou, na raiz do projeto e no diretório atual do shell; depois de um `cd`, também na pasta nova. Pelo código da CLI, o diretório acompanhado vem de `pwd -P` no fim do comando (comando que falha não o muda), e um `cd` dentro de subshell `( … )` não o muda (regra do POSIX; não observado numa sessão). Auditoria somente leitura que muda o diretório para dentro da árvore a altera; sessão aberta dentro da árvore ganha a pasta na raiz dela sem nenhum `cd` | executado (sessões com dados fictícios) e lido no código | binário da CLI 2.1.304 (`ensureAtomicWriteStagingDirs`), 2026-10-25 |
 | CLI: `claude "consulta"` abre a sessão interativa com essa primeira mensagem; `--settings <arquivo>` sobrepõe as chaves dos settings; `--setting-sources user,project,local` escolhe as fontes | confirma | code.claude.com/docs/en/cli-reference (conferido em 2026-10-21) |
 | Instalação nativa no Linux: `~/.local/bin/claude` é ligação para `~/.local/share/claude/versions/<versão>`; o instalador guarda a versão do lançador, as que estão rodando e as duas mais novas e apaga as outras; `DISABLE_AUTOUPDATER=1` só para a verificação em segundo plano (`DISABLE_UPDATES` bloqueia todas) | novo (por isso o `preparar-wsl.sh` copia a versão fixada para fora de `versions/`) | code.claude.com/docs/en/setup (conferido em 2026-10-21) |
 | Integridade: `https://downloads.claude.ai/claude-code-releases/<versão>/manifest.json` traz o SHA-256 de cada binário em `platforms.<plataforma>.checksum` e é assinado em `manifest.json.sig` pela chave de lançamento `31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE` (desde a 2.1.89); no Linux o binário não tem assinatura própria. Na implantação de referência, a 2.1.302 linux-x64 = `60d7eb7f12fbb28a52533fe8be5884097403562aa02dc73991a021c7067e29a5`, conferido com a assinatura | confirma | code.claude.com/docs/en/setup; manifest.json da 2.1.302 (conferido em 2026-10-21) |

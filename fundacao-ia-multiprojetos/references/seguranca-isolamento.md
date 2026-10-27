@@ -99,6 +99,11 @@ recusa educada do modelo não prova proteção: ele pode já ter recebido o dado
   (`<projeto>/<id>`); chaves de idempotência e de operação valem por projeto/escopo;
   contagens, listagens e painéis recortados pela identidade. Teste com sondagem: o
   outro projeto não distingue "existe e é alheio" de "não existe".
+  No kit, verificar a cadeia global de eventos exige `audit` ou `admin` de
+  `foundation`, antes de ler os eventos. O `status` comum continua recortado
+  ao projeto: sem essa concessão, `eventos_cadeia_integra` e
+  `primeiro_evento_quebrado` são `null`, com
+  `eventos_diagnostico_global: nao_medido_sem_permissao`.
 - Operações que copiam dados de **todos** os projetos (backup, restauração,
   exportação de eventos) exigem papel da fundação (`admin`; `audit` para exportar
   eventos) e ganham prova negativa própria. Na verificação e na restauração de uma cópia, o papel é

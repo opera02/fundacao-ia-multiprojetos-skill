@@ -15,6 +15,9 @@ import unittest
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parents[1]
+# Mesmos artefatos operacionais de scripts/codigo_conferido.py: não são configuração de teste.
+FORA_DO_REGISTRY = frozenset({"kit_backup", "kit_preparo", "kit_install.json", "atualizacoes.jsonl",
+                              "inventario-host.json"})
 if str(KIT) not in sys.path:
     sys.path.insert(0, str(KIT))
 
@@ -40,8 +43,12 @@ class FoundationTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="fundacao-teste-"))
         ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
+        def ignore_registry(pasta, nomes):
+            fora = FORA_DO_REGISTRY.intersection(nomes) if Path(pasta) == KIT / "registry" else set()
+            return set(ignore(pasta, nomes)) | fora
+
         shutil.copytree(KIT / "fundacao", self.root / "fundacao", ignore=ignore)
-        shutil.copytree(KIT / "registry", self.root / "registry", ignore=ignore)
+        shutil.copytree(KIT / "registry", self.root / "registry", ignore=ignore_registry)
         shutil.copytree(KIT / "templates", self.root / "templates", ignore=ignore)
         self.con = connect(self.root / "state" / "state.sqlite")
         ensure_tombstone_log(self.root / "state" / "retiradas.jsonl")  # como faz o `init`

@@ -184,7 +184,25 @@ def estrutura_argparse(caminho: Path) -> Parser | None:
                     visitar(tratador.body, env)
 
     visitar(arvore.body, {})
-    return principais[0] if principais else None
+    if not principais:
+        return None
+    raiz = principais[0]
+    # Extensões da CLI do kit: `for m in (cli_a, cli_b): m.registrar_parser(sub)` acrescenta subcomandos que a
+    # leitura acima não acompanha. Lê o `registrar_parser` só dos módulos desse laço (1.7.9, R179-37).
+    for no in ast.walk(arvore):
+        if not (isinstance(no, ast.For) and isinstance(no.iter, (ast.Tuple, ast.List)) and raiz.tem_subcomandos
+                and any(isinstance(n, ast.Attribute) and n.attr == "registrar_parser" for n in ast.walk(no))):
+            continue
+        for elemento in no.iter.elts:
+            try:
+                modulo = ast.parse((caminho.parent / (elemento.id + ".py")).read_text(encoding="utf-8"))
+            except (AttributeError, OSError, SyntaxError, ValueError):
+                raiz.dinamico = True  # extensão que não dá para ler: o subcomando dela não é conferido
+                continue
+            for funcao in modulo.body:
+                if isinstance(funcao, ast.FunctionDef) and funcao.name == "registrar_parser" and funcao.args.args:
+                    visitar(funcao.body, {funcao.args.args[0].arg: ("subcomandos", raiz)})
+    return raiz
 
 
 def _fichas(resto: str) -> list[str]:

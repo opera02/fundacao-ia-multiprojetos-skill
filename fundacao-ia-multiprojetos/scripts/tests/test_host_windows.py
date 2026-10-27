@@ -172,8 +172,11 @@ class SemUac(_Base):
     def test_instala_hooks_e_perfis_e_deixa_a_ancora_pendente(self):
         p, rel = self.rodar("-SemUAC", "-Projeto", "caso-real", "-Backups", str(self.base / "Backups"))
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        self.assertEqual(rel["python_conferencia"]["versao"], "3.12.10")
+        self.assertEqual(rel["python_conferencia"]["certificado_thumbprint"],
+                         "DE01DAAE82D04F466A576E178F6B07A839238953")
         claude = self.raiz / ".claude"
-        for nome in ("guarda_caminho.py", "guarda_identidade.py"):
+        for nome in ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py"):
             self.assertEqual(sha(claude / "hooks" / nome), sha(SKILL / "assets" / "hooks" / nome))
         win = json.loads((claude / "settings.json").read_text(encoding="utf-8"))
         gancho = win["hooks"]["PreToolUse"][0]["hooks"][0]
@@ -414,6 +417,8 @@ class Interpretador(_Base):
         dados = self.conferir(self.copia_do_python())
         self.assertEqual(dados["Motivos"], [], dados)
         self.assertEqual(dados["Assinante"], "Python Software Foundation")
+        self.assertEqual(dados["Versao"], "3.12.10")
+        self.assertEqual(dados["CertificadoThumbprint"], "DE01DAAE82D04F466A576E178F6B07A839238953")
         self.assertRegex(dados["Sha256"], r"^[0-9a-f]{64}$")
 
     def test_python_sem_assinatura_e_recusado_sem_rodar(self):

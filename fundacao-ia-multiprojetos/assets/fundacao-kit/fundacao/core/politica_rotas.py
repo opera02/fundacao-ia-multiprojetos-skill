@@ -20,7 +20,7 @@ from pathlib import Path
 
 from .contracts import ValidationError
 
-CHAVES_DA_POLITICA = {"schema_version", "titular", "observacao", "routes", "task_routes"}
+CHAVES_DA_POLITICA = {"schema_version", "titular", "observacao", "routes", "task_routes", "task_models"}
 CHAVES_DA_ROTA = {"enabled", "only_titular", "max_calls", "max_usd", "observacao"}
 CONFIGURACAO_DECIDIDA = "configuracao-decidida.json"  # em registry/: arquivo de configuração -> hash e decisão
 SCHEMA_DECIDIDA = "fundacao.configuracao_decidida/1"
@@ -45,8 +45,8 @@ def validar_politica(policy) -> list[str]:
     if not isinstance(policy, dict):
         return ["a política não é um objeto JSON"]
     problemas = []
-    if policy.get("schema_version") != "fundacao.route/1":
-        problemas.append("schema_version desconhecido (esperado fundacao.route/1)")
+    if policy.get("schema_version") not in ("fundacao.route/1", "fundacao.route/2"):
+        problemas.append("schema_version desconhecido (esperado fundacao.route/1 ou /2)")
     problemas += [f"chave desconhecida na política: {c}" for c in sorted(set(policy) - CHAVES_DA_POLITICA)]
     titular = policy.get("titular")
     if titular is not None and not (isinstance(titular, str) and titular.strip()):
@@ -82,6 +82,9 @@ def validar_politica(policy) -> list[str]:
         if len(set(ordem)) != len(ordem):
             problemas.append(f"task_routes.{tipo}: rota repetida")
         problemas += [f"task_routes.{tipo}: a rota {r} não existe em routes" for r in ordem if r not in rotas]
+    if isinstance(policy.get("task_routes"), dict):
+        from .modelos_tarefa import validar_modelos
+        problemas += validar_modelos(policy)
     return problemas
 
 

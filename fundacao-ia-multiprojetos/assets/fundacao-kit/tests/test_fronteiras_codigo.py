@@ -35,7 +35,7 @@ LIMITE, FOLGA = 350, 30
 # lugar da ordem por data (revisão de segurança da 1.7.4), decisoes.py encolheu. Os dois tetos desceram em relação à
 # 1.7.3 (backup.py 882 -> 816, decisoes.py 786 -> 741).
 # 1.7.7: com a saída do executor para core/processo.py, adapters/cli.py ficou abaixo de 350 linhas e saiu da lista.
-TETO = {"fundacao/__main__.py": 384, "fundacao/core/backup.py": 816,
+TETO = {"fundacao/__main__.py": 352, "fundacao/core/backup.py": 816,
         "fundacao/core/decisoes.py": 741, "fundacao/core/knowledge.py": 442, "fundacao/core/memory.py": 560,
         "fundacao/core/tasks.py": 803}
 

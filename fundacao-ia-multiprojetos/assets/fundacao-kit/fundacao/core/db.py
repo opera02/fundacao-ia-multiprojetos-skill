@@ -14,6 +14,40 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
+
+def _migrar_licoes(con: sqlite3.Connection) -> None:
+    """5 — amplia o CHECK de tipos sem perder dados, índices, triggers ou FKs.
+
+    Reconstrução segundo o procedimento geral do SQLite: a conexão desliga FKs
+    ANTES do BEGIN, confere todas ao final e as religa mesmo em caso de falha.
+    Não converte procedimentos antigos em lições nem aprova conteúdo legado.
+    """
+    original = con.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='memory_item'").fetchone()[0]
+    tipos = "('fato','hipotese','decisao','preferencia','procedimento')"
+    if original.count(tipos) != 1:
+        raise RuntimeError("contrato de memory_item desconhecido; migração de lições recusada")
+    dependentes = [r[0] for r in con.execute(
+        "SELECT sql FROM sqlite_master WHERE tbl_name='memory_item' AND type IN ('index','trigger')"
+        " AND sql IS NOT NULL ORDER BY type,name")]
+    novo = original.replace(tipos, "('fato','hipotese','decisao','preferencia','procedimento','licao')")
+    fim = novo.rfind(")")
+    novo = (novo[:fim] + ", CHECK (kind <> 'licao' OR (scope = 'project' AND project_id IS NOT NULL"
+            " AND case_id IS NULL))" + novo[fim:])
+    # Recria com o MESMO nome: renomear uma tabela provisória falha quando
+    # existem views/triggers de outras tabelas que referem memory_item.
+    con.execute("CREATE TEMP TABLE memory_item_licao_5 AS SELECT * FROM main.memory_item")
+    con.execute("DROP TABLE memory_item")
+    con.execute(novo)
+    con.execute("INSERT INTO memory_item SELECT * FROM temp.memory_item_licao_5")
+    con.execute("DROP TABLE temp.memory_item_licao_5")
+    for sql in dependentes:
+        con.execute(sql)
+    con.execute("CREATE VIRTUAL TABLE lesson_trigger USING fts5(memory_id UNINDEXED, revision UNINDEXED,"
+                " project_id UNINDEXED, gatilho, tokenize='unicode61 remove_diacritics 2')")
+    if con.execute("PRAGMA foreign_key_check").fetchone() is not None:
+        raise RuntimeError("chave estrangeira inválida; migração de lições desfeita")
+
+
 def _adicionar_colunas(con: sqlite3.Connection, tabela: str, colunas: dict[str, str]) -> None:
     """ALTER TABLE ADD COLUMN só para as colunas que faltam (o SQLite não tem IF NOT EXISTS)."""
     existentes = {r[1] for r in con.execute(f"PRAGMA table_info({tabela})")}
@@ -150,6 +184,7 @@ MIGRATIONS: list = [
       state TEXT NOT NULL CHECK (state IN ('reserved','finalized','released')),
       created_at TEXT NOT NULL, finalized_at TEXT, attempt_event_id TEXT)
     """,
+    _migrar_licoes,
 ]
 
 
@@ -185,7 +220,11 @@ def connect(path: Path, *, wal: bool = True) -> sqlite3.Connection:
         con.execute("PRAGMA journal_mode = WAL")
     if con.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
         raise RuntimeError("foreign_keys não pôde ser habilitado nesta conexão")
-    migrate(con)
+    try:
+        migrate(con)
+    except BaseException:
+        con.close()
+        raise
     return con
 
 
@@ -205,12 +244,20 @@ def conectar_copia(path: Path) -> sqlite3.Connection:
 
 
 def migrate(con: sqlite3.Connection) -> int:
+    if con.in_transaction:
+        raise RuntimeError("migração exige conexão sem transação aberta")
     current = con.execute("PRAGMA user_version").fetchone()[0]
+    if current > len(MIGRATIONS):
+        raise RuntimeError("banco de versão futura; este kit não pode migrá-lo")
     for number, script in enumerate(MIGRATIONS, start=1):
         if number <= current:
             continue
-        con.execute("BEGIN IMMEDIATE")
+        foreign_keys = con.execute("PRAGMA foreign_keys").fetchone()[0]
+        reconstruir = script is _migrar_licoes
+        if reconstruir:
+            con.execute("PRAGMA foreign_keys = OFF")
         try:
+            con.execute("BEGIN IMMEDIATE")
             if callable(script):  # migração em Python (ex.: idempotente por inspeção do esquema)
                 script(con)
             else:
@@ -218,9 +265,13 @@ def migrate(con: sqlite3.Connection) -> int:
                     con.execute(statement)
             con.execute(f"PRAGMA user_version = {number}")
             con.execute("COMMIT")
-        except Exception:
-            con.execute("ROLLBACK")
+        except BaseException:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
             raise
+        finally:
+            if reconstruir:
+                con.execute(f"PRAGMA foreign_keys = {foreign_keys}")
     return con.execute("PRAGMA user_version").fetchone()[0]
 
 

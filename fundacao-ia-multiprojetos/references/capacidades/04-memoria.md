@@ -17,7 +17,7 @@ memória canônica da fundação.
 
 ## Modelo de registro
 Campos mínimos [Livro p73]: `memory_id`, `project_id`, `case_id` opcional, tipo
-(fato · hipótese · decisão · preferência · procedimento), estado, revisão (>0), texto,
+(fato · hipótese · decisão · preferência · procedimento · lição), estado, revisão (>0), texto,
 origem (`source_ref`), responsável autenticado, horário UTC. [3.0 R5.2] Eixos
 separados: tipo epistêmico × origem (humano/IA/documento) × estado — "a IA concluiu"
 é origem, não selo de verdade [Livro p73]. Vigência (`effective_from`) ≠ registro
@@ -61,9 +61,11 @@ separados: tipo epistêmico × origem (humano/IA/documento) × estado — "a IA 
 ## Lições: memória de procedimento do projeto
 [Decisão; harness2, P3 — método adaptado de Harness² (arXiv:2610.14224, github.com/google-research/harness2,
 commit 1cfe254, Apache-2.0); texto próprio.] Lição é o que uma tarefa ensinou sobre **como trabalhar** no projeto.
-1. Fica numa memória do tipo `procedimento`, no escopo do **projeto**, nunca no do caso. O texto traz gatilho (a
-   forma da situação, não os fatos dela), lição (uma ação que se pode conferir), evidência e confiança (alta ·
-   média · baixa); o `source_ref` aponta a evidência (o `run_id` ou o caminho dela).
+1. Até o kit 1.7.7, fica numa memória do tipo `procedimento`; a migração não converte esse legado.
+   No kit 1.7.9, use o tipo `licao`, no escopo do **projeto**, nunca no do caso. O corpo é um objeto JSON
+   com `gatilho` (a forma da situação, sem fatos do caso), `licao` (ação verificável), `evidencia` e
+   `confianca` (`alta`, `media` ou `baixa`); essas chaves registram a evidência e a confiança.
+   O `source_ref` aponta a origem.
 2. Nunca leva fato do caso: nome, número, data, trecho ou conclusão ficam no caso. Lição que só se entende com um
    fato do caso não é do projeto.
 3. No máximo uma por tarefa, e "SEM_ENTRADA" vale (`assets/templates/RELATORIO-FINAL.md` §5b). Lição apoiada só em
@@ -72,6 +74,12 @@ commit 1cfe254, Apache-2.0); texto próprio.] Lição é o que uma tarefa ensino
 5. Antes de uma tarefa nova, consulte as lições aprovadas do projeto e trate cada uma como **hipótese** a reconferir
    nessa tarefa, não como fato.
 6. Para a camada comum, só pela promoção curada do fluxo C (C7): candidato depurado e aprovação pelo hash.
+   O tipo `licao` não é publicado diretamente no comum: prepare um novo procedimento depurado para curadoria.
+
+O serviço filtra projeto, autorização, estado e revisão vigente antes de entregar uma busca por gatilho.
+As operações `memoria licao propor|consultar` da CLI passam pela mesma identidade do lançador; uma proposta
+não se aprova automaticamente. A mudança do CHECK e o índice FTS5 exigem a migração 5; antes de atualizar ou
+retornar uma fundação em uso, leia [compatibilidade e retorno](../atualizacao-1.7.9.md).
 
 ## Memória automática do host
 [Decisão; everything-claude-code, proposta 3 — ideia adaptada; texto próprio.] O Claude Code guarda notas que ele

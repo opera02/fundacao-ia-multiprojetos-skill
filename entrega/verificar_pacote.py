@@ -52,9 +52,9 @@ hash citado é o do .skill de dist/; endereço, só http(s) de claude.com, claud
 como o navegador o lê, e nem outro esquema, nem www. ou domínio com caminho sem esquema; nenhum caractere de
 controle, de formatação, não atribuído ou invisível. A forma não lê a frase: instrução só em palavras e hash escrito
 em grupos passam.
---exigir-transferencia-fixada (só a CI pública, que roda depois da etapa 03): o mesmo, e a linha do zip principal da
-versão de dist/ tem de estar na lista (R177C-B-05). A liberação não a usa: antes de acrescentar a linha, ela confere a
-transferência pela forma do LEIA-ME.
+--exigir-transferencia-fixada (a CI pública e a etapa 03 da liberação, depois de acrescentar a linha): o mesmo, e a
+linha do zip principal da versão de dist/ tem de estar na lista (R177C-B-05). Antes de acrescentar a linha, a
+liberação confere a transferência pela forma do LEIA-ME; depois, exige também a transferência fixada.
 --lista-so-cresce (só a CI pública, com a história inteira do git: fetch-depth 0): cada versão da lista nos commits
 que a tocaram está contida na atual — linha antiga trocada ou tirada reprova.
 
@@ -756,7 +756,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lista-so-cresce", action="store_true",
                     help=f"confere pelo git que a {HISTORICO} só cresceu (só a CI pública, com fetch-depth 0)")
     ap.add_argument("--exigir-transferencia-fixada", action="store_true",
-                    help="--exigir-transferencia e a linha do zip da versão de dist/ na lista (só a CI pública)")
+                    help="--exigir-transferencia e a linha do zip da versão de dist/ na lista (CI pública e etapa 03 da liberação)")
     a = ap.parse_args(argv)
     res = verificar(a.dist, a.skill, exigir_igual_a_arvore=a.exigir_igual_a_arvore,
                     exigir_transferencia=a.exigir_transferencia, lista_so_cresce=a.lista_so_cresce,

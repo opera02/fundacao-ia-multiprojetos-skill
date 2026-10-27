@@ -69,7 +69,7 @@
       "ok": true
     }
   },
-  "estado_atual": "instalada a 1.7.8 desde 22/10/2026, 11h32 (cópia em ~/.agents/skills, junção em ~/.claude/skills); versões anteriores (1.3.0 a 1.7.7) guardadas em ~/.agents/skills-anteriores/",
+  "estado_atual": "instalada a 1.7.9 desde 26/10/2026, 21h43 (cópia em ~/.agents/skills, junção em ~/.claude/skills); versões anteriores (1.3.0 a 1.7.8) guardadas em ~/.agents/skills-anteriores/",
   "descoberta_pelo_host": "observada: logo após a instalação, o Claude Code desta sessão (aplicativo desktop, aba Code) passou a listar a skill fundacao-ia-multiprojetos entre as skills disponíveis, com a descrição do SKILL.md 1.3.0",
   "nao_observado": "acionamento real da skill instalada por um pedido de usuário; descoberta pelo Codex",
   "atualizacao_1_3_2": {
@@ -1887,6 +1887,122 @@
     "area_de_preparo_sobrou": false,
     "duracao": "2026-10-22T11:32:37-03:00 a 2026-10-22T11:32:41-03:00",
     "registros": "fundacao-ia-multiprojetos-workspace/correcoes-1.7.8/execucoes/instalacao-1.7.8/",
+    "nao_verificado": "acionamento da versão instalada pelo host num pedido real; Codex; claude.ai",
+    "descoberta_pelo_host": "não observado nesta sessão"
+  },
+  "atualizacao_1_7_9": {
+    "executado_em": "2026-10-26T21:43-03:00",
+    "versao": "1.7.9",
+    "autorizacao": "pedido do titular na conversa em 2026-10-26T22:30:00-03:00 (DECISAO-004)",
+    "decisao": {
+      "tipo": "autorizacao_conversa",
+      "citacao": "Vamos encerrar esses teste e publicar a versão 1.7.9 no que for possível, pois não estamos evoluindo nos testes, e deixar todos esses problemas encontrados para a próxima versão, mas vamos publicar uma versão 1.7.9 funcional.",
+      "data": "2026-10-26T22:30:00-03:00",
+      "politica": "DECISAO-004.md",
+      "sha256_politica": "e3975e040e6a120ff5b929f0c71877e014a2f097f2b0b1daab1995e82641813e",
+      "limite": "autorização da conversa, não criptográfica (DECISAO-004)"
+    },
+    "pacote": "entrega/dist/fundacao-ia-multiprojetos.skill",
+    "sha256_pacote": "efea9ad66fab82b4c131423ec5a2599868b4d41da755e520841fc3c26d872296",
+    "instalador": "entrega/instalar_skill.py da 1.7.9 (sha256 5333efc13242421fb6cfbff8ae1096a2d8f6e429e21ac9214c9d737cd891da05): hash do pacote conferido antes de extrair e troca por duas renomeações com marca",
+    "comandos": [
+      "python -B entrega/instalar_skill.py verificar --origem entrega/dist/anteriores/1.7.8/fundacao-ia-multiprojetos.skill",
+      "python -B entrega/instalar_skill.py atualizar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 efea9ad66fab82b4c131423ec5a2599868b4d41da755e520841fc3c26d872296",
+      "python -B entrega/instalar_skill.py verificar --origem entrega/dist/fundacao-ia-multiprojetos.skill --sha256 efea9ad66fab82b4c131423ec5a2599868b4d41da755e520841fc3c26d872296"
+    ],
+    "antes_verificar_contra_1_7_8": {
+      "copia": "C:\\Users\\<usuario>\\.agents\\skills\\fundacao-ia-multiprojetos",
+      "copia_existe": true,
+      "ligacao": "C:\\Users\\<usuario>\\.claude\\skills\\fundacao-ia-multiprojetos",
+      "ligacao_ok": true,
+      "skill_md_legivel_pela_ligacao": true,
+      "arquivos": 238,
+      "divergentes": [],
+      "ok": true,
+      "informativo": {
+        "sqlite": "3.49.1",
+        "fts5_unicode61_remove_diacritics_2": true,
+        "nota": "o kit da fundação precisa desse FTS5; não entra em ok"
+      },
+      "integridade_do_pacote": {
+        "sha256": "a4bacb2eeb0f13cab788040c5a5bb5fc00e98a97aa70bc17c044a34c2e8d6cf6",
+        "conferido_com": [
+          "--sha256",
+          "SHA256SUMS.txt"
+        ],
+        "ok": true,
+        "autenticado_por": "--sha256"
+      }
+    },
+    "atualizar": {
+      "copia": "C:\\Users\\<usuario>\\.agents\\skills\\fundacao-ia-multiprojetos",
+      "copia_existe": true,
+      "ligacao": "C:\\Users\\<usuario>\\.claude\\skills\\fundacao-ia-multiprojetos",
+      "ligacao_ok": true,
+      "skill_md_legivel_pela_ligacao": true,
+      "arquivos": 268,
+      "divergentes": [],
+      "ok": true,
+      "informativo": {
+        "sqlite": "3.49.1",
+        "fts5_unicode61_remove_diacritics_2": true,
+        "nota": "o kit da fundação precisa desse FTS5; não entra em ok"
+      },
+      "passos": [
+        "versão anterior guardada em C:\\Users\\<usuario>\\.agents\\skills-anteriores\\fundacao-ia-multiprojetos-20261026-214326",
+        "cópia instalada",
+        "ligacao-ja-existia"
+      ],
+      "integridade_do_pacote": {
+        "sha256": "efea9ad66fab82b4c131423ec5a2599868b4d41da755e520841fc3c26d872296",
+        "conferido_com": [
+          "--sha256",
+          "SHA256SUMS.txt"
+        ],
+        "ok": true,
+        "autenticado_por": "--sha256"
+      }
+    },
+    "depois_verificar_contra_1_7_9": {
+      "copia": "C:\\Users\\<usuario>\\.agents\\skills\\fundacao-ia-multiprojetos",
+      "copia_existe": true,
+      "ligacao": "C:\\Users\\<usuario>\\.claude\\skills\\fundacao-ia-multiprojetos",
+      "ligacao_ok": true,
+      "skill_md_legivel_pela_ligacao": true,
+      "arquivos": 268,
+      "divergentes": [],
+      "ok": true,
+      "informativo": {
+        "sqlite": "3.49.1",
+        "fts5_unicode61_remove_diacritics_2": true,
+        "nota": "o kit da fundação precisa desse FTS5; não entra em ok"
+      },
+      "integridade_do_pacote": {
+        "sha256": "efea9ad66fab82b4c131423ec5a2599868b4d41da755e520841fc3c26d872296",
+        "conferido_com": [
+          "--sha256",
+          "SHA256SUMS.txt"
+        ],
+        "ok": true,
+        "autenticado_por": "--sha256"
+      }
+    },
+    "juncao": {
+      "isjunction": true,
+      "realpath": "C:\\Users\\<usuario>\\.agents\\skills\\fundacao-ia-multiprojetos"
+    },
+    "versao_pela_juncao": "version: \"1.7.9\"",
+    "licenca_na_copia": "license: MIT (texto integral em LICENSE.txt, na raiz desta skill); LICENSE.txt presente na cópia",
+    "copia_guardada_1_7_8": {
+      "pasta": [
+        "fundacao-ia-multiprojetos-20261026-214326"
+      ],
+      "confere_com_o_pacote_1_7_8": true,
+      "arquivos": 238
+    },
+    "area_de_preparo_sobrou": false,
+    "duracao": "2026-10-26T21:43:24-03:00 a 2026-10-26T21:43:27-03:00",
+    "registros": "fundacao-ia-multiprojetos-workspace/correcoes-1.7.9/execucoes/instalacao-1.7.9/",
     "nao_verificado": "acionamento da versão instalada pelo host num pedido real; Codex; claude.ai",
     "descoberta_pelo_host": "não observado nesta sessão"
   }

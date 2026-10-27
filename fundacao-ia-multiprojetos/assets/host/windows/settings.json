@@ -28,6 +28,21 @@
     "FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}}",
+            "args": ["-I", "-B", "{{HOOK_SINAIS}}"],
+            "timeout": 3,
+            "onFailure": "block",
+            "statusMessage": "sinais_sessao: lembrando a retomada após compactação"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
@@ -56,5 +71,6 @@
         ]
       }
     ]
-  }
+  },
+  "statusLine": {"type": "command", "command": "{{STATUS_SINAIS}}"}
 }

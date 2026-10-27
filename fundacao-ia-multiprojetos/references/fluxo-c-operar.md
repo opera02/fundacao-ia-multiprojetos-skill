@@ -275,10 +275,37 @@ incluídas); confira citações RAG, correções de memória, revogações e neg
 confirme que componentes desativados não recebem tarefas por caminho algum; use
 exemplos de controle com erro conhecido para provar que o revisor detecta.
 Corrija o estado de requisitos declarados sem evidência. Modelo:
-`assets/templates/AUDITORIA.md`. Revisão de segurança de uma versão (diff da anterior para a nova, somente
-leitura, relatório privado): `assets/templates/REVISAO-SEGURANCA.md`. Kit: `python -m fundacao eventos verificar`
-(cadeia de hashes). Auditor independente (outro agente/provedor ou humano) sempre
-que possível [3.0 R9.5].
+`assets/templates/AUDITORIA.md`; na auditoria operacional, o kit confere a cadeia de hashes com
+`python -m fundacao eventos verificar`. Auditoria de segurança somente leitura da fundação em uso:
+`assets/templates/AUDITORIA-SEGURANCA.md` (enxuto: comandos copiados, divergências de método, resposta final
+copiada do relatório). Revisão de segurança de uma versão (diff da anterior para a nova), somente leitura,
+relatório privado: `assets/templates/REVISAO-SEGURANCA.md`. Os dois modelos de segurança
+(`assets/templates/AUDITORIA-SEGURANCA.md` e `assets/templates/REVISAO-SEGURANCA.md`) seguem as seis regras de
+escrita do topo de `assets/templates/REVISAO-SEGURANCA.md` (frase de fato com o comando e o trecho literal; saída
+cortada sustenta só o que mostra; sem autorização expressa do pedido, não copiar nem executar a árvore revisada).
+Nos dois, use caminhos absolutos e não mude o diretório do shell para dentro da árvore revisada: o Claude Code com
+sandbox cria `.claude/.cc-writes` no diretório atual do shell (`references/fontes-verificadas.md`, §1).
+Auditor independente (outro agente/provedor ou humano) sempre que possível [3.0 R9.5]. Nos dois modelos de
+segurança, antes de redigir os achados, preencha o quadro de afirmações: fonte, resultado observado, escopo e
+condições ainda não verificadas.
+O registro de operações (em `assets/templates/REVISAO-SEGURANCA.md`; no esqueleto, a tabela de comandos executados)
+sustenta também o método: leituras, erros e
+recusas relatados devem corresponder às operações emitidas e aos resultados recebidos.
+Fato sustentado por outra operação não comprova que a ação alegada foi executada.
+Com recibos externos, cada ação ou erro relatado deve corresponder a um ID e ao resultado
+registrado. Uma lembrança ou plano sem esse vínculo não comprova ocorrência, nem uma
+falha do controlador. Não descreva uma saída local ou chamada omitida sem prova própria;
+retire esse relato e marque a verificação como não comprovada. Ressalvá-lo não o valida.
+Derive do quadro os títulos, as conclusões e a resposta final; releia-os contra o quadro e o
+rastro. Remova ou limite cada afirmação sem suporte. Fonte excluída não sustenta
+ausência; ocorrência posterior não comprova causa; pré-requisito não verificado
+mantém o alcance e o impacto dependentes dele como hipóteses.
+Declare confiança por achado; nos dois modelos de segurança, confira os campos pela seção de conferência formal
+antes da entrega. Com recibos externos, confronte quantidade e hash com a cópia efetivamente entregue: a consulta pode
+ter sido acrescentada ao recibo atual depois de gerar a saída lida. O conferidor auxiliar da skill recebe apenas
+literais por stdin e não verifica mérito ou acesso; sua aprovação formal não substitui o quadro, o rastro ou o
+auditor independente. Uma atribuição sobre o que um script consulta exige trecho ou resultado efetivo; o nome
+inventário/auditoria não prova consulta de âncoras, ACLs ou isolamento.
 
 **Reavaliação do comportamento** [análise do vibe-coding-toolkit, 21/10/2026]: mudou a versão do host (Claude
 Code ou Codex — a atualização automática conta), os hooks, as instruções (AGENTS.md/CLAUDE.md) ou a skill →

@@ -11,6 +11,13 @@ SKILL = RAIZ / "fundacao-ia-multiprojetos"
 SAIDA = RAIZ / "entrega" / "ARVORE-SKILL.md"
 
 FINALIDADE = {
+    "assets/fundacao-kit/fundacao/cli_backup.py": "Entrada dos comandos de backup e do modo estrito, com autorização da fundação viva antes da leitura e recuperação de desastre autenticada.",
+    "assets/fundacao-kit/fundacao/cli_copias.py": "Prepara e registra assinaturas do titular no livro de cópias; não assina pelo executor.",
+    "assets/fundacao-kit/fundacao/cli_memoria.py": "Operações de memória e consulta de lições pela identidade do lançador e autorização do serviço.",
+    "assets/hooks/sinais_sessao.py": "Lembrete de compactação e linha de status com metadados da sessão, sem ler conteúdo do projeto.",
+    "evals/juiz_codex.py": "P7 local: prepara pacote cego com limites, valida notas e gera recibo de concordância; sem execução de modelo.",
+    "references/atualizacao-1.7.9.md": "Compatibilidade da migração 5, retorno por cópia anterior e adoção explícita do livro assinado.",
+    "scripts/verificar_fundacao.py": "Conferências de rotina com preflight de leitura, estados explícitos e saída nova sem sobrescrita.",
     "SKILL.md": "Ponto de entrada: finalidade, acionamento, seleção do fluxo (A/B/C), regras comuns, autonomia, retomada, critérios de conclusão e mapa de referências.",
     "LICENSE.txt": "Licença MIT da skill (texto integral; o campo `license` do SKILL.md aponta para ele).",
     "AVISOS-DE-TERCEIROS.md": "Origens externas aproveitadas (projeto, commit, licença, ideia ou trecho), com o aviso de copyright e o texto da licença de cada trecho.",

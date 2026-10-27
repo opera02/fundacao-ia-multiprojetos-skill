@@ -51,7 +51,10 @@ def hook(comando: str, script: str, nome: str, matcher: str, mensagem: str) -> d
 
 
 def ganchos(comando: str, pasta: str, sep: str) -> dict:
-    return {"PreToolUse": [
+    return {"SessionStart": [{"matcher": "compact", "hooks": [{
+        "type": "command", "command": comando, "args": ["-I", "-B", pasta + sep + "sinais_sessao.py"],
+        "timeout": 3, "onFailure": "block", "statusMessage": "sinais_sessao: lembrando a retomada após compactação"}]}],
+        "PreToolUse": [
         hook(comando, pasta + sep + "guarda_caminho.py", "guarda_caminho", "Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
              "conferindo destino da escrita"),
         hook(comando, pasta + sep + "guarda_identidade.py", "guarda_identidade", "Bash|PowerShell",
@@ -87,6 +90,8 @@ class PerfilWindows(unittest.TestCase):
             "claudeMdExcludes": ["**/projects/*/data/**"],  # 1.7.0: pasta de dados não vira instrução
             "env": {"FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*"},
             "hooks": ganchos(r"C:\Py\python.exe", r"E:\Fundacao Exemplo\.claude\hooks", "\\"),
+            "statusLine": {"type": "command", "command": m.comando_status_windows(
+                r"C:\Py\python.exe", r"E:\Fundacao Exemplo\.claude\hooks\sinais_sessao.py")},
         }
         self.assertEqual(perfil, esperado)
         self.assertNotIn("{{", m.texto_json(perfil))
@@ -113,6 +118,8 @@ class PerfilWsl(unittest.TestCase):
             "claudeMdExcludes": ["**/projects/*/data/**"],
             "env": {"FUNDACAO_MCP_PERMITIDAS": "", "DISABLE_AUTOUPDATER": "1"},
             "hooks": ganchos("/usr/bin/python3", raiz + "/.claude/hooks", "/"),
+            "statusLine": {"type": "command", "command": "/usr/bin/python3 -I -B '" + raiz
+                           + "/.claude/hooks/sinais_sessao.py' --status-line"},
             "sandbox": {
                 "enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
                 "filesystem": {
@@ -467,7 +474,7 @@ def raiz_preparada(base: Path) -> Path:
     raiz = base / "raiz"
     (raiz / "projects" / "caso-real").mkdir(parents=True)
     (raiz / ".claude" / "hooks").mkdir(parents=True)
-    for nome in ("guarda_caminho.py", "guarda_identidade.py"):
+    for nome in ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py"):
         shutil.copyfile(SKILL / "assets" / "hooks" / nome, raiz / ".claude" / "hooks" / nome)
     perfil = m.perfil_wsl(raiz=m.caminho_wsl(str(raiz)), projeto="caso-real", perfil_windows="/mnt/c/Perfis/titular",
                           outros_projetos=[])
@@ -485,6 +492,7 @@ class Lancador(unittest.TestCase):
                 "CLAUDE_BIN": "/home/titular/.local/share/fundacao-ia/claude/2.1.302/claude",
                 "CLAUDE_VERSAO": "2.1.302", "CLAUDE_SHA256": H1, "CLAUDE_ORIGEM_HASH": "manifesto assinado",
                 "PERFIL_SHA256": H2, "HOOK_CAMINHO_SHA256": H3, "HOOK_IDENTIDADE_SHA256": H4,
+                "HOOK_SINAIS_SHA256": "6" * 64,
                 "TITULAR": "titular", "LOCAL_SHA256": H5,
                 "SKILL_MD": "/mnt/c/Perfis/titular/.claude/skills/fundacao-ia-multiprojetos/SKILL.md", **extra}
 
@@ -526,7 +534,7 @@ class Lancador(unittest.TestCase):
             texto = saida.read_text(encoding="utf-8")
             import hashlib
             for arq in (raiz / ".claude" / "settings.wsl.json", ganchos_dir / "guarda_caminho.py",
-                        ganchos_dir / "guarda_identidade.py"):
+                        ganchos_dir / "guarda_identidade.py", ganchos_dir / "sinais_sessao.py"):
                 self.assertIn(hashlib.sha256(arq.read_bytes()).hexdigest(), texto)
             (ganchos_dir / "guarda_identidade.py").unlink()
             r = self.lancar(raiz, base / "outro.sh")

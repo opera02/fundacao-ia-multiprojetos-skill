@@ -84,7 +84,7 @@ def montar_raiz(base: Path, projeto: str = "caso-real") -> Path:
     hooks = raiz / ".claude" / "hooks"
     hooks.mkdir(parents=True)
     (raiz / "projects" / projeto).mkdir(parents=True)
-    for nome in ("guarda_caminho.py", "guarda_identidade.py"):
+    for nome in ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py"):
         shutil.copyfile(SKILL / "assets" / "hooks" / nome, hooks / nome)
     m = ajudante()
     # a raiz como o ajudante a vê quando o preparar-wsl.sh o chama (no Git for Windows, /mnt/c/...)
@@ -117,6 +117,7 @@ class LancadorNoBash(unittest.TestCase):
             "PERFIL_SHA256": sha(self.raiz / ".claude" / "settings.wsl.json"),
             "HOOK_CAMINHO_SHA256": sha(self.raiz / ".claude" / "hooks" / "guarda_caminho.py"),
             "HOOK_IDENTIDADE_SHA256": sha(self.raiz / ".claude" / "hooks" / "guarda_identidade.py"),
+            "HOOK_SINAIS_SHA256": sha(self.raiz / ".claude" / "hooks" / "sinais_sessao.py"),
             "TITULAR": titular, "LOCAL_SHA256": sha(self.raiz / ".claude" / "settings.local.json"),
             "SKILL_MD": "/mnt/c/Perfis/titular/.claude/skills/fundacao-ia-multiprojetos/SKILL.md"})
         self.lancador.write_text(texto, encoding="utf-8", newline="\n")
@@ -151,7 +152,8 @@ class LancadorNoBash(unittest.TestCase):
     def test_perfil_ou_hook_alterado_nao_abre(self):
         for arquivo in (self.raiz / ".claude" / "settings.wsl.json",
                         self.raiz / ".claude" / "hooks" / "guarda_caminho.py",
-                        self.raiz / ".claude" / "hooks" / "guarda_identidade.py"):
+                        self.raiz / ".claude" / "hooks" / "guarda_identidade.py",
+                        self.raiz / ".claude" / "hooks" / "sinais_sessao.py"):
             with self.subTest(arquivo=arquivo.name):
                 original = arquivo.read_bytes()
                 arquivo.write_bytes(original + b"\n")

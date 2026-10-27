@@ -5,6 +5,7 @@ Respostas para "alheio" e "inexistente" são iguais; a sondagem fica registrada 
 
 from __future__ import annotations
 
+import sqlite3
 import unittest
 
 from helpers import CANARIOS, FoundationTestCase
@@ -95,12 +96,27 @@ class TestMetadados(FoundationTestCase):
         self.assertEqual(self.con.execute("SELECT COUNT(*) FROM cache_entry").fetchone()[0], 0)
 
     def test_migracao_2_qualifica_chaves_antigas(self):
-        Coordinator(self.root, self.con, self.jur, "juridico-lab").create_task("antiga (fictícia)",
-                                                                               idempotency_key="k-antiga")
-        self.con.execute("UPDATE task SET idempotency_key = 'k-antiga'")  # simula banco da versão 1
-        self.con.execute("PRAGMA user_version = 1")
-        self.assertEqual(migrate(self.con), len(MIGRATIONS))  # aplica a 2 e as seguintes (idempotentes)
-        self.assertEqual(self.con.execute("SELECT idempotency_key FROM task").fetchone()[0], "juridico-lab::k-antiga")
+        # Banco realmente no esquema 1. Reduzir só user_version do banco atual
+        # deixa o CHECK e o FTS da migração 5 presentes e não simula uma versão antiga.
+        with sqlite3.connect(":memory:", isolation_level=None) as antiga:
+            antiga.row_factory = sqlite3.Row
+            antiga.executescript(MIGRATIONS[0])
+            antiga.execute("PRAGMA foreign_keys = ON")
+            antiga.execute("PRAGMA user_version = 1")
+            for tabela in ("principal", "acl", "project", "revision_counter"):
+                linhas = self.con.execute(f"SELECT * FROM {tabela}").fetchall()
+                if linhas:
+                    valores = ",".join("?" for _ in linhas[0])
+                    antiga.executemany(f"INSERT INTO {tabela} VALUES ({valores})", linhas)
+            Coordinator(self.root, antiga, self.jur, "juridico-lab").create_task(
+                "antiga (fictícia)", idempotency_key="k-antiga")
+            antiga.execute("UPDATE task SET idempotency_key = 'k-antiga'")
+            self.assertNotIn("'licao'", antiga.execute(
+                "SELECT sql FROM sqlite_master WHERE name='memory_item'").fetchone()[0])
+            self.assertEqual(migrate(antiga), len(MIGRATIONS))
+            self.assertEqual(antiga.execute("SELECT idempotency_key FROM task").fetchone()[0],
+                             "juridico-lab::k-antiga")
+            self.assertEqual(migrate(antiga), len(MIGRATIONS))  # repetir não reaplica migração
 
 
 if __name__ == "__main__":
