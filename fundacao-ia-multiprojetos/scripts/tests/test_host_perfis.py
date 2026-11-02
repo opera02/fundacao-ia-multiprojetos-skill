@@ -20,7 +20,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from apoio import ENV, SKILL
+from apoio import ENV, SKILL, criar_ligacao_dir
 
 HOST = SKILL / "assets" / "host"
 AJUDANTE = HOST / "preparo_host.py"
@@ -46,19 +46,36 @@ NEGACOES_DA_RAIZ = ["Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(.
 
 
 def hook(comando: str, script: str, nome: str, matcher: str, mensagem: str) -> dict:
-    return {"matcher": matcher, "hooks": [{"type": "command", "command": comando, "args": ["-B", script], "timeout": 10,
-                                           "onFailure": "block", "statusMessage": f"{nome}: {mensagem}"}]}
+    # 1.7.10 (contratos do lote 2, §7): todos os hooks com -I -B (sem o site do usuário nem PYTHONPATH no guarda).
+    return {"matcher": matcher, "hooks": [{"type": "command", "command": comando, "args": ["-I", "-B", script],
+                                           "timeout": 10, "onFailure": "block", "statusMessage": f"{nome}: {mensagem}"}]}
 
 
-def ganchos(comando: str, pasta: str, sep: str) -> dict:
-    return {"SessionStart": [{"matcher": "compact", "hooks": [{
+def ganchos(comando: str, pasta: str, sep: str, wsl: bool = False) -> dict:
+    """Os hooks do perfil (1.7.10, contratos do lote 2, §7): no Windows, mais o aviso da cópia semanal; no projeto do
+    Ubuntu, mais a lista positiva de ferramentas (matcher `*`, a forma documentada de "todas")."""
+    inicio = [{"matcher": "compact", "hooks": [{
         "type": "command", "command": comando, "args": ["-I", "-B", pasta + sep + "sinais_sessao.py"],
-        "timeout": 3, "onFailure": "block", "statusMessage": "sinais_sessao: lembrando a retomada após compactação"}]}],
-        "PreToolUse": [
-        hook(comando, pasta + sep + "guarda_caminho.py", "guarda_caminho", "Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
-             "conferindo destino da escrita"),
-        hook(comando, pasta + sep + "guarda_identidade.py", "guarda_identidade", "Bash|PowerShell",
-             "conferindo troca de identidade")]}
+        "timeout": 3, "onFailure": "block", "statusMessage": "sinais_sessao: lembrando a retomada após compactação"}]}]
+    if not wsl:
+        inicio.append({"matcher": "startup|resume", "hooks": [{
+            "type": "command", "command": comando, "args": ["-I", "-B", pasta + sep + "aviso_copia.py"], "timeout": 5,
+            "statusMessage": "aviso_copia: idade da última cópia de segurança"}]})
+    pre = [hook(comando, pasta + sep + "guarda_ferramentas.py", "guarda_ferramentas", "*",
+                "só as ferramentas da lista do projeto")] if wsl else []
+    pre += [hook(comando, pasta + sep + "guarda_caminho.py", "guarda_caminho", "Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
+                 "conferindo destino da escrita"),
+            hook(comando, pasta + sep + "guarda_identidade.py", "guarda_identidade", "Bash|PowerShell",
+                 "conferindo troca de identidade e caminho de outro projeto" + ("" if wsl else " (guarda-corpo)")),
+            hook(comando, pasta + sep + "guarda_rede.py", "guarda_rede", "WebFetch|WebSearch",
+                 "só os domínios da ficha do projeto" if wsl else "sessões do Windows sem web"),
+            hook(comando, pasta + sep + "guarda_leitura.py", "guarda_leitura", "Read|Grep|Glob",
+                 "outro projeto e state/ ficam fora" if wsl
+                 else "(guarda-corpo: no Windows não há sandbox e o shell lê tudo)")]
+    if not wsl:  # o rótulo do Windows vem logo depois do nome, sem os dois-pontos
+        pre[-1]["hooks"][0]["statusMessage"] = pre[-1]["hooks"][0]["statusMessage"].replace("guarda_leitura: ",
+                                                                                           "guarda_leitura ")
+    return {"SessionStart": inicio, "PreToolUse": pre}
 
 
 class CaminhosWsl(unittest.TestCase):
@@ -80,15 +97,23 @@ class CaminhosWsl(unittest.TestCase):
                 self.m.caminho_wsl(ruim)
 
 
+def complemento(m, modelo) -> list:
+    """As negações da regra única (fortes + pastas) que o modelo ainda não traz literalmente (1.7.10)."""
+    return m.complemento_de_segredos(m.ler_modelo(modelo))
+
+
 class PerfilWindows(unittest.TestCase):
     def test_hooks_da_raiz_com_o_python_informado(self):
         m = carregar()
         perfil = m.perfil_windows(raiz=r"E:\Fundacao Exemplo", python=r"C:\Py\python.exe")
         esperado = {
-            "permissions": {"deny": NEGACOES_DA_RAIZ + ["Read(~/.claude/.credentials.json)", "Read(~/.codex/auth.json)",
-                                                        "Read(~/.ssh/**)", "Edit(./.claude/**)"]},
+            "permissions": {"deny": NEGACOES_DA_RAIZ[:15] + complemento(m, m.MODELO_WINDOWS) + [
+                "Read(./state/**)", "Read(./projects/*/data/**)", "Read(~/.claude/.credentials.json)",
+                "Read(~/.codex/auth.json)", "Read(~/.ssh/**)", "WebFetch", "WebSearch", "Edit(./.claude/**)",
+                "Edit(./registry/projetos-host.json)"]},  # 1.7.10: regra única, dados e web negados no Windows
             "claudeMdExcludes": ["**/projects/*/data/**"],  # 1.7.0: pasta de dados não vira instrução
-            "env": {"FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*"},
+            "env": {"FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*", "FUNDACAO_RAIZ": r"E:\Fundacao Exemplo",
+                    "FUNDACAO_SEM_DADOS": "1"},
             "hooks": ganchos(r"C:\Py\python.exe", r"E:\Fundacao Exemplo\.claude\hooks", "\\"),
             "statusLine": {"type": "command", "command": m.comando_status_windows(
                 r"C:\Py\python.exe", r"E:\Fundacao Exemplo\.claude\hooks\sinais_sessao.py")},
@@ -98,47 +123,178 @@ class PerfilWindows(unittest.TestCase):
         self.assertEqual(m.perfil_windows(raiz="E:/Fundacao Exemplo/", python="C:/Py/python.exe"), esperado)
 
 
+# registry/projetos-host.json de ensaio (pastas fictícias; o registro só guarda a forma, não confere a existência aqui).
+REGISTRO_DE_ENSAIO = {"schema_version": "fundacao.projetos_host/1", "projetos": {
+    "lab-a": {"origens": ["/mnt/e/Origem Lab", "/home/ensaio/so-do-ubuntu"], "somente_leitura": ["D:\\Leitura Lab"],
+              "aninhadas_negadas": []},
+    "caso-real": {"origens": ["D:\\Origem Caso"], "somente_leitura": [], "aninhadas_negadas": ["squad-aninhada"]}}}
+
+
+class PerfilWindowsComRegistro(unittest.TestCase):
+    """Folha da integração, I21 (a): o perfil do Windows é um só e é refeito inteiro a cada preparo. O perfil-windows
+    soma ao Edit negado as origens e as pastas só de leitura de TODOS os projetos do registry/projetos-host.json (lido
+    pelo ler_projetos_host), além das de --somente-leitura: o preparar-maquina.ps1 rodado sozinho não deixa uma origem
+    gravável. `/mnt/<x>/...` vira a pasta do Windows; o caminho só do Ubuntu fica de fora; a leitura não é negada."""
+
+    def test_edicao_negada_das_pastas_de_todos_os_projetos(self):
+        m = carregar()
+        perfil = m.perfil_windows(raiz=r"E:\Fundacao Exemplo", python=r"C:\Py\python.exe", registro=REGISTRO_DE_ENSAIO,
+                                  somente_leitura=[r"F:\Outra", r"D:\Origem Caso"], backups=[r"G:\Copias"])
+        negadas = perfil["permissions"]["deny"]
+        self.assertEqual([r for r in negadas if r.startswith("Edit(//")],
+                         ["Edit(//f/Outra/**)", "Edit(//d/Origem Caso/**)", "Edit(//e/Origem Lab/**)",
+                          "Edit(//d/Leitura Lab/**)", "Edit(//g/Copias/**)"])  # sem repetir a que veio dos dois lados
+        self.assertFalse([r for r in negadas if "so-do-ubuntu" in r])
+        self.assertEqual([r for r in negadas if r.startswith("Read(//")], ["Read(//g/Copias/**)"])  # só as cópias
+        vazio = {"schema_version": "fundacao.projetos_host/1", "projetos": {}}
+        self.assertEqual(m.perfil_windows(raiz=r"E:\Fundacao Exemplo", python=r"C:\Py\python.exe", registro=vazio),
+                         m.perfil_windows(raiz=r"E:\Fundacao Exemplo", python=r"C:\Py\python.exe"))
+
+    def test_linha_de_comando_nega_a_edicao_da_origem_registrada_sem_somente_leitura(self):
+        """Contraprova: o perfil-windows de antes lia o registro só pelas skills negadas e saía sem o Edit negado."""
+        base = Path(tempfile.mkdtemp(prefix="host-perfil-windows-registro-"))
+        try:
+            raiz = base / "Fundacao Exemplo"
+            for nome in ("caso-real", "lab-a"):
+                (raiz / "projects" / nome).mkdir(parents=True)
+            (raiz / "registry").mkdir()
+            (raiz / "registry" / "projetos-host.json").write_text(json.dumps(REGISTRO_DE_ENSAIO, ensure_ascii=False),
+                                                                  encoding="utf-8", newline="\n")
+            r = rodar("perfil-windows", "--raiz", raiz, "--python", sys.executable, "--projeto", "caso-real")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            negadas = json.loads(r.stdout)["permissions"]["deny"]
+            for regra in ("Edit(//d/Origem Caso/**)", "Edit(//e/Origem Lab/**)", "Edit(//d/Leitura Lab/**)",
+                          "Skill(squad-aninhada)"):
+                self.assertIn(regra, negadas)
+            self.assertFalse([regra for regra in negadas if "so-do-ubuntu" in regra])
+            (raiz / "registry" / "projetos-host.json").write_text('{"schema_version": "outro"}', encoding="utf-8")
+            r = rodar("perfil-windows", "--raiz", raiz, "--python", sys.executable)
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)  # registro fora do esquema: nada sai
+            self.assertIn("fundacao.projetos_host/1", r.stdout)
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_raiz_de_um_disco_nas_copias_vale_o_disco_inteiro(self):
+        """Revisão seguinte da terceira rodada da integração, defeito 1: o disco só das cópias ("C:\\") chega ao ajudante
+        com a barra (o Get-PastasConferidas dos scripts do Windows a tirava, e "C:" era recusado como "pasta do Windows
+        com unidade esperada") e sai como o disco inteiro, na leitura e na edição; "C:" sem a barra segue recusado.
+        Também pela linha de comando, como o preparar-maquina.ps1 chama."""
+        m = carregar()
+        perfil = m.perfil_windows(raiz=r"E:\Fundacao Exemplo", python=r"C:\Py\python.exe", backups=["C:\\"],
+                                  somente_leitura=["F:/"])
+        negadas = perfil["permissions"]["deny"]
+        for regra in ("Read(//c/**)", "Edit(//c/**)", "Edit(//f/**)"):
+            self.assertIn(regra, negadas)
+        self.assertNotIn("Read(//f/**)", negadas)  # só leitura: a leitura segue
+        with self.assertRaises(ValueError):
+            m.perfil_windows(raiz=r"E:\Fundacao Exemplo", python=r"C:\Py\python.exe", backups=["C:"])
+        r = rodar("perfil-windows", "--raiz", r"E:\Fundacao Exemplo", "--python", r"C:\Py\python.exe", "--backups", "C:\\")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        negadas = json.loads(r.stdout)["permissions"]["deny"]
+        self.assertIn("Read(//c/**)", negadas)
+        self.assertIn("Edit(//c/**)", negadas)
+
+    def test_pasta_que_contem_a_raiz_nao_vai_ao_perfil(self):
+        """A lacuna vizinha do defeito 1 (revisão seguinte da terceira rodada da integração): a pasta que é a raiz ou a
+        contém negaria às sessões a própria fundação. Os scripts do Windows e o registrar-projeto já a recusam; o
+        registro antigo ou feito à mão chega ao ajudante pelo preparar-maquina.ps1 rodado sozinho, e ele recusa, com a
+        pasta e o que fazer, sem gerar o perfil. A pasta vizinha que só começa com o mesmo nome segue."""
+        m = carregar()
+        raiz = r"E:\Fundacao Exemplo"
+        casos = {"registro": dict(registro={"schema_version": "fundacao.projetos_host/1", "projetos": {"lab-a": {
+                     "origens": ["/mnt/e"], "somente_leitura": [], "aninhadas_negadas": []}}}),
+                 "backups": dict(backups=["E:\\"]),
+                 "somente leitura": dict(somente_leitura=["e:/fundacao exemplo/"])}
+        for nome, kw in casos.items():
+            with self.subTest(nome), self.assertRaises(ValueError) as erro:
+                m.perfil_windows(raiz=raiz, python=r"C:\Py\python.exe", **kw)
+            self.assertIn("contém a raiz", str(erro.exception))
+        perfil = m.perfil_windows(raiz=raiz, python=r"C:\Py\python.exe", backups=[r"E:\Fundacao Exemplo B"])
+        self.assertIn("Edit(//e/Fundacao Exemplo B/**)", perfil["permissions"]["deny"])
+
+    def test_registro_por_ligacao_nao_e_lido(self):
+        """O registro é lido pelo ler_projetos_host, sem seguir ligação: registry/ como junção (ou link) recusa."""
+        base = Path(tempfile.mkdtemp(prefix="host-perfil-windows-ligacao-"))
+        try:
+            raiz = base / "Fundacao Exemplo"
+            (raiz / "projects" / "caso-real").mkdir(parents=True)
+            fora = base / "registro-fora"
+            fora.mkdir()
+            (fora / "projetos-host.json").write_text(json.dumps(REGISTRO_DE_ENSAIO, ensure_ascii=False),
+                                                     encoding="utf-8", newline="\n")
+            criar_ligacao_dir(raiz / "registry", fora)
+            r = rodar("perfil-windows", "--raiz", raiz, "--python", sys.executable)
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("ligação", r.stdout)
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+
 class PerfilWsl(unittest.TestCase):
-    """O perfil do WSL sai do modelo igual ao v3 provado no caso real, com os caminhos desta máquina."""
+    """O perfil do PROJETO no Ubuntu (1.7.10) sai do modelo com os caminhos desta máquina: plano A mais as negações
+    nominais do plano B, `state/` fora do sandbox (só o porteiro abre o banco) e tudo fechado sem ficha assinada."""
 
     def setUp(self):
         self.m = carregar()
         self.kw = dict(raiz=r"E:\Fundacao Exemplo", projeto="caso-real", perfil_windows=r"C:\Perfis\titular.PC-EXEMPLO",
-                       outros_projetos=["lab-b", "lab-a", "lab-c"], backups=[r"D:\Backups-Exemplo"],
-                       somente_leitura=[r"D:\Origem Ç"])
+                       outros_projetos=["lab-b", "lab-a", "lab-c"], somente_leitura=[r"D:\Origem Ç"])
 
     def test_reproduz_o_perfil_v3_do_caso_real(self):
+        """O v3 da 1.7.9 (state/ legível e gravável no sandbox) deixou de valer: o perfil do projeto da 1.7.10."""
         raiz, perfil_win = "/mnt/e/Fundacao Exemplo", "/mnt/c/Perfis/titular.PC-EXEMPLO"
+        proj = raiz + "/projects/caso-real"
+        outros = ("lab-a", "lab-b", "lab-c")
+        nominais = [r for o in outros for r in (f"Read(/{raiz}/projects/{o}/**)", f"Read(/{raiz}/.claude/projetos/{o}/**)")]
+        nominais += ["Read(//mnt/d/**)", f"Read(/{perfil_win}/**)"] + [f"Read(~/{r})" for r in (
+            ".claude/projects/**", ".claude/history.jsonl", ".claude/file-history/**", ".claude/paste-cache/**",
+            ".claude/session-env/**", ".claude/sessions/**", ".claude/shell-snapshots/**", ".claude/todos/**",
+            ".claude/plans/**", ".claude/backups/**", ".codex/**", ".fundacao/**", ".local/share/fundacao-ia/**")]
         esperado = {
-            "permissions": {"deny": NEGACOES_DA_RAIZ + [
-                "Read(~/.claude/.credentials.json)", "Read(~/.codex/auth.json)", "Read(~/.ssh/**)",
-                f"Read(/{perfil_win}/.claude/.credentials.json)", f"Read(/{perfil_win}/.codex/auth.json)",
-                f"Read(/{perfil_win}/.ssh/**)", "WebFetch", "WebSearch",  # 1.7.0: sem saída pela web
-                "Edit(./.claude/**)", "Edit(//mnt/c/ProgramData/FundacaoIA/**)", "Edit(//mnt/d/Origem Ç/**)"]},
+            "permissions": {"blockReadsOutsideWorkingDirectories": True, "deny": NEGACOES_DA_RAIZ[:15] + complemento(
+                self.m, self.m.MODELO_WSL) + [
+                f"Read(/{raiz}/state/**)", "Read(~/.claude/.credentials.json)", "Read(~/.codex/auth.json)",
+                "Read(~/.ssh/**)", f"Read(/{perfil_win}/.claude/.credentials.json)",
+                f"Read(/{perfil_win}/.codex/auth.json)", f"Read(/{perfil_win}/.ssh/**)", *nominais,
+                "WebFetch", "WebSearch",  # 1.7.0: sem saída pela web (sem ficha)
+                f"Edit(/{raiz}/.claude/**)", f"Edit(/{raiz}/registry/**)", f"Edit(/{proj}/.claude/**)",
+                f"Edit(/{proj}/.porteiro/respostas/**)", f"Edit(/{proj}/CLAUDE.local.md)",
+                "Edit(//mnt/c/ProgramData/FundacaoIA/**)", "Edit(//mnt/d/Origem Ç/**)"], "allow": []},
             "claudeMdExcludes": ["**/projects/*/data/**"],
-            "env": {"FUNDACAO_MCP_PERMITIDAS": "", "DISABLE_AUTOUPDATER": "1"},
-            "hooks": ganchos("/usr/bin/python3", raiz + "/.claude/hooks", "/"),
+            "syncClaudeAiSkills": False, "syncClaudeAiPlugins": False, "disableClaudeAiConnectors": True,
+            "env": {"FUNDACAO_" + "PRINCIPAL": "sessao-caso-real", "FUNDACAO_PROJECT": "caso-real",
+                    "FUNDACAO_RAIZ": raiz, "FUNDACAO_PORTEIRO": proj + "/.porteiro",
+                    "FUNDACAO_FERRAMENTAS": "Bash,Read,Edit,Write,Glob,Grep,Skill,Task,TodoWrite",
+                    "FUNDACAO_MCP_PERMITIDAS": "", "FUNDACAO_DOMINIOS_WEB": "", "DISABLE_AUTOUPDATER": "1",
+                    "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1", "PYTHONPATH": raiz, "XDG_CACHE_HOME": proj + "/.cache",
+                    "npm_config_cache": proj + "/.cache/npm", "PIP_CACHE_DIR": proj + "/.cache/pip",
+                    "UV_CACHE_DIR": proj + "/.cache/uv", "CLAUDE_CODE_DISABLE_WEB_FETCH": "1"},
+            "hooks": ganchos("/usr/bin/python3", raiz + "/.claude/hooks", "/", wsl=True),
             "statusLine": {"type": "command", "command": "/usr/bin/python3 -I -B '" + raiz
                            + "/.claude/hooks/sinais_sessao.py' --status-line"},
             "sandbox": {
                 "enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
                 "filesystem": {
-                    "allowWrite": ["/mnt/d/Backups-Exemplo", raiz + "/state"],
-                    "denyWrite": [raiz + "/.claude", raiz + "/projects/lab-a", raiz + "/projects/lab-b",
+                    "allowWrite": [],
+                    "denyWrite": [raiz + "/.claude", raiz + "/registry", proj + "/.claude", proj + "/.porteiro/respostas",
+                                  proj + "/CLAUDE.local.md", raiz + "/projects/lab-a", raiz + "/projects/lab-b",
                                   raiz + "/projects/lab-c", "/mnt/d/Origem Ç", "/mnt/c/ProgramData/FundacaoIA"],
                     "denyRead": ["~/.ssh", "~/.claude/.credentials.json", "~/.codex", perfil_win + "/.ssh",
-                                 perfil_win + "/.claude/.credentials.json", perfil_win + "/.codex"],
-                    "allowRead": [raiz + "/state"]},
-                "network": {"allowedDomains": []}},
+                                 perfil_win + "/.claude/.credentials.json", perfil_win + "/.codex", "/tmp", "/run",
+                                 "/var/run", "/mnt/wsl", "/mnt/wslg"],
+                    "allowRead": [raiz + "/fundacao", "/mnt/c/ProgramData/FundacaoIA", "/mnt/d/Origem Ç",
+                                  "/tmp/fundacao-ia-caso-real"]},
+                "network": {"allowedDomains": [], "strictAllowlist": True}},
         }
         self.assertEqual(self.m.perfil_wsl(**self.kw), esperado)
 
-    def test_state_legivel_e_gravavel_no_sandbox_e_negado_ao_read(self):
+    def test_state_fora_do_sandbox_e_negado_ao_read(self):
+        """1.7.10: o contrário da v3 da 1.7.9. `state/` existe, fica negado (Read absoluto, que vira denyRead) e sem
+        allowRead nem allowWrite: a armadilha do tmpfs da v1 não volta, e só o porteiro, fora do sandbox, abre o banco."""
         perfil = self.m.perfil_wsl(**self.kw)
         fs = perfil["sandbox"]["filesystem"]
-        self.assertIn("/mnt/e/Fundacao Exemplo/state", fs["allowRead"])   # v1: tmpfs vazio sem isto
-        self.assertIn("/mnt/e/Fundacao Exemplo/state", fs["allowWrite"])  # v2: só leitura sem isto
-        self.assertIn("Read(./state/**)", perfil["permissions"]["deny"])  # a ferramenta Read continua negada
+        self.assertNotIn("/mnt/e/Fundacao Exemplo/state", fs["allowRead"])
+        self.assertNotIn("/mnt/e/Fundacao Exemplo/state", fs["allowWrite"])
+        self.assertIn("Read(//mnt/e/Fundacao Exemplo/state/**)", perfil["permissions"]["deny"])
         self.assertEqual(self.m.conferir_perfil_wsl(perfil, "/mnt/e/Fundacao Exemplo"), [])
 
     def test_sem_backups_nem_somente_leitura_nao_sobra_marcador(self):
@@ -146,8 +302,10 @@ class PerfilWsl(unittest.TestCase):
         perfil = self.m.perfil_wsl(**kw)
         texto = self.m.texto_json(perfil)
         self.assertNotIn("{{", texto)
-        self.assertEqual(perfil["sandbox"]["filesystem"]["allowWrite"], ["/mnt/e/Fundacao Exemplo/state"])
+        self.assertEqual(perfil["sandbox"]["filesystem"]["allowWrite"], [])  # 1.7.10: escrita só no projeto
         self.assertNotIn("Edit(//mnt/d/Origem Ç/**)", perfil["permissions"]["deny"])
+        with self.assertRaises(ValueError):  # 1.7.10: cópias de segurança não ficam graváveis pela sessão
+            self.m.perfil_wsl(**{**kw, "backups": [r"D:\Backups-Exemplo"]})
 
     def test_projeto_da_sessao_nao_pode_estar_entre_os_negados(self):
         with self.assertRaises(ValueError):
@@ -163,13 +321,15 @@ class PerfilWsl(unittest.TestCase):
         self.assertEqual(self.m.renderizar({"a": "{{SHA256}}"}, {"SHA256": "x"}), {"a": "x"})
 
     def test_conferencia_acusa_os_perfis_v1_e_v2(self):
-        v3 = self.m.perfil_wsl(**self.kw)
-        v2 = json.loads(json.dumps(v3))
-        v2["sandbox"]["filesystem"]["allowWrite"].remove("/mnt/e/Fundacao Exemplo/state")
-        v1 = json.loads(json.dumps(v2))
-        del v1["sandbox"]["filesystem"]["allowRead"]
-        self.assertTrue(any("escrita" in p for p in self.m.conferir_perfil_wsl(v2, "/mnt/e/Fundacao Exemplo")))
-        self.assertTrue(any("leitura" in p for p in self.m.conferir_perfil_wsl(v1, "/mnt/e/Fundacao Exemplo")))
+        """As formas antigas de `state/` no sandbox (v3 da 1.7.9: legível e gravável; v2: só legível) são acusadas;
+        na 1.7.10, state/ fica fora do sandbox."""
+        atual = self.m.perfil_wsl(**self.kw)
+        v2 = json.loads(json.dumps(atual))
+        v2["sandbox"]["filesystem"]["allowRead"].append("/mnt/e/Fundacao Exemplo/state")
+        v3 = json.loads(json.dumps(v2))
+        v3["sandbox"]["filesystem"]["allowWrite"].append("/mnt/e/Fundacao Exemplo/state")
+        self.assertTrue(any("allowRead" in p for p in self.m.conferir_perfil_wsl(v2, "/mnt/e/Fundacao Exemplo")))
+        self.assertTrue(any("allowWrite" in p for p in self.m.conferir_perfil_wsl(v3, "/mnt/e/Fundacao Exemplo")))
 
 
 class PerfilWslConferidoPeloModelo(unittest.TestCase):
@@ -184,8 +344,8 @@ class PerfilWslConferidoPeloModelo(unittest.TestCase):
         self.m = carregar()
         self.perfil = self.m.perfil_wsl(raiz=r"E:\Fundacao Exemplo", projeto="caso-real",
                                         perfil_windows=r"C:\Perfis\titular.PC-EXEMPLO",
-                                        outros_projetos=["lab-a", "lab-b"], backups=[r"D:\Backups-Exemplo"],
-                                        somente_leitura=[r"D:\Origem Ç"], negar=["squad-peticoes"])
+                                        outros_projetos=["lab-a", "lab-b"], somente_leitura=[r"D:\Origem Ç"],
+                                        negar=["squad-peticoes"])  # 1.7.10: sem backups no perfil do projeto
 
     def conferir(self, perfil, outros=("lab-a", "lab-b"), projeto="caso-real"):
         return self.m.conferir_perfil_wsl(perfil, self.RAIZ, projeto=projeto, outros_projetos=list(outros))
@@ -248,13 +408,14 @@ class PerfilWslConferidoPeloModelo(unittest.TestCase):
             for nome in ("caso-real", "lab-a"):
                 (raiz / "projects" / nome).mkdir(parents=True)
             perfil = base / "settings.wsl.json"
+            area = ("--area-raiz", base / "area-inexistente")  # 1.7.10: nunca a área do titular desta máquina
             r = rodar("perfil-wsl", "--raiz", raiz, "--projeto", "caso-real", "--perfil-windows", r"C:\Perfis\titular",
-                      "--saida", perfil)
+                      *area, "--saida", perfil)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            r = rodar("conferir-perfil-wsl", "--perfil", perfil, "--raiz", raiz, "--projeto", "caso-real")
+            r = rodar("conferir-perfil-wsl", "--perfil", perfil, "--raiz", raiz, "--projeto", "caso-real", *area)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             (raiz / "projects" / "lab-novo").mkdir()
-            r = rodar("conferir-perfil-wsl", "--perfil", perfil, "--raiz", raiz, "--projeto", "caso-real")
+            r = rodar("conferir-perfil-wsl", "--perfil", perfil, "--raiz", raiz, "--projeto", "caso-real", *area)
             self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
             self.assertIn("lab-novo", r.stdout)
         finally:
@@ -381,7 +542,8 @@ class LinhaDeComando(unittest.TestCase):
         for n in (1, 2):
             destino = self.base / f"perfil-{n}.json"
             r = rodar("perfil-wsl", "--raiz", self.raiz, "--projeto", "caso-real", "--perfil-windows",
-                      r"C:\Perfis\titular.PC-EXEMPLO", "--backups", r"D:\Backups-Exemplo", "--saida", destino)
+                      r"C:\Perfis\titular.PC-EXEMPLO", "--area-raiz", self.base / "area-inexistente", "--saida",
+                      destino)  # 1.7.10: sem --backups (recusado) e sem ler a área do titular desta máquina
             self.assertEqual(r.returncode, 0, r.stderr)
             saidas.append(destino.read_bytes())
         self.assertEqual(saidas[0], saidas[1])
@@ -468,43 +630,34 @@ class WslConf(unittest.TestCase):
 H1, H2, H3, H4, H5 = "1" * 64, "2" * 64, "3" * 64, "4" * 64, "5" * 64
 
 
-def raiz_preparada(base: Path) -> Path:
-    """Raiz como o preparo do Windows a deixa: hooks da skill, perfil do WSL do modelo e só a identidade."""
-    m = carregar()
-    raiz = base / "raiz"
-    (raiz / "projects" / "caso-real").mkdir(parents=True)
-    (raiz / ".claude" / "hooks").mkdir(parents=True)
-    for nome in ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py"):
-        shutil.copyfile(SKILL / "assets" / "hooks" / nome, raiz / ".claude" / "hooks" / nome)
-    perfil = m.perfil_wsl(raiz=m.caminho_wsl(str(raiz)), projeto="caso-real", perfil_windows="/mnt/c/Perfis/titular",
-                          outros_projetos=[])
-    (raiz / ".claude" / "settings.wsl.json").write_text(m.texto_json(perfil), encoding="utf-8", newline="\n")
-    (raiz / ".claude" / "settings.local.json").write_text(m.texto_json(m.identidade("titular", projeto="caso-real")),
-                                                          encoding="utf-8", newline="\n")
-    return raiz
+def raiz_preparada(base: Path):
+    """Raiz como o preparo do Windows a deixa (hooks e kit iguais aos da skill de ensaio) e o Claude Code falso.
+    1.7.10: o lançador sai do `instalar-projeto`, na área do titular, e não mais do perfil único da raiz."""
+    from test_host_projeto_apoio import claude_de_ensaio, raiz_de_ensaio, skill_de_ensaio
+    skill = skill_de_ensaio(base)
+    return skill, raiz_de_ensaio(base, skill, outros=()), claude_de_ensaio(base / "claude-ensaio")
 
 
 class Lancador(unittest.TestCase):
-    """O lançador da sessão de dados reais sai do modelo com os hashes fixados e aspas seguras para o bash."""
+    """O lançador da sessão do projeto sai do modelo com os hashes fixados e aspas seguras para o bash."""
 
     def valores(self, **extra) -> dict:
-        return {"RAIZ": "/mnt/e/Raiz de Ensaio ç", "PROJETO": "caso-real",
-                "CLAUDE_BIN": "/home/titular/.local/share/fundacao-ia/claude/2.1.302/claude",
-                "CLAUDE_VERSAO": "2.1.302", "CLAUDE_SHA256": H1, "CLAUDE_ORIGEM_HASH": "manifesto assinado",
-                "PERFIL_SHA256": H2, "HOOK_CAMINHO_SHA256": H3, "HOOK_IDENTIDADE_SHA256": H4,
-                "HOOK_SINAIS_SHA256": "6" * 64,
-                "TITULAR": "titular", "LOCAL_SHA256": H5,
-                "SKILL_MD": "/mnt/c/Perfis/titular/.claude/skills/fundacao-ia-multiprojetos/SKILL.md", **extra}
+        return {"RAIZ": "/mnt/e/Raiz de Ensaio ç", "PROJETO": "caso-real", "USUARIO": "titular",
+                "AREA": "/etc/fundacao-ia/projetos/caso-real", "SKILL": "/etc/fundacao-ia/skill/1.7.10-abc",
+                "CLAUDE_BIN": "/etc/fundacao-ia/claude/2.1.302/claude", "CLAUDE_VERSAO": "2.1.302", "CLAUDE_SHA256": H1,
+                "CLAUDE_ORIGEM_HASH": "manifesto assinado", "FERRAMENTAS": "Bash,Read", "PLUGINS": "",
+                "PREPARO_SHA256": H2, "PORTEIRO_SHA256": H3, "TEMP_PROJETO": "/tmp/fundacao-ia-caso-real",
+                "SONDA_INTEROP_CMD": "/mnt/c/Windows/System32/cmd.exe",
+                "SONDA_INTEROP_BINFMT": "/proc/sys/fs/binfmt_misc", **extra}
 
-    def lancar(self, raiz: Path, saida: Path, titular: str = "titular") -> subprocess.CompletedProcess:
-        return rodar("lancador", "--raiz", raiz, "--projeto", "caso-real", "--titular", titular, "--claude",
-                     "/opt/claude/claude", "--claude-versao", "2.1.302", "--claude-sha256", H1, "--origem-hash",
-                     "informado", "--skill-md", "/opt/skill/SKILL.md", "--saida", saida)
+    def lancar(self, skill: Path, raiz: Path, base: Path, claude: Path) -> subprocess.CompletedProcess:
+        from test_host_projeto_apoio import instalar
+        return instalar(skill, raiz, base, "caso-real", claude)
 
     def test_sem_marcadores_e_com_os_valores_fixados(self):
         texto = carregar().lancador(self.valores())
         self.assertNotIn("{{", texto)
-        for valor in (H1, H2, H3, H4, "2.1.302", "caso-real", "'/mnt/e/Raiz de Ensaio ç'"):
+        for valor in (H1, H2, H3, "2.1.302", "caso-real", "'/mnt/e/Raiz de Ensaio ç'"):
             self.assertIn(valor, texto)
         self.assertTrue(texto.startswith("#!/usr/bin/env bash\n"))
         self.assertNotIn("\r", texto)
@@ -515,77 +668,72 @@ class Lancador(unittest.TestCase):
 
     def test_valores_invalidos_sao_recusados(self):
         m = carregar()
-        for chave, ruim in (("CLAUDE_SHA256", "abc"), ("PERFIL_SHA256", "Z" * 64), ("PROJETO", "../x"),
-                            ("RAIZ", "relativo/x"), ("CLAUDE_BIN", "claude"), ("TITULAR", "Titular Silva"),
-                            ("LOCAL_SHA256", "abc")):
+        for chave, ruim in (("CLAUDE_SHA256", "abc"), ("PREPARO_SHA256", "Z" * 64), ("PROJETO", "../x"),
+                            ("RAIZ", "relativo/x"), ("CLAUDE_BIN", "claude"), ("USUARIO", "Titular Silva"),
+                            ("PORTEIRO_SHA256", "abc")):
             with self.subTest(chave=chave), self.assertRaises(ValueError):
                 m.lancador(self.valores(**{chave: ruim}))
         with self.assertRaises(ValueError):
-            m.lancador({k: v for k, v in self.valores().items() if k != "PERFIL_SHA256"})
+            m.lancador({k: v for k, v in self.valores().items() if k != "PREPARO_SHA256"})
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "1.7.10: o lançador sai do instalar-projeto, no Ubuntu")
     def test_linha_de_comando_fixa_perfil_e_hooks_da_raiz(self):
-        base = Path(tempfile.mkdtemp(prefix="lancador-teste-"))
+        import hashlib
+        base = Path(tempfile.mkdtemp(prefix="lancador-teste-")).resolve()
         try:
-            raiz = raiz_preparada(base)  # 1.7.7: o lançador só fixa perfil, hooks e identidade que conferem
+            skill, raiz, claude = raiz_preparada(base)  # 1.7.7: o lançador só fixa perfil e hooks que conferem
             ganchos_dir = raiz / ".claude" / "hooks"
-            saida = base / "abrir-fundacao.sh"
-            r = self.lancar(raiz, saida)
+            r = self.lancar(skill, raiz, base, claude)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            texto = saida.read_text(encoding="utf-8")
-            import hashlib
-            for arq in (raiz / ".claude" / "settings.wsl.json", ganchos_dir / "guarda_caminho.py",
+            area = base / "area" / "projetos" / "caso-real"
+            hashes = json.loads((area / "hashes.json").read_text(encoding="utf-8"))["arquivos"]
+            for arq in (area / "settings.wsl.json", ganchos_dir / "guarda_caminho.py",
                         ganchos_dir / "guarda_identidade.py", ganchos_dir / "sinais_sessao.py"):
-                self.assertIn(hashlib.sha256(arq.read_bytes()).hexdigest(), texto)
+                self.assertEqual(hashes[arq.as_posix()], hashlib.sha256(arq.read_bytes()).hexdigest())
+            self.assertIn(hashlib.sha256(claude.read_bytes()).hexdigest(),
+                          (base / "bin" / "abrir-fundacao-caso-real").read_text(encoding="utf-8"))
+            shutil.rmtree(base / "area")
+            shutil.rmtree(base / "bin")
             (ganchos_dir / "guarda_identidade.py").unlink()
-            r = self.lancar(raiz, base / "outro.sh")
+            r = self.lancar(skill, raiz, base, claude)
             self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
             self.assertIn("guarda_identidade", r.stdout + r.stderr)
-            self.assertFalse((base / "outro.sh").exists())
+            self.assertFalse((base / "bin").exists())
         finally:
             shutil.rmtree(base, ignore_errors=True)
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "1.7.10: o lançador sai do instalar-projeto, no Ubuntu")
     def test_linha_de_comando_so_fixa_o_que_confere(self):
         """Auditoria Codex Security da 1.7.6, #5: o lançador fixava o hash de qualquer perfil que passasse na
-        conferência parcial e nem olhava o settings.local.json. Agora confere perfil (igual ao do modelo), hooks
-        (iguais aos da skill) e identidade (só a do titular informado) nos mesmos bytes cujo hash fixa."""
-        import hashlib
-        base = Path(tempfile.mkdtemp(prefix="lancador-conferido-teste-"))
+        conferência parcial. Na 1.7.10 o perfil é gerado na área do titular, e o preparo só fixa hooks iguais aos da
+        skill, o kit da raiz igual ao da skill e o Claude Code com o SHA-256 informado; senão, nada é gravado."""
+        from test_host_projeto_apoio import instalar, sha as sha_de
+        base = Path(tempfile.mkdtemp(prefix="lancador-conferido-teste-")).resolve()
         try:
-            raiz = raiz_preparada(base)
-            local = raiz / ".claude" / "settings.local.json"
-            r = self.lancar(raiz, base / "certo.sh")
-            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            texto = (base / "certo.sh").read_text(encoding="utf-8")
-            self.assertIn(hashlib.sha256(local.read_bytes()).hexdigest(), texto)
-            self.assertIn("TITULAR='titular'", texto)
-
-            def perfil_com_rede():
-                arq = raiz / ".claude" / "settings.wsl.json"
-                dados = json.loads(arq.read_text(encoding="utf-8"))
-                dados["sandbox"]["network"]["allowedDomains"] = ["exemplo.invalid"]
-                arq.write_text(json.dumps(dados), encoding="utf-8")
-
-            def local_com_hook():
-                local.write_text(json.dumps({**json.loads(local.read_text(encoding="utf-8")),
-                                             "hooks": {"PreToolUse": []}}), encoding="utf-8")
-
-            def hook_alterado():
+            def hook_alterado(raiz, _claude):
                 with open(raiz / ".claude" / "hooks" / "guarda_identidade.py", "a", encoding="utf-8") as f:
                     f.write("# alterado\n")
 
-            casos = {"perfil": (perfil_com_rede, "titular"), "settings.local.json": (local_com_hook, "titular"),
-                     "guarda_identidade": (hook_alterado, "titular"), "outra-pessoa": (lambda: None, "outra-pessoa"),
-                     "lab-novo": (lambda: (raiz / "projects" / "lab-novo").mkdir(), "titular")}
-            for n, (trecho, (mudanca, titular)) in enumerate(casos.items()):
+            def kit_alterado(raiz, _claude):
+                with open(raiz / "fundacao" / "__init__.py", "a", encoding="utf-8") as f:
+                    f.write("# alterado\n")
+
+            def claude_trocado(_raiz, claude):
+                with open(claude, "a", encoding="utf-8") as f:
+                    f.write("# outro binário\n")
+
+            casos = {"guarda_identidade": hook_alterado, "kit da raiz": kit_alterado, "não confere": claude_trocado}
+            for n, (trecho, mudanca) in enumerate(casos.items()):
                 with self.subTest(trecho):
-                    shutil.rmtree(raiz)
-                    raiz_preparada(base)
-                    mudanca()
-                    saida = base / f"recusado-{n}.sh"
-                    r = self.lancar(raiz, saida, titular=titular)
+                    pasta = base / f"caso-{n}"
+                    pasta.mkdir()
+                    skill, raiz, claude = raiz_preparada(pasta)
+                    esperado = sha_de(claude)
+                    mudanca(raiz, claude)
+                    r = instalar(skill, raiz, pasta, "caso-real", claude, "--claude-sha256", esperado)
                     self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
                     self.assertIn(trecho, r.stdout)
-                    self.assertFalse(saida.exists())
+                    self.assertFalse((pasta / "bin").exists())
         finally:
             shutil.rmtree(base, ignore_errors=True)
 

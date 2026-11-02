@@ -105,9 +105,11 @@ class TestLivroAssinado(FoundationTestCase):
     def test_cli_desastre_estrito_exige_assinatura_mesmo_com_hash_informado(self):
         from fundacao.__main__ import build_parser
         from fundacao.cli_backup import executar
-        origem = self.root / "copia-ficticia"
+        # Cópia e restauração fora da raiz: dentro dela o kit recusa (revisão de segurança da 1.7.10, KIT-F7).
+        origem, destino = (self.root.parent / f"{self.root.name}-{n}" for n in ("copia-ficticia", "restauracao"))
+        for pasta in (origem, destino):
+            self.addCleanup(shutil.rmtree, pasta, True)
         copia = backup.create_backup(self.root, origem, "ensaio-ficticio")
-        destino = self.root / "restauracao-ficticia"
         args = build_parser().parse_args([
             "--raiz", str(self.root / "raiz-perdida"), "backup", "restaurar", "--origem", str(origem),
             "--destino", str(destino), "--retiradas", str(self.root / "state/retiradas.jsonl"),
@@ -122,7 +124,10 @@ class TestLivroAssinado(FoundationTestCase):
         from fundacao.cli_backup import executar
         exe = decisoes.ssh_keygen_do_sistema()
         if not exe: self.skipTest("OpenSSH do sistema ausente")
-        origem = self.root / "copia-ficticia"
+        # Cópia e restauração fora da raiz: dentro dela o kit recusa (revisão de segurança da 1.7.10, KIT-F7).
+        origem, destino = (self.root.parent / f"{self.root.name}-{n}" for n in ("copia-ficticia", "restauracao"))
+        for pasta in (origem, destino):
+            self.addCleanup(shutil.rmtree, pasta, True)
         copia = backup.create_backup(self.root, origem, "ensaio-ficticio")
         chave = self.root / "chave-ficticia"
         subprocess.run([exe, "-q", "-t", "ed25519", "-N", "", "-f", str(chave)], check=True,
@@ -132,7 +137,6 @@ class TestLivroAssinado(FoundationTestCase):
         livro_assinado.preparar(self.livro, copia["sha256_manifesto"], self.admin.principal_id, self.arquivo)
         subprocess.run([exe, "-Y", "sign", "-f", str(chave), "-n", "fundacao-copia", str(self.arquivo)],
                        check=True, capture_output=True, timeout=30)
-        destino = self.root / "restauracao-ficticia"
         args = build_parser().parse_args([
             "--raiz", str(self.root / "raiz-perdida"), "backup", "restaurar", "--origem", str(origem),
             "--destino", str(destino), "--retiradas", str(self.root / "state/retiradas.jsonl"),

@@ -28,11 +28,30 @@ Saída JSON; código 0 só quando os sete passos conferem, 1 se falta conferênc
 O pre-flight percorre apenas metadados de fontes fixas. Recusa elos e vinculos fisicos tambem nas leituras
 transitivas; scripts de hook fora das areas do host e codigo que exigiria ler decisoes de projeto ficam recusados.
 O inventario anterior sem a impressao de statusLine fica pendente; regrave-o somente apos revisar as diferencas.
+
+Passo do host neste PC (1.7.10; o passo falhava sempre aqui por causas do layout padrão):
+- o perfil do outro sistema cita os hooks pelo caminho dele (o settings.wsl.json da raiz, por /mnt/<l>/...; o
+  settings.json, por unidade): antes de resolver, o caminho é traduzido para o deste sistema; sem isso, o abspath
+  cairia fora das áreas permitidas (no Windows, /mnt/e/... viraria E:\\mnt\\e\\...) e o passo falharia, embora o
+  inventário nem abrisse esses scripts;
+- em ~/.claude/skills e <raiz>/.claude/skills, ligação só no primeiro nível e só a do instalador: o alvo final
+  (realpath, sem diferença de caixa) é exatamente ~/.agents/skills/<o mesmo nome>, que existe e cujo conteúdo o
+  pre-flight já percorre lá, pelo caminho real; o que o inventário lê pela ligação é esse conteúdo conferido. Qualquer
+  outra ligação continua recusada;
+- em ~/.claude/plugins, arquivo comum de plugin com secret ou credentials no nome (e nenhum outro nome protegido no
+  caminho) vira aviso, sem leitura do conteúdo — salvo se uma fonte de hooks de plugin (hooks.json, plugin.json e os
+  arquivos de hooks que ele aponta) o cita: aí o inventário o leria, e o passo continua recusado;
+- marcadores do sandbox na raiz (a lista obrigatória do bwrap: .bashrc, .bash_profile, .zshrc, .zprofile, .profile,
+  .gitconfig, .gitmodules, .ripgreprc, .mcp.json, .vscode, .idea): arquivo comum de 0 byte é aceito e vai aos avisos;
+  o .mcp.json comum até o teto (fonte suportada) e as pastas .vscode/.idea também viram aviso; nos arquivos de shell e
+  git, conteúdo, pasta ou tipo incomum falham, e ligação ou vínculo físico falham em qualquer um (remoção pela Lixeira,
+  com o OK do titular).
 """
 
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import importlib.util
 import json
 import os
@@ -47,6 +66,20 @@ KIT = AQUI.parent / "assets" / "fundacao-kit"
 ESQUEMA = "fundacao.verificacao/1"
 IDS = ("kit", "retomada", "matriz", "instrucoes", "host", "cadeia", "backup")
 TETO_ENTRADA, TETO_SAIDA = 5_000_000, 2_000_000
+# Lista obrigatória do bwrap no sandbox do Claude Code: quando um comando morre sem saída normal, o ponto de montagem
+# fica no diretório atual como arquivo de 0 byte (os 11 da raiz apareceram em 30/10/2026; references/atualizacao-1.7.10.md).
+# Os arquivos de shell e git só valem como arquivo comum de 0 byte; .mcp.json é fonte suportada (arquivo comum até o
+# teto é aviso, não falha) e .vscode/.idea são pastas de editor comuns (pasta é aviso). Ligação e vínculo físico
+# recusam sempre, em qualquer um.
+MARCADORES_SHELL_GIT = (".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".profile", ".gitconfig", ".gitmodules",
+                        ".ripgreprc")
+MARCADORES_PASTA = (".vscode", ".idea")
+MARCADOR_MCP = ".mcp.json"
+MARCADORES_DO_SANDBOX = MARCADORES_SHELL_GIT + (MARCADOR_MCP,) + MARCADORES_PASTA
+# Nomes de código de plugin que caem na lista de negação sem serem segredo (ex.: scripts/lib/secret.py): aviso, sem
+# leitura. Os demais nomes protegidos (.env*, *.pem, *.key, id_rsa*...) continuam recusando.
+TOLERADOS_EM_PLUGINS = ("*secret*", "*credentials*", "secrets")
+FONTES_DE_HOOKS = ("hooks.json", "plugin.json")  # o que o inventario_plugins.py lê para achar os scripts dos hooks
 
 
 def _vizinho(nome: str):
@@ -101,14 +134,87 @@ def estado_caminho(caminho: Path, *, pasta: bool = False, teto: int | None = Non
     return "presente"
 
 
-def arvore_segura(base: Path) -> bool:
-    """Pre-flight de metadados, sem seguir elos nem entrar em projetos, estado ou segredos."""
+def ligacao_do_instalador(alvo: Path, perfil: Path) -> bool:
+    """A ligação que o instalador da skill cria (`<skills>/<nome>` -> `~/.agents/skills/<nome>`, junção no Windows):
+    o alvo final (realpath, sem diferença de caixa) é exatamente `~/.agents/skills/<o mesmo nome>`, que existe como
+    pasta, sem ligação no caminho. Nada é lido; o conteúdo do alvo é percorrido pelo pre-flight de ~/.agents/skills."""
+    esperado = Path(os.path.abspath(perfil)) / ".agents" / "skills" / alvo.name
+    if estado_caminho(esperado, pasta=True) != "presente":
+        return False
+    try:
+        real, certo = os.path.realpath(alvo), os.path.realpath(esperado)
+    except (OSError, ValueError):
+        return False
+    return os.path.normcase(real).casefold() == os.path.normcase(certo).casefold()
+
+
+def _nome_tolerado(partes) -> bool:
+    """O último nome cai na lista de negação só por TOLERADOS_EM_PLUGINS (secret, credentials) e não é nome curto
+    8.3; as pastas de cima já passaram pela regra no percurso."""
+    nome = RETOMADA._nome(partes[-1])
+    globos = [g for g in RETOMADA.NOMES_PROTEGIDOS if fnmatch.fnmatchcase(nome, g)]
+    return bool(globos) and not RETOMADA.CURTO_8_3.search(nome) and all(g in TOLERADOS_EM_PLUGINS for g in globos)
+
+
+def _textos(valor):
+    if isinstance(valor, str):
+        yield valor
+    elif isinstance(valor, dict):
+        for chave, item in valor.items():
+            yield str(chave)
+            yield from _textos(item)
+    elif isinstance(valor, list):
+        for item in valor:
+            yield from _textos(item)
+
+
+def citado_em_hooks(base: Path, fontes: list, tolerados: list) -> bool:
+    """Alguma fonte de hooks dos plugins (hooks.json, plugin.json e os arquivos de hooks que o plugin.json aponta) cita
+    o nome de um arquivo tolerado: o inventario_plugins.py o leria para o SHA-256 do script do hook. Lido como JSON, o
+    texto de cada chave e valor é comparado sem diferença de caixa; fonte ilegível, grande ou funda demais também
+    conta como citação (o passo continua recusado, como antes)."""
+    base = Path(os.path.abspath(base))
+    nomes = {RETOMADA._nome(p.name) for p in tolerados}
+    pendentes, vistas = list(fontes), set()
+    while pendentes:
+        fonte = pendentes.pop()
+        chave = os.path.normcase(os.path.abspath(fonte))
+        if chave in vistas:
+            continue
+        vistas.add(chave)
+        if len(vistas) > 5000:
+            return True
+        try:
+            dados = json.loads(RETOMADA.ler_contido(fonte, Path(os.path.realpath(fonte.parent)), TETO_ENTRADA)
+                               .decode("utf-8-sig"))
+            if any(n in t.replace(chr(92), "/").casefold() for t in _textos(dados) for n in nomes):
+                return True
+        except (OSError, ValueError, RecursionError, RETOMADA.AcimaDoTeto):
+            return True
+        hooks = dados.get("hooks") if fonte.name.casefold() == "plugin.json" and isinstance(dados, dict) else None
+        for rel in [hooks] if isinstance(hooks, str) else hooks if isinstance(hooks, list) else []:
+            if not isinstance(rel, str) or ".." in Path(rel.replace(chr(92), "/")).parts:
+                continue
+            for raiz_do_plugin in (fonte.parent.parent, fonte.parent):  # .claude-plugin/plugin.json ou na raiz
+                alvo = Path(os.path.abspath(raiz_do_plugin / rel))
+                if alvo.is_relative_to(base) and estado_caminho(alvo, teto=TETO_ENTRADA) == "presente":
+                    pendentes.append(alvo)
+    return False
+
+
+def arvore_segura(base: Path, *, ligacao_aceita=None, tolerar_nomes: bool = False, achados: dict | None = None) -> bool:
+    """Pre-flight de metadados, sem seguir elos nem entrar em projetos, estado ou segredos.
+
+    `ligacao_aceita(alvo)`: ligação do primeiro nível que pode ficar (a do instalador); não é percorrida aqui.
+    `tolerar_nomes`: arquivo comum cujo único nome protegido é o próprio, de TOLERADOS_EM_PLUGINS, não é aberto e vai
+    para `achados["tolerados"]`, salvo se uma fonte de hooks o citar. As ligações aceitas vão para
+    `achados["ligacoes"]` (1.7.10)."""
     estado = estado_caminho(base, pasta=True)
     if estado == "ausente":
         return True
     if estado != "presente":
         return False
-    pilha, entradas = [(base, 0)], 0
+    pilha, entradas, ligacoes, tolerados, fontes = [(base, 0)], 0, [], [], []
     try:
         while pilha:
             pasta, nivel = pilha.pop()
@@ -120,19 +226,70 @@ def arvore_segura(base: Path) -> bool:
                     return False
                 alvo = pasta / nome
                 partes = alvo.relative_to(base).parts
-                if (any(p.casefold() in ("projects", "state") for p in partes) or
-                        RETOMADA.protegido(base, partes)):
+                if any(p.casefold() in ("projects", "state") for p in partes):
                     return False
-                st = os.lstat(alvo)
+                st = os.lstat(alvo)  # só metadados, sem seguir: nada é aberto
+                if RETOMADA.protegido(base, partes):
+                    if not (tolerar_nomes and _nome_tolerado(partes) and stat.S_ISREG(st.st_mode)
+                            and not GRAVACAO.e_ligacao(st) and st.st_nlink == 1 and st.st_size <= TETO_ENTRADA):
+                        return False
+                    tolerados.append(alvo)
+                    continue
                 if GRAVACAO.e_ligacao(st):
+                    if nivel == 0 and ligacao_aceita is not None and ligacao_aceita(alvo):
+                        ligacoes.append(nome)
+                        continue
                     return False
                 if stat.S_ISDIR(st.st_mode):
                     pilha.append((alvo, nivel + 1))
                 elif (not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_size > TETO_ENTRADA):
                     return False
+                elif nome.casefold() in FONTES_DE_HOOKS:
+                    fontes.append(alvo)
     except (OSError, ValueError):
         return False
+    if tolerados and citado_em_hooks(base, fontes, tolerados):
+        return False
+    if achados is not None:
+        achados.setdefault("ligacoes", []).extend(sorted(ligacoes))
+        achados.setdefault("tolerados", []).extend(sorted(p.relative_to(base).as_posix() for p in tolerados))
     return True
+
+
+def marcadores_do_sandbox(raiz: Path) -> dict:
+    """Os nomes da lista obrigatória do bwrap na raiz, só pelo lstat (nada é lido): os de 0 byte, os aceitos com nota
+    (o .mcp.json comum com conteúdo até o teto e as pastas .vscode/.idea) e os recusados, com o motivo. Ligação e
+    vínculo físico recusam sempre; para os arquivos de shell e git, conteúdo, pasta e tipo incomum também recusam."""
+    zero, aceitos, recusados = [], {}, {}
+    for nome in MARCADORES_DO_SANDBOX:
+        try:
+            st = os.lstat(Path(raiz) / nome)
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            recusados[nome] = "ilegível"
+            continue
+        if GRAVACAO.e_ligacao(st):
+            recusados[nome] = "ligação"
+        elif stat.S_ISDIR(st.st_mode):
+            if nome in MARCADORES_PASTA:
+                aceitos[nome] = "pasta de editor comum (não lida)"
+            else:
+                recusados[nome] = "pasta"
+        elif not stat.S_ISREG(st.st_mode):
+            recusados[nome] = "tipo incomum"
+        elif st.st_nlink != 1:
+            recusados[nome] = "vínculo físico"
+        elif st.st_size:
+            if nome == MARCADOR_MCP and st.st_size <= TETO_ENTRADA:
+                aceitos[nome] = "fonte .mcp.json com conteúdo (não lida)"
+            elif nome == MARCADOR_MCP:
+                recusados[nome] = "acima do teto"
+            else:
+                recusados[nome] = "com conteúdo"
+        else:
+            zero.append(nome)
+    return {"zero_byte": zero, "aceitos": aceitos, "recusados": recusados}
 
 
 def codigo_seguro(raiz: Path) -> bool:
@@ -160,15 +317,42 @@ def codigo_seguro(raiz: Path) -> bool:
     return True
 
 
-def host_seguro(raiz: Path, perfil: Path) -> bool:
-    """Fontes fixas do inventario; nenhum caminho de config autoriza ler dados de projeto."""
+def _caminho_no_sistema(texto: str, nome_sistema: str = os.name) -> str:
+    """Traduz um caminho de hook escrito para o outro sistema para o deste, antes de resolver (1.7.10): no Windows,
+    `/mnt/<l>/<resto>` vira `<l>:/<resto>` (o perfil do WSL cita os hooks por /mnt/); no POSIX, `<l>:[/ou barra
+    invertida]<resto>` vira `/mnt/<l minúsculo>/<resto>` (o perfil do Windows os cita por unidade). Sem casar, devolve
+    o texto como veio. Sem isso, o `abspath` do perfil do outro sistema cai fora das áreas permitidas (ex.: no Windows,
+    `/mnt/e/...` vira `E:\\mnt\\e\\...`) e o passo do host falha sempre aqui, embora o inventário nem abra esses scripts."""
+    if nome_sistema == "nt":
+        m = re.match(r"^/mnt/([A-Za-z])/(.*)$", texto)
+        if m:
+            return m.group(1) + ":/" + m.group(2)
+    else:
+        m = re.match(r"^([A-Za-z]):[\\/](.*)$", texto)
+        if m:
+            return "/mnt/" + m.group(1).lower() + "/" + m.group(2)
+    return texto
+
+
+def host_seguro(raiz: Path, perfil: Path, avisos: list | None = None) -> bool:
+    """Fontes fixas do inventario; nenhum caminho de config autoriza ler dados de projeto. `avisos` recebe as ligações
+    do instalador aceitas e os arquivos de plugin tolerados pelo nome, não lidos (1.7.10)."""
     fontes = [(perfil, ".claude.json"), (perfil, ".codex/config.toml"), (raiz, ".mcp.json")]
     configs = [(perfil, ".claude/settings.json")] + [(raiz, ".claude/" + n) for n in
                ("settings.json", "settings.local.json", "settings.wsl.json")]
-    arvores = [perfil / p for p in (".claude/skills", ".agents/skills", ".codex/skills", ".claude/plugins")]
-    arvores.append(raiz / ".claude/skills")
-    if not all(arvore_segura(p) for p in arvores):
+    skills, plugins = {}, {}
+    instalador = {"ligacao_aceita": lambda alvo: ligacao_do_instalador(alvo, perfil), "achados": skills}
+    arvores = [(perfil / ".claude/skills", instalador), (perfil / ".agents/skills", {}), (perfil / ".codex/skills", {}),
+               (perfil / ".claude/plugins", {"tolerar_nomes": True, "achados": plugins}),
+               (raiz / ".claude/skills", instalador)]
+    if not all(arvore_segura(p, **opcoes) for p, opcoes in arvores):
         return False
+    if avisos is not None and skills.get("ligacoes"):
+        avisos.append("ligações do instalador aceitas (alvo ~/.agents/skills/<mesmo nome>, conferido lá): "
+                      + ", ".join(sorted(set(skills["ligacoes"]))))
+    if avisos is not None and plugins.get("tolerados"):
+        avisos.append(f"{len(plugins['tolerados'])} arquivo(s) de plugin com secret ou credentials no nome, não lidos "
+                      "nem citados por hook: " + ", ".join(plugins["tolerados"][:10]))
     if any(estado_caminho(base / rel, teto=TETO_ENTRADA) == "recusado" for base, rel in fontes + configs):
         return False
     # So depois de validar os arquivos fixos, veja os nomes de scripts que o inventario abriria.
@@ -198,7 +382,7 @@ def host_seguro(raiz: Path, perfil: Path) -> bool:
                     for parte in partes:
                         if not isinstance(parte, str):
                             continue
-                        alvo = Path(parte.strip('"').replace(chr(92), "/"))
+                        alvo = Path(_caminho_no_sistema(parte.strip('"').replace(chr(92), "/")))
                         if ".." in alvo.parts:
                             return False
                         alvo = Path(os.path.abspath(alvo if alvo.is_absolute() else base / alvo))
@@ -322,9 +506,15 @@ def verificar(raiz: Path, *, completo: bool = False, perfil: Path | None = None,
                        "Confira instrucoes_raiz.py conferir; gere as instruções pelo fluxo autorizado.")]
     perfil = Path(perfil) if perfil is not None else Path.home()  # inventário gravável não escolhe outro perfil
     perfil_args = ["--perfil", perfil]
-    if estado_caminho(perfil, pasta=True) != "presente" or RETOMADA.pasta_recusada(perfil / "rotina.json"):
+    marcas, avisos_host = marcadores_do_sandbox(raiz), []
+    if marcas["recusados"]:
+        host = passo("host", "falhou", "marcador do sandbox na raiz com conteúdo, pasta, ligação ou vínculo físico",
+                     "Os marcadores do sandbox na raiz só valem como arquivo comum de 0 byte: investigue os listados "
+                     "antes de abrir sessão; a remoção é do titular, pela Lixeira.")
+        host["marcadores_recusados"] = marcas["recusados"]
+    elif estado_caminho(perfil, pasta=True) != "presente" or RETOMADA.pasta_recusada(perfil / "rotina.json"):
         host = passo("host", "nao_rodado", "perfil indisponível ou recusado", "Informe o perfil correto com --perfil.")
-    elif not host_seguro(raiz, perfil):
+    elif not host_seguro(raiz, perfil, avisos_host):
         host = passo("host", "falhou", "leitura transitiva do inventario recusada",
                      "Confira as fontes fixas do host e os caminhos dos scripts antes de refazer o inventario.")
     else:
@@ -332,6 +522,15 @@ def verificar(raiz: Path, *, completo: bool = False, perfil: Path | None = None,
                                       raiz / "registry/inventario-host.json", "--raiz", raiz, *perfil_args),
                         [raiz / "registry/inventario-host.json"], timeout,
                         "Confira inventariar_host.py verificar; regrave o inventário só depois de revisar as diferenças.")
+    if marcas["zero_byte"]:
+        avisos_host.append("marcadores de 0 byte do sandbox na raiz (" + ", ".join(marcas["zero_byte"]) + "): "
+                           "sobra de comando que morreu no sandbox; a remoção é do titular, pela Lixeira")
+    if marcas["aceitos"]:
+        avisos_host.append("marcadores do sandbox aceitos na raiz, não lidos ("
+                           + ", ".join(n + ": " + m for n, m in sorted(marcas["aceitos"].items()))
+                           + "): a remoção é do titular, pela Lixeira")
+    if avisos_host:
+        host["avisos"] = avisos_host
     passos.append(host)
     if pode_ler_banco:
         cadeia = conferir("cadeia", CONFERIDO.python_isolado(KIT, CONFERIDO.CADEIA, raiz), [], timeout,

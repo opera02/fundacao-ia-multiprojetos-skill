@@ -903,6 +903,92 @@ MELHORIAS_177 = {
              "externa citada, com o texto da licença quando há trecho)")],
 }
 
+# 1.7.10 (isolamento por projeto no Ubuntu, hooks novos, porteiro e trava de projeto, ficha de aberturas, plugin
+# candidato, fluxo B preso ao projeto, versão em uso e cópia de segurança): (origem, testes) por requisito. Só os
+# apontamentos que a versão muda; o estado de cada requisito não sobe. O canário (ensaio real) é evidência pendente,
+# passo do titular no Ubuntu: até ele, o isolamento entre projetos no Ubuntu é lógico (sondas de 31/10/2026: com a raiz
+# em /mnt/e, o sandbox não confinou os comandos).
+MELHORIAS_1710 = {
+    "R04": [("isolamento por projeto", "scripts/tests/test_host_projeto_perfil.py e test_host_projeto_lancador.py "
+             "(perfil e lançador por projeto no Ubuntu: outros projetos, state/ e a casa negados, ficha só com o "
+             "canário); scripts/tests/test_hooks_1710_leitura.py e test_hooks_1710_identidade.py (Read, Grep, Glob e "
+             "comando que cite outro projeto ou state/ negados: guarda-corpos); scripts/tests/test_ensaio_isolamento.py "
+             "e test_ensaio_isolamento_juiz.py (o canário, com executor falso); evidência pendente: o ensaio real do "
+             "canário (scripts/tests/test_ensaio_isolamento_real.py, passo do titular no Ubuntu), e até ele o "
+             "isolamento entre projetos no Ubuntu é lógico"),
+            ("porteiro e trava de projeto", "assets/fundacao-kit/tests/test_trava_projeto.py (`sessao-<projeto>` só "
+             "com leitura, escrita e uso no próprio projeto, derivados da trava, e nunca outro projeto, caso, "
+             "`foundation` ou escrita no comum; a CLI travada recusa o que a sessão não pede); "
+             "scripts/tests/test_porteiro.py, test_porteiro_fila.py e test_porteiro_kit.py (pedido tipado pelo mapa "
+             "fixo, só o projeto da configuração, fila lida como hostil; com o kit de verdade, a sessão do proj-a não "
+             "alcança o proj-b); com a raiz em /mnt/e, camada lógica até o canário"),
+            ("fluxo B preso ao projeto", "scripts/tests/test_integ_fluxob_1710_perfil.py (o perfil de execução roda só "
+             "no projeto do lançador), test_integ_fluxob_1710_importar.py (só a origem registrada para o projeto do "
+             "destino), test_integ_fluxob_1710_git.py e test_integ_fluxob_1710_i7_exclude.py (o Git próprio do "
+             "projeto avisa o que o Claude Code ou o Codex carregariam dali e não pega a fila do porteiro nem os "
+             "caches); test_integ_fluxob_1710_plano.py, test_integ_fluxob_1710_especial.py, "
+             "test_integ_fluxob_1710_b7.py e test_integ_fluxob_1710_i15_sufixo.py (o que o manifesto não prende — "
+             "pasta de segredo pela regra única, FIFO, socket, dispositivo, arquivo com o sufixo de ligação, valor de "
+             "--opção=arquivo — marca o código NÃO PRESO); test_integ_fluxob_1710_comando.py e "
+             "test_integ_fluxob_1710_terminal.py (o comando pronto do titular cita cada caminho para o terminal de "
+             "destino: um nome do código importado não muda o comando)")],
+    "R07": [("ficha de aberturas", "assets/fundacao-kit/tests/test_aberturas_vigente.py (vale a maior versão, só com "
+             "a assinatura no namespace fundacao-abertura, dentro dos tetos e não vencida; se ela não vale, tudo "
+             "fechado, sem voltar à anterior), test_aberturas_cli.py, test_main_laco_aberturas.py e "
+             "test_aberturas_disco.py (abertura preparar, verificar e vigente; a ficha gravada sem seguir ligação e "
+             "sem sobrescrever) e test_aberturas_comando_i13.py (o comando fixo do titular aponta a cópia protegida e "
+             "começa pelo passo que falta); scripts/tests/test_fundacao_titular.py e "
+             "test_fundacao_titular_sem_site.py (a ferramenta fixa mostra o que a ficha abre, exige o nome do projeto "
+             "digitado e assina com ssh-keygen -Y sign -n fundacao-abertura, com -I -B -S) e test_aberturas_fluxo.py "
+             "(levantar, preparar, assinar e a ficha em vigor); chaves e âncora de ensaio; a ficha só vale com o "
+             "canário, pendente")],
+    "R18": [("porteiro e trava do banco", "assets/fundacao-kit/tests/test_porteiro_cliente.py (na sessão do Ubuntu, "
+             "`python -m fundacao` vira pedido ao porteiro, sem abrir o banco, com a mesma saída e o mesmo código), "
+             "test_trava_projeto.py (a identidade `sessao-<projeto>` vale só com a trava do próprio projeto) e "
+             "test_trava_banco.py (o marcador state/banco.trava do outro lado recusa abrir o banco, e o velho só sai "
+             "pelo comando do titular); scripts/tests/test_porteiro_kit.py (a lição do outro projeto pelo id é "
+             "negada e fica na trilha)")],
+    "R33": [("hooks da 1.7.10", "scripts/tests/test_hooks_1710.py, test_hooks_1710_rede.py, test_hooks_1710_leitura.py, "
+             "test_hooks_1710_identidade.py e test_hooks_1710_aviso_copia.py (lista positiva de ferramentas, rede só da "
+             "ficha, leitura de outro projeto e de state/, comando que cite outro projeto e lembrete da cópia; falha "
+             "fechada e -I -B); scripts/tests/test_host_projeto_perfil.py (hooks registrados no perfil do projeto); "
+             "disparo pelo Claude Code fixado: no canário, pendente")],
+    "R36": [("plugin candidato", "scripts/tests/test_plugin_candidato.py, test_plugin_candidato_regras.py e "
+             "test_plugin_candidato_ligacoes.py (montar, conferir e revisar: lista positiva, shell embutido, menção '@' "
+             "para fora, ligação e vínculo físico recusados); scripts/tests/test_host_projeto_tetos.py (o preparo "
+             "confere de novo antes de copiar para a área do titular); scripts/tests/test_host_projeto_lancador.py (o "
+             "plugin da ficha entra pelo --plugin-dir); carga no Claude Code fixado: no canário, pendente"),
+            ("ficha de aberturas", "assets/fundacao-kit/tests/test_aberturas_regras.py (plugin da ficha no disco: só "
+             "Markdown em skills/, agents/ e commands/, sem hooks, MCP nem executável, frontmatter sem hooks nem "
+             "mcpServers e o manifesto_sha256 que muda com o conteúdo); scripts/tests/test_fundacao_titular.py (a "
+             "assinatura recusa plugin com hooks ou com o manifesto diferente do disco) e test_levantar_aberturas.py "
+             "(plugin de dado não é proposto na ficha)")],
+    "R46": [("versão em uso do projeto", "scripts/tests/test_integ_fluxob_1710_versao.py (o voltar só com o aceite "
+             "assinado sobre o pedido de volta e esse SHA-256, e um aceite para uma volta só; o pedido sem --para não "
+             "vale depois de uma promoção ou volta posterior; o promover copia pela cópia única da skill, com o "
+             "SHA-256 da proposta)")],
+    "R45": [("cópia de segurança", "assets/fundacao-kit/tests/test_backup_1710_git.py, test_backup_1710_cache.py, "
+             "test_backup_1710_limpeza.py, test_backup_1710_promocao.py e test_backup_1710_manutencao.py (.git dos "
+             "projetos sem hooks nem config com credencial ou programa, .cache fora, sobra do preparo contada, nova "
+             "tentativa no WinError 5, trava de manutenção e backup situacao); "
+             "scripts/tests/test_atualizar_fundacao_1710.py (em-uso e .claude/projetos na política de backup da raiz; "
+             "nova tentativa da cópia ANTES)")],
+    "R52": [("isolamento por projeto", "scripts/tests/test_host_projeto_perfil.py (escrita só no projeto: registry/, os "
+             ".claude, a âncora e as respostas do porteiro negados); scripts/tests/test_host_wsl.py (na 1.7.10 a sessão "
+             "abre na pasta do projeto, e o settings.local.json da raiz não troca o projeto do lançador); "
+             "scripts/tests/test_host_projeto_windows.py (o projeto das sessões do Windows no settings.json, trocado só "
+             "com -TrocarProjeto); com a raiz em /mnt/e, o confinamento dos comandos depende do canário, pendente")],
+    "R53": [("regra única de segredo", "scripts/tests/test_regras_de_segredo.py e test_regras_de_segredo_copias.py "
+             "(nomes fortes, fracos e pastas de segredo; as cópias da regra iguais à canônica); "
+             "scripts/tests/test_host_projeto_perfil.py (negações de segredo do perfil do projeto pela regra única, "
+             "nunca os fracos)"),
+            ("fluxo B e regra única", "scripts/tests/test_integ_fluxob_1710_perfil.py (máscaras da caixa pela regra "
+             "única: dentro do código preso só os nomes fortes, fora dele também as pastas de segredo; pasta de "
+             "segredo dentro do código preso recusa), test_integ_fluxob_1710_plano.py (o que o manifesto poda pela "
+             "regra única não fica como preso) e test_integ_fluxob_1710_b7.py (nome fraco que o segredos.py não "
+             "examina sai da cadeia do B7: levá-lo é decisão do titular)")],
+}
+
 
 def main() -> int:
     entrega, skill = Path(sys.argv[1]), Path(sys.argv[2])
@@ -939,6 +1025,8 @@ def main() -> int:
             row[5] = f"{row[5]}; terceira passada da revisão da 1.7.7: {REVISAO_SEGURANCA_177C[rid]}"
         if rid in REVISAO_SEGURANCA_177D:
             row[5] = f"{row[5]}; conferência final da revisão da 1.7.7: {REVISAO_SEGURANCA_177D[rid]}"
+        for origem, testes in MELHORIAS_1710.get(rid, []):
+            row[5] = f"{row[5]}; 1.7.10 ({origem}): {testes}"
         R[rid] = tuple(row)
     out_dir = entrega / "rastreabilidade"
     out_dir.mkdir(parents=True, exist_ok=True)

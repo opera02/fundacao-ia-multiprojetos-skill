@@ -1,5 +1,76 @@
 # Fontes verificadas e fatos voláteis
 
+## Conferência da 1.7.10 — 31/10 e 01/11/2026
+Três fontes, cada uma com o seu limite:
+- **Binário do Claude Code 2.1.302 instalado, lido sem executar:** busca de texto nos bytes do executável, sem abrir
+  sessão. Lido pelos pacotes da 1.7.10 em 31/10/2026 e reconferido em 01/11/2026. É código minificado: o que vale aqui
+  vale para a versão fixada, e uma versão nova pede leitura nova. Os nomes que os comentários do código citam para as
+  duas varreduras da menção e para a expressão do cabeçalho são os do binário minificado desta versão no Ubuntu; no
+  binário do Windows da mesma 2.1.302, esses nomes são outros (conferido em 01/11/2026). Vale o comportamento descrito
+  abaixo, não o nome.
+- **Páginas oficiais:** as de 31/10/2026 vieram pelo WebFetch, que resume a página com um modelo; antes de citar uma
+  frase numa decisão assinada, confira-a de novo na página. A referência de carga de plugins foi lida em 01/11/2026.
+- **Sondas de 31/10/2026**, com dados fictícios (`references/seguranca-isolamento.md` §8.1), e o que só o
+  **canário** confirma no ambiente real, com o perfil do projeto (lista no fim desta seção).
+
+**Binário 2.1.302 (lido sem executar)**
+
+| Fato | Uso na fundação | Situação |
+|---|---|---|
+| O cabeçalho de skill, agente e comando é lido por `Bun.YAML.parse`, com o bloco cru: CR sozinho e os separadores U+2028 e U+2029 podem virar quebra de linha e mostrar uma chave que um leitor que só quebra no LF não vê | o plugin candidato recusa CR sozinho, U+2028 e U+2029 e quebra o cabeçalho em toda quebra (capacidade 08 §5) | lido (31/10 e 01/11/2026) |
+| O binário conhece mais chaves de cabeçalho do que as listas positivas do plugin candidato aceitam; ficam de fora delas, por exemplo, `arguments`, `shell`, `hooks`, `mcpServers`, `lspServers`, `settings`, `permissionMode`, `initialPrompt`, `memory`, `background` e `isolation` | a lista positiva recusa o que não conhece; aceitar uma chave a mais é decisão de lista, com teste | lido |
+| O shell embutido roda pelo bloco cercado aberto por três crases e `!`, sem âncora de começo de linha, e por `!` seguido de crase depois de espaço ou no começo da linha | o plugin candidato recusa os dois em qualquer ponto de qualquer Markdown | lido |
+| Existe a configuração `disableSkillShellExecution`; com ela, o comando sai trocado por `[shell command execution disabled by policy]` | não está nos perfis da 1.7.10 | lido; não usado |
+| A menção `@` de uma skill ou de um comando sai de duas varreduras independentes, somadas: (1) a forma entre aspas duplas (`@"..."`), no começo do texto ou depois de espaço ou de U+3002, U+3001, U+FF1F e U+FF01 (pontuação chinesa e japonesa), que cruza quebra de linha; (2) cada trecho sem espaço, com a primeira `@` do começo dele ou logo depois daquela pontuação, até o fim do trecho, sem os caracteres do fim que não são letra ASCII, número nem `_`. Da segunda, o alvo que começa com aspa dupla é descartado; aspas simples não têm tratamento; o `#L10-20` do fim é tirado antes de abrir o arquivo. O espaço é o do JavaScript, que inclui o U+FEFF | o kit (`aberturas_markdown`) colhe as duas, cada uma à parte, mais uma varredura larga, e recusa o alvo para fora; um teste diferencial prende isso contra uma transcrição da leitura (`assets/fundacao-kit/tests/test_aberturas_plugins_i16.py`; capacidade 08 §5) | lido (01/11/2026, revisão da integração; no binário do Ubuntu e no do Windows) |
+| Ao invocar a skill ou o comando, o `getPromptForCommand` troca os argumentos (`$ARGUMENTS`, `$1`, `$ARGUMENTS[0]`, `$nome`) e as variáveis (`${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PROJECT_DIR}`, `${CLAUDE_PLUGIN_DATA}` e, depois, `${CLAUDE_SKILL_DIR}`) e só então colhe as menções `@` do texto expandido; o `allowed-tools` passa pela mesma troca | o validador do kit e o plugin candidato recusam `$` em qualquer ponto do alvo da menção e do especificador (capacidade 08 §5); o argumento da invocação pode trazer uma menção inteira, que nenhuma conferência do arquivo vê: limite, com a negação de leitura do perfil como barreira, a conferir no canário | lido (01/11/2026, reconferência da integração; a ordem das trocas, também no binário do Windows) |
+| A leitura do cabeçalho tira uma marca U+FEFF (BOM) do começo, só uma, e então o cabeçalho sai do texto com `/^---\s*\n([\s\S]*?)---\s*\n?/`: abre só no começo do arquivo e fecha no primeiro `---` em qualquer ponto, também recuado ou no meio de uma linha | o kit e o plugin candidato tiram só o BOM do começo, recusam o de outro ponto (emenda E8) e conferem até a primeira linha `---`, o que contém o cabeçalho que o Claude Code lê (mais estrito) | lido (01/11/2026, reconferência da integração; no binário do Ubuntu e no do Windows) |
+| Nome de plugin de terceiro: a mensagem do binário diz que ele não pode começar com certos prefixos, ser certos nomes nem pôr "official" ao lado de "claude" ou "anthropic"; perto dela estão `anthropics`, `cc-plugin` e `claude-mods`. A revisão do pacote leu os prefixos `claude-`, `anthropic-`, `anthropics-` e `cc-plugin-` e os nomes `claude-code` e `claude-mods`, sem reproduzir a normalização | o plugin candidato avisa, sem recusar, nome fora do kebab-case ou que cite `claude`, `anthropic` ou `cc-plugin` | lido; a carga de `<p>-<n>`, só no canário |
+| Plugins carregados de pasta (`--plugin-dir` e a variável `CLAUDE_CODE_PLUGIN_DIRS`) são tratados como "inline" | o canário aceita o plugin do ensaio pelo nome ou pelo id `<nome>@inline` | lido; o campo do `system/init`, só no canário |
+| As chaves `blockReadsOutsideWorkingDirectories`, `strictAllowlist`, `syncClaudeAiSkills` e `syncClaudeAiPlugins` existem | usadas no perfil do projeto (`references/seguranca-isolamento.md` §5) | lido |
+
+**Páginas oficiais**
+
+| Fato | Situação | Fonte |
+|---|---|---|
+| Padrões do sandbox: escrita só na pasta de trabalho, no temp por usuário (`$TMPDIR`) e nas pastas adicionadas, com os caminhos protegidos sempre negados; leitura de quase toda a máquina; não há lista de negação de credenciais embutida: só fica protegido o que for listado | novo (base do plano B do perfil) | code.claude.com/docs/en/sandboxing (31/10/2026) |
+| Leitura com regras sobrepostas: vale o caminho mais estreito; `allowRead` reabre parte de um `denyRead`, e um `denyRead` exato continua negado dentro de um `allowRead` mais largo. Escrita: `denyWrite` bloqueia mesmo dentro de pasta gravável, e a biblioteca sandbox-runtime diz que `denyWrite` vence `allowWrite` | **corrige** a linha do §1 que dava essa precedência como não documentada | code.claude.com/docs/en/settings-reference; github.com/anthropic-experimental/sandbox-runtime (31/10/2026) |
+| `Read(...)` em deny vira `denyRead` e `Edit(...)` em deny, `denyWrite`; a regra Read cobre as ferramentas de arquivo e os comandos que o Claude Code reconhece (`cat`, `head`, `sed`, redireções), não um subprocesso qualquer: este fica só com o sandbox | novo | code.claude.com/docs/en/settings-reference; /permissions (31/10/2026) |
+| `permissions.blockReadsOutsideWorkingDirectories` (2.1.257+): Read, Grep, Glob e LSP recusam ler fora das pastas de trabalho; com o sandbox ligado, os comandos perdem a leitura da casa e de `/home`, `/root`, `/mnt`, `/media` e `/srv` | **conflito** com as sondas de 31/10/2026: com a pasta de trabalho em `/mnt/e`, os comandos listaram `/mnt/c` e `/mnt/d` e gravaram fora do projeto fictício (causa não conferida); só o canário decide | code.claude.com/docs/en/settings-reference (31/10/2026) |
+| No Linux, o bwrap nega um caminho que não existe criando um arquivo vazio ou uma pasta vazia no lugar; somem no fim normal e ficam se o processo morre sem evento de saída | confirma o observado (marcadores de 0 byte); o lançador os limpa | github.com/anthropic-experimental/sandbox-runtime (31/10/2026) |
+| As transcrições (`~/.claude/projects/...`), o histórico e o `file-history/` ficam em texto puro; `CLAUDE_CONFIG_DIR` leva todos os caminhos de `~/.claude` para outra pasta | novo (por isso o `CLAUDE_CONFIG_DIR` por projeto) | code.claude.com/docs/en/claude-directory; /env-vars (31/10/2026) |
+| `allowedDomains` aceita domínio e `*.exemplo.com` (que não casa o próprio domínio); `strictAllowlist` (2.1.219) nega o host fora da lista em vez de perguntar | novo; o curinga na 2.1.302, medido no canário | code.claude.com/docs/en/settings-reference (31/10/2026) |
+| O WebFetch roda dentro do processo do Claude Code, fora do sandbox, e não lê `allowedDomains`; `WebFetch(domain:x)` em `allow` libera `x` também para o sandbox; há domínios de documentação pré-aprovados; `CLAUDE_CODE_DISABLE_WEB_FETCH=1` desliga a ferramenta (2.1.285+) | novo (por isso `webfetch.dominios` contido em `rede.dominios` e o `guarda_rede.py` que nega sem perguntar) | code.claude.com/docs/en/permissions; /tools-reference (31/10/2026) |
+| `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` tira credenciais do ambiente do Bash, dos hooks e dos servidores MCP; no Linux, o Bash roda num namespace de PID próprio | novo (no `env` do perfil do projeto) | code.claude.com/docs/en/env-vars (31/10/2026) |
+| Sockets Unix: `allowUnixSockets` é ignorado no Linux e no WSL2; o filtro seccomp é opcional, e sem ele "sockets are unrestricted" | novo (por isso o perfil nega a leitura dos lugares de socket e o filtro só com `--seccomp-versao`) | code.claude.com/docs/en/sandboxing (31/10/2026) |
+| Rodam fora do sandbox, com o acesso total do usuário: hooks de comando, servidores MCP locais, monitores de plugin, servidores LSP, linha de status, comandos digitados com `!`, comandos excluídos, novas tentativas sem sandbox e processos iniciados por mods | novo (por isso plugin com hooks, MCP ou monitor só na 1.7.11) | code.claude.com/docs/en/sandboxing; /plugins/mods/overview (31/10/2026) |
+| Mods (2.1.287+, ligados por padrão) rodam dentro do Claude Code, sem sandbox; sem managed settings na máquina, um mod pode aprovar uma chamada que uma regra deny recusa ou que um hook bloqueou | novo (os hooks são guarda-corpos) | code.claude.com/docs/en/plugins/mods/overview (31/10/2026) |
+| Managed settings: `/etc/claude-code/managed-settings.json` no Linux e no WSL, acima do `--settings`; "On WSL, /etc/claude-code is user-writable as well" | novo (por isso o preparo os fixa pelo SHA-256 e o lançador recusa os que aparecem depois) | code.claude.com/docs/en/managed-settings (31/10/2026) |
+| `Skill(<nome>)` em deny nega a skill; desde a 2.1.260, o nome sem qualificação também bloqueia a skill aninhada qualificada; uma regra `allow` não abre exceção numa negação | novo (negações que acumulam) | code.claude.com/docs/en/skills; /permissions (31/10/2026) |
+| `--setting-sources local` carrega só o `CLAUDE.local.md` e o `settings.local.json`; managed, `~/.claude.json` e a memória automática são lidos sempre; `syncClaudeAiSkills` e `syncClaudeAiPlugins` falsos valem de `--settings`, e `disableClaudeAiConnectors` de qualquer escopo | novo (base do lançador) | code.claude.com/docs/en/agent-sdk/claude-code-features; /settings; /mcp (31/10/2026) |
+| `--settings` (até 2 MiB) fica acima de usuário, projeto e local, abaixo de managed; `--strict-mcp-config` usa só os servidores de `--mcp-config`; `--plugin-dir` carrega um plugin só naquela sessão | novo | code.claude.com/docs/en/cli-reference; /settings-reference (31/10/2026) |
+| Carga de plugins: as origens são `@<marketplace>`, `@inline` (`--plugin-dir`, `--plugin-url`, `CLAUDE_CODE_PLUGIN_DIRS`), `@skills-dir` e `@synced`; plugin sincronizado não carrega numa sessão com `--setting-sources` sem `user`; nenhuma origem embutida. A referência do manifesto e o índice da documentação, também consultados, não citam plugin embutido | novo (lista de embutidos do canário vazia: plugin a mais no `system/init` falha fechado) | code.claude.com/docs/en/plugins/loading (01/11/2026); /plugins-reference; code.claude.com/docs/llms.txt |
+
+**Só o canário confirma, na versão fixada e no ambiente real** (relatório `fundacao.ensaio_isolamento/1`;
+`references/seguranca-isolamento.md` §8.4):
+- que o perfil confina os comandos na forma de caminho da raiz (`/mnt/e` ou ext4) — o centro da 1.7.10;
+- se o sandbox usa o `TMPDIR` do lançador; se negar `/tmp` e `/run` atrapalha o proxy do sandbox; o custo dos globs
+  de `denyRead` em `/mnt`;
+- se `Read(./**/X)` cobre o `X` da raiz do projeto, e se as regras Read filtram o resultado do Grep e do Glob (o
+  `guarda_leitura.py` supõe o comportamento do ripgrep);
+- se o matcher `*` pega toda ferramenta, e qual nome a 2.1.302 aceita no `--tools` (`Task` ou `Agent`);
+- se o `--plugin-dir` carrega com `--setting-sources local`, com que id o plugin aparece no `system/init`, se o
+  `Skill(<nome>)` negado bloqueia `<p>-<n>:<nome>` e se `projects/<p>/.claude/` deixa de carregar;
+- se as chaves de cabeçalho fora da lista e o contexto dinâmico se comportam como a documentação diz; e, sem item no
+  ensaio ainda, se a menção `@arquivo`, também a que chega pelo argumento da invocação (`$ARGUMENTS`), respeita as
+  negações de leitura, e se uma linha do cabeçalho começada por tab fica fora das chaves de primeiro nível (a revisão
+  da integração leu que sim, sem executar o leitor de YAML);
+- a carga de skill ou agente aninhado (a descoberta pode ser dinâmica e ficar `nao_medido`);
+- onde fica o login com `CLAUDE_CONFIG_DIR` (o ensaio espera `<config>/.credentials.json`) e quais são os campos do
+  `system/init` do stream-json (skills, agentes, plugins, servidores MCP, ferramentas);
+- a lista de marcadores de 0 byte (`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.env*`), os arquivos do filtro seccomp
+  instalado sem os scripts do pacote, o retrato do shell (shell-snapshot) com `~/.local/share/fundacao-ia/**` negado e
+  se o Bash lê a cópia da skill na área do titular, que a Read não lê.
+
 ## Conferência adicional da 1.7.9 — 22/10/2026
 
 | Fato | Limite da conclusão | Fonte oficial |
@@ -46,7 +117,7 @@ Janela de atualidade declarada: 3 meses (metadados da skill).
 | Subagentes `.claude/agents/<nome>.md` (`name`, `description`; `tools`, `model` opcionais); consomem os mesmos limites | confirma | code.claude.com/docs/en/sub-agents |
 | `claude mcp add --scope project` → `.mcp.json`; escopos local (padrão), project, user | confirma 3.0 | code.claude.com/docs/en/mcp |
 | Sandbox no Linux e no WSL2: depende de `bubblewrap` e `socat` (`sudo apt-get install bubblewrap socat`); no Ubuntu 24.04 ou mais novo, com `kernel.apparmor_restrict_unprivileged_userns` = 1, perfil do AppArmor para o `bwrap` (`/etc/apparmor.d/bwrap`, `userns`) e `sudo systemctl reload apparmor`; no WSL2, abrir programa do Windows passa por socket Unix, que só o filtro seccomp opcional bloqueia | novo (base do `assets/host/wsl/preparar-wsl.sh`) | code.claude.com/docs/en/sandboxing (conferido em 2026-10-21) |
-| Caminhos do sandbox: `/abs` e `~/` (as regras Read/Edit usam `//` para absoluto); `allowRead` reabre leitura dentro de `denyRead` (o caminho mais estreito vale); fonte excluída por `--setting-sources` não entra no sandbox (v2.1.246+); a precedência entre `allowWrite` e `denyWrite` sobrepostos não está documentada, por isso o perfil nega os outros projetos um a um | novo (base do `assets/host/wsl/settings.wsl.json`) | code.claude.com/docs/en/sandboxing (conferido em 2026-10-21) |
+| Caminhos do sandbox: `/abs` e `~/` (as regras Read/Edit usam `//` para absoluto); `allowRead` reabre leitura dentro de `denyRead` (o caminho mais estreito vale); fonte excluída por `--setting-sources` não entra no sandbox (v2.1.246+); a precedência entre `allowWrite` e `denyWrite` sobrepostos não estava documentada, por isso o perfil nega os outros projetos um a um [31/10/2026: `denyWrite` vence; conferência da 1.7.10] | novo (base do `assets/host/wsl/settings.wsl.json`) | code.claude.com/docs/en/sandboxing (conferido em 2026-10-21) |
 | Observado na implantação real (2.1.302): `Read(./state/**)` em `permissions.deny` também nega a leitura no sandbox, e `state/` aparece vazio e gravável (tmpfs) até ganhar `allowRead` e `allowWrite` (perfis v1 a v3) | executado | implantação de referência, 2026-10-20 |
 | Observado no Claude Code 2.1.304 (Ubuntu/WSL, sandbox ligado): antes de cada comando de shell, a CLI cria `.claude/.cc-writes` (modo 700; `.claude`, se faltar, com o modo padrão) na pasta em que a sessão começou, na raiz do projeto e no diretório atual do shell; depois de um `cd`, também na pasta nova. Pelo código da CLI, o diretório acompanhado vem de `pwd -P` no fim do comando (comando que falha não o muda), e um `cd` dentro de subshell `( … )` não o muda (regra do POSIX; não observado numa sessão). Auditoria somente leitura que muda o diretório para dentro da árvore a altera; sessão aberta dentro da árvore ganha a pasta na raiz dela sem nenhum `cd` | executado (sessões com dados fictícios) e lido no código | binário da CLI 2.1.304 (`ensureAtomicWriteStagingDirs`), 2026-10-25 |
 | CLI: `claude "consulta"` abre a sessão interativa com essa primeira mensagem; `--settings <arquivo>` sobrepõe as chaves dos settings; `--setting-sources user,project,local` escolhe as fontes | confirma | code.claude.com/docs/en/cli-reference (conferido em 2026-10-21) |

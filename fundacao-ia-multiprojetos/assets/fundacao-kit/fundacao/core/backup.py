@@ -4,7 +4,8 @@
   em uso sem o -wal) + PRAGMA integrity_check + comparação lógica. A cópia sai do modo
   WAL (abrir para conferir não cria `-wal`/`-shm`) e o manifesto guarda o SHA-256 do
   arquivo do banco e o resumo lógico; a verificação confere os dois.
-- Arquivos: manifesto com hash e tamanho; credenciais nunca entram.
+- Arquivos: manifesto com hash e tamanho; o `.env` fica fora. 1.7.10 (git_na_copia.py): o `.git` dos projetos entra,
+  sem hooks, travas nem config com credencial, e o que tem cara de segredo entra contado (`segredos_incluidos`).
 - Restauração sempre em destino separado; antes de liberar o uso, reaplicar o que o
   registro protegido guarda depois do snapshot: retiradas (senão a fonte ou a memória
   retirada "ressuscita") e revogações de acesso (senão quem perdeu o acesso o recupera).
@@ -14,7 +15,11 @@
 - Âncora externa (#8) e quem verifica ou restaura (auditoria Codex Security da 1.7.6, #2): ancora_copia.py. Sem
   âncora, a restauração só libera por decisão explícita, com motivo — o código igual ao do kit não a dispensa.
 - Preparo privado (auditoria da 1.7.6, #12): preparo.py. Backup e restauração copiam presos ao objeto listado; a
-  restauração monta a raiz numa pasta de preparo ao lado do destino e só a promove depois de conferi-la de novo.
+  restauração monta a raiz numa pasta de preparo ao lado do destino e só a promove depois de conferi-la de novo. O que
+  sobra do preparo é contado e informado (limpeza.py, 1.7.10), e a renomeação repete a recusa passageira do Windows.
+- Revisão de segurança da 1.7.10 (KITCOPIA; regras_da_copia.py): a política não leva state/ nem .git por outra caixa,
+  ponto ou espaço no fim, nem resolvida; cópia e restauração não vão para dentro da raiz; a verificação recusa cópia
+  com state/ ou .git em files/ e repositório com HEAD sem objects/ ou refs/; a restauração recria as pastas vazias.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ import sqlite3
 import stat
 from pathlib import Path
 
-from . import preparo, publicacao
+from . import git_na_copia, limpeza, preparo, publicacao, regras_da_copia
 from .ancora_copia import (  # noqa: F401 — âncora, manifesto e autorização (1.7.7), reexportados
     AVISO_SEM_ANCORA, FONTE_LIVRO, GUARDE_A_ANCORA, LIVRO_COPIAS, MARCA_NAO_LIBERADA, anotar_ancora, autorizar,
     aviso_da_ancora, conferir_ancora, dentro_da_copia, ler_manifesto, motivo_sem_ancora)
@@ -37,15 +42,11 @@ from .db import connect, transaction, uri_somente_leitura, utcnow
 from .ids import new_id
 from .registro_protegido import (  # noqa: F401 — leitura do registro protegido (1.7.4)
     REGISTRO, _analisar_registro, _id_de_componente_valido, _ilegivel, _ler_registro, _ler_texto)
+from .regras_da_copia import POLITICA_BACKUP, REGISTROS_PADRAO, registros_incluidos  # noqa: F401 (KIT-F2)
 
-EXCLUDE_PARTS = {"__pycache__", ".venv", "node_modules", ".git"}
+EXCLUDE_PARTS = {"__pycache__", ".venv", "node_modules", ".git", ".cache"}  # .cache: caches de ferramenta (1.7.10)
 EXCLUDE_NAMES = {".env", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm"}
 FILE_DIRS = ("fundacao", "registry", "templates", "projects", "AGENTS.md", "CLAUDE.md")  # + instruções da raiz
-# Registros da fundação fora do kit: entram na cópia por padrão, para o backup não precisar de um
-# "complemento" (auditoria da implantação real de 2026-10-19/20: dez complementos num só dia). A raiz troca a
-# lista em registry/backup_policy.json ({"incluir": [...]}); `state/` (banco e registros) tem tratamento próprio.
-REGISTROS_PADRAO = ("docs", "evidence", "ferramentas", "tests", "RETOMADA.md")
-POLITICA_BACKUP = "backup_policy.json"
 SCHEMA_REGISTRO = "fundacao.retiradas/1"
 # Arquivos que o sistema operacional cria sozinho numa pasta (Explorer em pasta de rede, Finder):
 # não contam como "extras" na verificação e não são restaurados.
@@ -58,30 +59,7 @@ NAO_REAPLICADO = [
 ]
 
 
-def registros_incluidos(root: Path) -> list[str]:
-    """Caminhos da raiz, além do kit e do banco, que entram na cópia: a lista `incluir` de
-    registry/backup_policy.json ou REGISTROS_PADRAO. Caminho vazio, absoluto, com `..`, em `state/` ou `.git`
-    recusa o backup antes de copiar (ValidationError)."""
-    arq = Path(root) / "registry" / POLITICA_BACKUP
-    if not arq.is_file():
-        return list(REGISTROS_PADRAO)
-    try:
-        incluir = json.loads(arq.read_text(encoding="utf-8")).get("incluir")
-    except (OSError, ValueError, AttributeError) as exc:
-        raise ValidationError(f"política de backup ilegível (registry/{POLITICA_BACKUP})",
-                              erro=type(exc).__name__) from exc
-    if not isinstance(incluir, list) or not all(isinstance(x, str) and x.strip() for x in incluir):
-        raise ValidationError(f"política de backup inválida: `incluir` precisa ser lista de caminhos relativos "
-                              f"(registry/{POLITICA_BACKUP})")
-    for rel in incluir:
-        p = Path(rel)
-        if p.is_absolute() or p.drive or p.root or ".." in p.parts or p.parts[0] in ("state", ".git"):
-            raise ValidationError("política de backup inválida: só caminhos relativos dentro da raiz, fora de "
-                                  f"state/ e .git (registry/{POLITICA_BACKUP})", caminho=rel)
-    return incluir
-
-
-def _files(root: Path, ligacoes: list[str] | None = None, extras: tuple[str, ...] | list[str] = ()):
+def _files(root: Path, ligacoes: list[str] | None = None, extras: tuple[str, ...] | list[str] = (), podar=None):
     """Arquivos que entram na cópia, com o `lstat` da listagem (a identidade que a cópia confere, #12): os do kit
     (FILE_DIRS) e os registros da fundação (`extras`, pastas ou arquivos). Ligação (pasta ou arquivo) não é seguida
     (#24): fica fora, anotada em `ligacoes`."""
@@ -96,9 +74,10 @@ def _files(root: Path, ligacoes: list[str] | None = None, extras: tuple[str, ...
         if preparo.e_ligacao(base):
             ligacoes.append(Path(top).as_posix())
             continue
-        itens = preparo.percorrer(base, EXCLUDE_PARTS) if stat.S_ISDIR(st.st_mode) else [(base, False, st)]
+        # O .git é listado (1.7.10): a regra do que entra dele fica em git_na_copia.RegraDaCopia, pelo caminho.
+        itens = preparo.percorrer(base, EXCLUDE_PARTS - {".git"}, podar) if stat.S_ISDIR(st.st_mode) else [(base, False, st)]
         for path, ligacao, st in itens:
-            if not _copiavel(path.name) or path in vistos:
+            if (not _copiavel(path.name) and path.name != ".git") or path in vistos:
                 continue
             vistos.add(path)
             if ligacao:
@@ -313,12 +292,9 @@ def create_backup(root: Path, dest: Path, label: str) -> dict:
         raise ValidationError("o caminho da raiz ou do destino da cópia passa por ligação (link simbólico ou junção): "
                               "informe o caminho real", caminho=ligada)
     extras = registros_incluidos(root)
-    destino_real = dest.resolve()
-    for top in (*FILE_DIRS, *extras):  # cópia dentro do que ela copia se copiaria a si mesma
-        alvo = (root / top).resolve()
-        if destino_real == alvo or destino_real.is_relative_to(alvo):
-            raise ValidationError("o destino da cópia fica dentro de uma pasta que ela copia: use um destino fora "
-                                  "dela (de preferência em outro disco)", pasta=Path(top).as_posix())
+    if dentro_da_copia(dest, root):  # KIT-F7: dentro da raiz, a cópia fica ao alcance das sessões (e se copiaria)
+        raise ValidationError("o destino da cópia fica dentro da raiz da fundação: use uma pasta fora dela, que só o "
+                              "titular altera (de preferência em outro disco)", destino=str(dest))
     src_db = root / "state" / "state.sqlite"
     if src_db.exists():
         # Decisão protegida que ainda não chegou ao registro (falha ou queda depois do commit) é
@@ -341,18 +317,18 @@ def create_backup(root: Path, dest: Path, label: str) -> dict:
     # #12: a cópia é montada numa pasta de preparo exclusiva ao lado do destino e promovida inteira (renomeação
     # atômica): nada é gravado no destino nem através de ligação nele, e cópia pela metade não aparece.
     pasta = preparo.criar_preparo(dest)
-    try:
+    with limpeza.contada(pasta, dest.parent):  # na falha, o que sobrar do preparo vai contado com o erro (1.7.10)
         manifest = _montar_copia(root, pasta, label, extras, retiradas)
         # Âncora (#8): o hash do manifesto, que confere cada arquivo e o banco, sai da pasta da cópia.
         ancora = sha256_file(pasta / "manifest.json")
         substituido = preparo.promover(pasta, dest)  # destino vazio criado antes: trocado (R177-KIT-05)
-    finally:
-        shutil.rmtree(pasta, ignore_errors=True)
     resultado = {**manifest, "sha256_manifesto": ancora, "guarde_a_ancora": GUARDE_A_ANCORA}
     avisos = [preparo.AVISO_DESTINO_EXISTENTE] if substituido else []
     if manifest.get("ligacoes_nao_seguidas"):
         avisos.append("ligações (link simbólico ou junção) não foram seguidas e o que elas apontam NÃO está na "
                       "cópia: veja ligacoes_nao_seguidas")
+    if (manifest.get("git") or {}).get("mudaram_durante_a_copia"):  # #2: repositório vivo mudou no meio da cópia
+        avisos.append("repositórios mudaram durante a cópia (git.mudaram_durante_a_copia): feche sessões e editor e repita")
     try:
         anotar_ancora(root / "state" / LIVRO_COPIAS, {"rotulo": label, "criado_em": manifest["created_at"],
                                                       "destino": str(dest.resolve()), "sha256_manifesto": ancora})
@@ -360,7 +336,7 @@ def create_backup(root: Path, dest: Path, label: str) -> dict:
         avisos.append(f"a âncora não foi anotada no livro de cópias ({type(exc).__name__}: {exc}): guarde o "
                       "sha256_manifesto; a restauração vai pedi-lo")
     if avisos:
-        resultado["aviso"] = "; ".join(avisos)
+        resultado.update(aviso="; ".join(avisos), avisos=avisos)
     return resultado
 
 
@@ -379,18 +355,16 @@ def _montar_copia(root: Path, pasta: Path, label: str, extras: list[str], retira
             dst.close()
             src.close()
     ligacoes: list[str] = []
-    criadas = {pasta}
-    for path, st in _files(root, ligacoes, extras):
+    regra = git_na_copia.RegraDaCopia(pasta / "files", {pasta}, root)  # .git dos projetos e segredos contados (1.7.10)
+    for path, st in regra.listar(_files(root, ligacoes, extras, regra.descartar)):  # #5; os adiados no fim (KIT-F3)
         rel = path.relative_to(root)
-        target = pasta / "files" / rel
-        preparo.criar_pasta(target.parent, criadas)
         try:  # presa ao objeto listado: trocado por ligação depois da listagem, fica fora como ligação (#12)
-            sha, tamanho = preparo.copiar(path, target, st)
+            copiado = regra.copiar(path, rel, st)  # None: fora pela regra (.git fora dos projetos, hooks, *.lock...)
         except ValidationError:
             ligacoes.append(rel.as_posix())
             continue
-        # Tamanho e hash do que foi COPIADO: a origem não é lida de novo depois da cópia.
-        files.append({"path": rel.as_posix(), "size": tamanho, "sha256": sha})
+        if copiado:  # tamanho e hash do que foi COPIADO: a origem não é lida de novo depois da cópia
+            files.append({"path": rel.as_posix(), "size": copiado[1], "sha256": copiado[0]})
     manifest = {
         "schema_version": "fundacao.backup/1",
         "label": label,
@@ -401,8 +375,8 @@ def _montar_copia(root: Path, pasta: Path, label: str, extras: list[str], retira
         # Identidade do registro e linhas conhecidas no momento da cópia: na restauração, o registro
         # informado precisa ter a mesma identidade e alcançar pelo menos este ponto.
         "retiradas": retiradas,
-        "excluded": sorted(EXCLUDE_NAMES | EXCLUDE_PARTS),
-        "credentials": "não incluídas; restabelecer pelo mecanismo próprio de cada provedor",
+        "excluded": sorted(EXCLUDE_NAMES | EXCLUDE_PARTS - {".git"}), "git": regra.relatorio_git(),
+        "credentials": regra.texto_credenciais(), "segredos_incluidos": regra.segredos,
         "registros_incluidos": extras,
     }
     if ligacoes:
@@ -426,12 +400,14 @@ def verify_backup(backup_dir: Path, *, sha256_manifesto: str | None = None, livr
     bruto = preparo.ler(backup_dir / "manifest.json")
     manifest = ler_manifesto(bruto)
     ancora = conferir_ancora(bruto, sha256_manifesto, livro, backup_dir)
-    base, comuns, ligacoes = backup_dir / "files", {}, []  # comuns: caminho relativo -> (caminho, lstat da listagem)
+    base, comuns, ligacoes, protegidos = backup_dir / "files", {}, [], []  # comuns: relativo -> (caminho, lstat)
     if preparo.e_ligacao(base):
         ligacoes.append(".")  # a própria pasta files/
     elif base.is_dir():
         for p, ligacao, st in preparo.percorrer(base):
             rel = p.relative_to(base).as_posix()
+            if "/" not in rel and regras_da_copia.protegido(rel):  # KIT-F2: State, state. etc. abririam state/ ou .git
+                protegidos.append(rel)
             if ligacao:  # a cópia nunca tem ligação: restaurá-la copiaria o que está do outro lado
                 ligacoes.append(rel)
             elif stat.S_ISREG(st.st_mode):
@@ -466,12 +442,14 @@ def verify_backup(backup_dir: Path, *, sha256_manifesto: str | None = None, livr
                 db_problemas.append("user_version diferente do manifesto")
     elif esperado:
         db_problemas.append("banco ausente na cópia")
+    git_incompleto = regras_da_copia.git_incompleto(manifest)  # KIT-F4: HEAD sem objects/ ou refs/ não é repositório
     resultado = {"ok": (not changed and not missing and not extras and not db_problemas and not ligacoes
-                        and ancora["situacao"] != "divergente"),
+                        and not protegidos and not git_incompleto and ancora["situacao"] != "divergente"),
                  "changed": changed, "missing": missing, "extras": extras, "db": db_check,
-                 "db_problemas": db_problemas, "ancora": ancora}
-    if ligacoes:
-        resultado["ligacoes"] = sorted(ligacoes)
+                 "db_problemas": db_problemas, "ancora": ancora,
+                 "copia": {"rotulo": manifest.get("label"), "criada_em": manifest.get("created_at")}}  # 1.7.10
+    resultado.update({k: v for k, v in (("ligacoes", sorted(ligacoes)), ("em_state_ou_git", protegidos),
+                                        ("git_incompleto", git_incompleto)) if v})
     resultado.update(aviso_da_ancora(ancora))
     if do_so:
         resultado["ignorados_do_so"] = do_so  # metadados do sistema: nem conferidos nem restaurados
@@ -486,16 +464,17 @@ def verify_backup(backup_dir: Path, *, sha256_manifesto: str | None = None, livr
 def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
             aceitar_registro_nao_comprovado: bool = False, executado_por: str = "restauracao",
             sha256_manifesto: str | None = None, aceitar_copia_sem_ancora: str | None = None,
-            livro: Path | None = None) -> dict:
+            livro: Path | None = None, raiz_da_fundacao: Path | None = None) -> dict:
     """Restaura em destino NOVO, reaplica o que o registro guarda e só então libera.
 
-    Não libera (released=false), e não copia nada para o destino, quando: o caminho da cópia ou do destino
-    passa por ligação; a cópia não confere; o registro não foi informado, não existe, é ilegível, tem
-    identidade diferente da anotada na cópia (outra fundação ou registro recriado) ou não alcança as linhas
-    conhecidas no momento da cópia. Cópia sem identidade anotada (kit anterior à 1.3.0) e sem retiradas só
-    libera com aceitação explícita, que fica na resposta e na trilha. Reaplica por tipo: fonte (`id@versão`,
-    com limpeza dos derivados), memória (com os derivados registrados), revogação de acesso e desativação de
-    componente (só as posteriores à cópia). Cada reaplicação vira evento na trilha restaurada.
+    Não libera (released=false), e não copia nada para o destino, quando: o caminho da cópia ou do destino passa por
+    ligação; o destino fica dentro da raiz da fundação (`raiz_da_fundacao`) ou da do registro informado (KIT-F7); a
+    cópia não confere ou traz pasta vazia do .git que este sistema não recria (KIT-F4); o registro não foi informado,
+    não existe, é ilegível, tem identidade diferente da anotada na cópia (outra fundação ou registro recriado) ou não
+    alcança as linhas conhecidas no momento da cópia. Cópia sem identidade anotada (kit anterior à 1.3.0) e sem
+    retiradas só libera com aceitação explícita, que fica na resposta e na trilha. Reaplica por tipo: fonte
+    (`id@versão`, com limpeza dos derivados), memória (com os derivados registrados), revogação de acesso e desativação
+    de componente (só as posteriores à cópia). Cada reaplicação vira evento na trilha restaurada.
 
     Ponto de corte coerente (auditoria F12): o registro é relido depois da reaplicação e, se
     cresceu (escritores ativos na origem), as linhas novas também são reaplicadas, até ficar
@@ -515,22 +494,28 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
     exclusividade, cada arquivo lido sem seguir ligação e conferido como o objeto listado; a verificação, o banco e
     a reaplicação usam só o preparo, que carrega `state/restauracao-nao-liberada.json` até o fim. Logo antes da
     promoção — renomeação atômica para o destino, que nunca grava através de ligação —, a raiz preparada é
-    conferida de novo. O destino só recebe a raiz liberada; o preparo não liberado é apagado. Destino vazio criado
-    antes é trocado pela raiz preparada, sem as permissões próprias dele: `aviso_permissoes` (R177-KIT-05)."""
+    conferida de novo. O destino só recebe a raiz liberada; o preparo é apagado, e o que sobrar dele vai contado na
+    resposta (`sobra_do_preparo`, 1.7.10). Destino vazio criado antes é trocado pela raiz preparada, sem as permissões
+    próprias dele: `aviso_permissoes` (R177-KIT-05)."""
     backup_dir, target_root = Path(os.path.abspath(backup_dir)), Path(os.path.abspath(target_root))
     if target_root.exists() and any(target_root.iterdir()):
         raise FileExistsError("restaure em diretório novo ou vazio; nunca sobre a origem")
     if livro is None and tombstone_log is not None:
         livro = Path(tombstone_log).parent / LIVRO_COPIAS
     check: dict = {}
+    respostas: list[dict] = []  # as de não liberar: as dadas com o preparo existindo levam a sobra dele (1.7.10)
 
     def nao_liberar(reason: str, **extra) -> dict:
-        return {"released": False, "reason": reason, "check": check, **extra}
+        respostas.append({"released": False, "reason": reason, "check": check, **extra})
+        return respostas[-1]
 
     ligada = preparo.ligacao_no_caminho(backup_dir) or preparo.ligacao_no_caminho(target_root)
     if ligada:  # #12: a leitura ou a escrita iria para outro lugar
         return nao_liberar(f"o caminho da cópia ou do destino passa por ligação (link simbólico ou junção) em {ligada}:"
                            " informe o caminho real; não liberar")
+    if viva := regras_da_copia.raiz_que_contem(target_root, raiz_da_fundacao, tombstone_log):  # KIT-F7
+        return nao_liberar(f"o destino fica dentro da raiz da fundação ({viva}): os dados de todos os projetos e o "
+                           "banco ficariam ao alcance das sessões; restaure numa pasta fora dela; não liberar")
     bruto = preparo.ler(backup_dir / "manifest.json")  # lido UMA vez: a âncora e o que vale são estes bytes
     manifest = ler_manifesto(bruto)
     ancora = check["ancora"] = conferir_ancora(bruto, sha256_manifesto, livro, backup_dir)
@@ -586,7 +571,7 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
     fim = {"ancora": ancora["situacao"], **({"ressalva": ressalva} if ressalva else {}),
            **({"ressalva_ancora": ressalva_ancora} if ressalva_ancora else {})}
     pasta = preparo.criar_preparo(target_root)
-    try:
+    with limpeza.contada(pasta, target_root.parent, respostas) as sobra:  # raiz não liberada não fica em silêncio
         try:  # a cópia inteira vem para o preparo, presa ao objeto listado: depois disso, nada é lido da origem
             achados = preparo.trazer_copia(backup_dir, pasta / "copia", pular=METADADOS_DO_SO)
         except ValidationError as exc:
@@ -602,9 +587,11 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
         if not check["ok"]:
             return nao_liberar("backup íntegro? não")
         raiz = pasta / "raiz"
-        os.rename(pasta / "copia" / "files", raiz)
+        preparo.renomear(pasta / "copia" / "files", raiz)  # recusa passageira do Windows: nova tentativa (1.7.10)
+        if falha := regras_da_copia.recriar_pastas_vazias(raiz, manifest):  # KIT-F4: refs/, objects/... (revisão 2)
+            return nao_liberar(f"pasta vazia do .git que este sistema não recria: {falha}; não liberar")
         os.mkdir(raiz / "state")
-        os.rename(pasta / "copia" / "state" / "state.sqlite", raiz / "state" / "state.sqlite")
+        preparo.renomear(pasta / "copia" / "state" / "state.sqlite", raiz / "state" / "state.sqlite")
         (raiz / "state" / MARCA_NAO_LIBERADA).write_text(json.dumps(
             {"copia": manifest.get("label"), "inicio": utcnow(),
              "situacao": "restauração em andamento ou não liberada: não use esta raiz"}, ensure_ascii=False),
@@ -627,15 +614,18 @@ def restore(backup_dir: Path, target_root: Path, tombstone_log: Path | None, *,
                                "liberar; restaure de novo", reapplied=feito["reapplied"])
         try:
             substituido = preparo.promover(raiz, target_root)
-        except (OSError, ValidationError) as exc:
-            return nao_liberar(f"o destino mudou durante a restauração ({exc}): não liberar",
+        except preparo.PromocaoRecusada as exc:  # trava passageira que não passou: o destino não mudou (1.7.10)
+            return nao_liberar(f"{exc}: não liberar", reapplied=feito["reapplied"], promocao=exc.details)
+        except (FileExistsError, ValidationError) as exc:
+            return nao_liberar(f"o destino ou a pasta de preparo mudou durante a restauração ({exc}): não liberar",
+                               reapplied=feito["reapplied"])
+        except OSError as exc:  # outra recusa do sistema: a causa é a renomeação, não o destino (1.7.10)
+            return nao_liberar(f"a renomeação final para o destino falhou ({exc}): não liberar",
                                reapplied=feito["reapplied"])
         (target_root / "state" / MARCA_NAO_LIBERADA).unlink()  # liberada: o destino é a raiz conferida
-    finally:
-        shutil.rmtree(pasta, ignore_errors=True)  # o que sobrou do preparo; raiz não liberada não fica
     result = {"released": True, "reapplied": feito["reapplied"], "registro": log_id,
               "nao_reaplicado": NAO_REAPLICADO, "corte_do_registro": feito["corte"], "db": feito["summary"],
-              "ancora": ancora, "check": check, **aviso_da_ancora(ancora),
+              "ancora": ancora, "check": check, **aviso_da_ancora(ancora), **limpeza.no_resultado(sobra),
               **({"aviso_permissoes": preparo.AVISO_DESTINO_EXISTENTE} if substituido else {})}  # R177-KIT-05
     if ressalva:
         result["ressalva"] = ressalva

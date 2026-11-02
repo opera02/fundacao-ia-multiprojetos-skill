@@ -8,6 +8,10 @@ camada de autorização da fundação.
 - Sem o pacote `mcp` (SDK Python 2.x) o servidor não inicia: bloqueio explícito. Uma pasta `mcp/` sem `__init__`
   no caminho de importação (a raiz, no uso normal) não é o SDK: conta como ausente e não é importada (revisão de
   segurança da 1.7.7, terceira passada, R177C-B-03).
+- Na sessão de projeto travada do Ubuntu (o cliente do porteiro ativo, ou FUNDACAO_PROJETO_TRAVADO definida), o
+  servidor não inicia (1.7.10, correção do lote 2): ele abriria o banco direto, por fora da fila e do mapa do porteiro.
+  A sessão usa `python -m fundacao ...`, que vai ao porteiro; o perfil do projeto também não tem MCP (mcp.json vazio).
+  Com a raiz em /mnt/e, onde o sandbox não confinou os comandos (§0 dos contratos), é camada lógica.
 
 Uso (transporte stdio):  python -m fundacao.mcp_servidor --raiz <raiz-da-fundacao>
 Ferramentas: listar_projetos(), listar_documentos(projeto), buscar(projeto, consulta).
@@ -21,7 +25,21 @@ import json
 import sys
 from pathlib import Path
 
-from . import KIT_VERSION
+from . import KIT_VERSION, porteiro_cliente
+
+
+def bloqueio_da_sessao() -> str | None:
+    """O motivo para não iniciar na sessão de projeto travada, ou None fora dela: o cliente do porteiro ativo
+    (FUNDACAO_PORTEIRO sem FUNDACAO_PORTEIRO_SERVIDOR) ou a trava de projeto ligada (FUNDACAO_PROJETO_TRAVADO definida,
+    mesmo com valor errado, como em core/auth.py)."""
+    from .core.auth import ENV_TRAVA, trava
+    if porteiro_cliente.ativo():
+        return ("sessão de projeto com o porteiro (FUNDACAO_PORTEIRO): o servidor MCP do kit não inicia aqui, porque "
+                "abriria o banco por fora do porteiro; use `python -m fundacao ...`, que vai ao porteiro")
+    if trava()[0]:
+        return (f"modo travado ({ENV_TRAVA}): o servidor MCP do kit não inicia na sessão de projeto, porque abriria o "
+                "banco por fora do porteiro; use `python -m fundacao ...`, que vai ao porteiro")
+    return None
 
 
 def _pacote_de_namespace(spec) -> bool:
@@ -45,16 +63,19 @@ def sdk_do_mcp_instalado() -> bool:
 
 
 def criar_servidor(raiz: Path):
+    if (motivo := bloqueio_da_sessao()) is not None:  # também para quem o monta no próprio processo (1.7.10)
+        from .core.contracts import AccessDenied
+        raise AccessDenied(motivo)
     if not sdk_do_mcp_instalado():  # o `main` mostra "pacote mcp ausente"; nada da pasta `mcp/` roda (R177C-B-03)
         raise ImportError("SDK do MCP ausente: nenhum pacote comum mcp no caminho de importação")
     from mcp.server import MCPServer
     from mcp.server.mcpserver.exceptions import ToolError
 
+    from .cli_conhecimento import ler_catalogo
     from .core.auth import principal_from_env
     from .core.contracts import FundacaoError
     from .core.db import connect
     from .core.knowledge import KnowledgeService
-    from .core.paths import contained
     from .core.projects import list_projects, project_root
 
     raiz = Path(raiz).resolve()
@@ -80,10 +101,9 @@ def criar_servidor(raiz: Path):
         """Identificadores do catálogo (data/catalog.json) de um projeto autorizado."""
         def fn(con, me):
             pasta = project_root(raiz, con, me, projeto, action="read")  # autoriza antes de ler
-            # O arquivo final e seus ancestrais ficam na pasta do projeto: ligação para o catálogo
-            # (ou a pasta de dados) de outro projeto é recusada antes da leitura (auditoria F04).
-            catalogo = contained(pasta / "data", pasta / "data" / "catalog.json", within=pasta)
-            return sorted(json.loads(catalogo.read_text(encoding="utf-8"))) if catalogo.exists() else []
+            # O mesmo ajudante da CLI: na pasta do projeto (auditoria F04), sem seguir ligação e sem vínculo físico
+            # com o catálogo de outro projeto (F6 da revisão de segurança da 1.7.9).
+            return ler_catalogo(pasta)
         return _executar(fn)
 
     @app.tool()
@@ -98,6 +118,9 @@ def criar_servidor(raiz: Path):
 
 
 def main(argv: list[str] | None = None) -> int:
+    if (motivo := bloqueio_da_sessao()) is not None:  # antes de tudo: nem o banco é olhado na sessão travada
+        sys.stderr.write(json.dumps({"estado": "bloqueado", "motivo": motivo}, ensure_ascii=False) + "\n")
+        return 3
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--raiz", type=Path, required=True)
     args = ap.parse_args(argv)

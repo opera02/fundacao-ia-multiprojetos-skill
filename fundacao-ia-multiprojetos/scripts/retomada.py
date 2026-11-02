@@ -3,9 +3,12 @@
 
   criar    --saida RETOMADA.md   copia o modelo (não sobrescreve)
   validar  --arquivo RETOMADA.md exige os campos mínimos preenchidos (faltas -> código 1)
-  arquivar --arquivo RETOMADA.md --historico <pasta> [--nome <arquivo>]
+  arquivar --arquivo RETOMADA.md --historico <pasta> [--nome <arquivo>] [--consolidar-efeitos]
            guarda a versão inteira (não sobrescreve), confere byte a byte e acrescenta o ponteiro
-           "Histórico arquivado: <caminho> (sha256 <hash>)"; depois, reescreva o índice de forma enxuta
+           "Histórico arquivado: <caminho> (sha256 <hash>)"; depois, reescreva o índice de forma enxuta.
+           Com --consolidar-efeitos, grava também, ao lado do histórico, o livro EFEITOS-REALIZADOS-<data>.md (arquivo
+           novo) com a chave de todo item de "Ações já realizadas" do índice, dos históricos conferidos e do livro
+           anterior, e põe no índice "Efeitos arquivados: <caminho> (sha256 <hash>)" no lugar do ponteiro anterior
 
 Campos mínimos: objetivo, versão, estado confirmado, evidências, bloqueios,
 próxima ação e efeitos já realizados (que não devem ser repetidos), além de
@@ -56,6 +59,14 @@ arquivo —; ela é lida sem seguir ligação, sem vínculo físico (no lstat e,
 histórico, e o `arquivar` a reescreve por temporário e troca de nome (`gravacao_segura.publicar`), nunca através do
 nome. Antes, `arquivar --arquivo <pasta comum>/.env` copiava o conteúdo inteiro para o histórico e inseria o ponteiro
 no original, e a RETOMADA que era vínculo físico de `.ssh/id_ed25519` alterava a chave.
+
+Livro de efeitos ancorado por hash (1.7.10; a exigência de uma linha no índice por item de cada histórico fazia o índice
+crescer sem limite: a RETOMADA da raiz chegou a 174 linhas e 25 KB, e o aviso de tamanho ficou permanente): o
+`arquivar --consolidar-efeitos` grava o livro (O_EXCL, na pasta do histórico) e o ponteiro "Efeitos arquivados:"; o
+`validar` aceita o item arquivado que está no índice OU num livro conferido, lido com as mesmas proteções do histórico
+(caminho relativo, sem ligação nem vínculo físico, até 5 MB, fora de caminho protegido, hash conferido). Livro ausente
+ou alterado reprova; livro que não está em "Arquivos mínimos para leitura" dá aviso (quem não o lê pode repetir um
+efeito). Os avisos de tamanho e os limites continuam os mesmos.
 """
 
 from __future__ import annotations
@@ -95,6 +106,12 @@ ORIGEM = r"^Origem das autorizações:"
 EFEITOS = r"^Ações já realizadas que não devem ser repetidas:"
 CAMPO = re.compile(r"^[A-Za-zÀ-ú_ /]+:")
 PONTEIRO = re.compile(r"^Histórico arquivado:\s*(?P<caminho>\S+)\s+\(sha256 (?P<sha>[0-9a-f]{64})\)")
+LIVRO = re.compile(r"^Efeitos arquivados:\s*(?P<caminho>\S+)\s+\(sha256 (?P<sha>[0-9a-f]{64})\)")  # 1.7.10
+CABECALHO_DO_LIVRO = ("# Efeitos já realizados (livro consolidado da RETOMADA)\n\n"
+                      "Gerado por `retomada.py arquivar --consolidar-efeitos` em {quando}.\n"
+                      "Cada item é a chave (o texto antes do primeiro dois-pontos) de um efeito já realizado do\n"
+                      "índice, dos históricos arquivados e do livro anterior. O `validar` aceita o item arquivado\n"
+                      "listado aqui ou no índice. Não edite: consolide de novo.\n\n")
 LIMITE_BYTES, LIMITE_LINHAS, LIMITE_LINHA = 12_000, 150, 600
 VALIDACAO = "estrutural (preenchimento): não autentica autor, autorizações nem evidências"
 TETO_HISTORICO = 5_000_000  # bytes de um histórico arquivado (a maior RETOMADA real tinha 38 KB)
@@ -358,16 +375,30 @@ def ler_historico(pasta: Path, caminho: str, sha: str) -> tuple[str, str | None]
     return "conferido", dados.decode("utf-8", errors="replace")
 
 
-def historicos(arquivo: Path, lines: list[str]) -> list[dict]:
+def historicos(arquivo: Path, lines: list[str], ponteiro: re.Pattern = PONTEIRO) -> list[dict]:
+    """Cada ponteiro (o do histórico ou, com LIVRO, o do livro de efeitos), lido com as mesmas proteções."""
     pasta = Path(os.path.abspath(arquivo.parent))
     out = []
     for line in lines:
-        m = PONTEIRO.match(line.strip())
+        m = ponteiro.match(line.strip())
         if not m:
             continue
         estado, texto = ler_historico(pasta, m.group("caminho"), m.group("sha"))
         out.append({"caminho": m.group("caminho"), "sha256": m.group("sha"), "estado": estado, "_texto": texto})
     return out
+
+
+def chaves_arquivadas(arquivo: Path, lines: list[str]) -> tuple[list[str], str | None]:
+    """As chaves que o livro novo leva — do índice, de cada histórico e de cada livro já apontados —, ou o motivo de
+    não consolidar: ponteiro que não confere (um efeito do arquivo ilegível se perderia)."""
+    chaves = list(itens_nao_repetir(lines))
+    for ponteiro, rotulo in ((PONTEIRO, "histórico"), (LIVRO, "livro de efeitos")):
+        for h in historicos(arquivo, lines, ponteiro):
+            if h["estado"] != "conferido":
+                return [], (f"o {rotulo} {h['caminho']} não confere ({h['estado']}): nada foi alterado; resolva-o "
+                            "antes de consolidar")
+            chaves += itens_nao_repetir(h["_texto"].splitlines())
+    return list(dict.fromkeys(c for c in chaves if c)), None
 
 
 def tamanho(texto: str, lines: list[str]) -> tuple[dict, list[str]]:
@@ -403,26 +434,62 @@ def validar(arquivo: Path) -> dict:
     medida, avisos_tamanho = tamanho(texto, lines)
     avisos += avisos_tamanho
     hist = historicos(arquivo, lines)
+    livros = historicos(arquivo, lines, LIVRO)
     atuais = set(itens_nao_repetir(lines))
+    for livro in livros:  # o item arquivado vale no índice OU num livro conferido (1.7.10)
+        livro["itens"] = len(itens_nao_repetir(livro["_texto"].splitlines())) if livro["estado"] == "conferido" else 0
+        if livro["estado"] == "conferido":
+            atuais |= set(itens_nao_repetir(livro["_texto"].splitlines()))
     ausentes = []
     for h in hist:
         if h["estado"] == "conferido":  # o mesmo texto que o hash conferiu (lido uma vez)
             antigos = itens_nao_repetir(h["_texto"].splitlines())
             ausentes += [i for i in antigos if i not in atuais and i not in ausentes]
-    ok = not missing and all(h["estado"] == "conferido" for h in hist) and not ausentes
+    minimos = " ".join(secao(lines, REQUIRED["arquivos mínimos para leitura"]))
+    for livro in livros:
+        if livro["caminho"] not in minimos and livro["caminho"].replace("/", chr(92)) not in minimos:
+            avisos.append(f"o livro de efeitos {livro['caminho']} não está em 'Arquivos mínimos para leitura': cite-o, "
+                          "para a próxima sessão não repetir um efeito que só ele lista")
+    ok = (not missing and all(h["estado"] == "conferido" for h in hist + livros) and not ausentes)
     return {"ok": ok, "campos_ausentes": missing, "avisos": avisos, "tamanho": medida,
             "historicos": [{k: v for k, v in h.items() if k != "_texto"} for h in hist],
+            "efeitos_arquivados": [{k: v for k, v in h.items() if k != "_texto"} for h in livros],
             "itens_do_historico_ausentes": ausentes, "validacao": VALIDACAO}
 
 
-def arquivar(arquivo: Path, pasta: Path, nome: str | None) -> tuple[int, dict]:
+def _criar_conferido(destino: Path, raiz: Path, dados: bytes) -> str | None:
+    """Arquivo novo (O_EXCL: não sobrescreve nem segue ligação já plantada no nome), relido e conferido pelo hash; o
+    motivo da recusa, ou None. O que não confere é apagado."""
+    try:
+        fd = os.open(destino, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o644)
+    except FileExistsError:
+        return f"{destino} já existe; não sobrescrevo"
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(dados)
+    try:  # releitura antes de qualquer outra mudança
+        relido = ler_contido(destino, raiz.resolve(), TETO_HISTORICO)
+    except (AcimaDoTeto, OSError):
+        relido = b""
+    if hashlib.sha256(relido).hexdigest() != hashlib.sha256(dados).hexdigest():
+        destino.unlink()
+        return "a cópia não conferiu"
+    return None
+
+
+def arquivar(arquivo: Path, pasta: Path, nome: str | None, consolidar: bool = False) -> tuple[int, dict]:
     try:  # sem seguir ligação nem vínculo físico, até o teto do histórico, que o validar leria (R177D-2)
         original = ler_retomada(arquivo)
     except (AcimaDoTeto, OSError) as exc:
         return 1, {"ok": False, "erro": recusa_da_leitura(exc)}
-    nome = nome or f"RETOMADA-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}.md"
+    carimbo = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
+    nome = nome or f"RETOMADA-{carimbo}.md"
     if partes_relativas(nome) != [nome]:
         return 1, {"ok": False, "erro": f"--nome '{nome}' precisa ser só o nome do arquivo (sem pasta, '..' nem ':')"}
+    chaves = []
+    if consolidar:  # antes de qualquer gravação: ponteiro que não confere não deixa consolidar (1.7.10)
+        chaves, problema = chaves_arquivadas(arquivo, original.decode("utf-8").splitlines())
+        if problema:
+            return 1, {"ok": False, "erro": problema}
     # O histórico fica na pasta da RETOMADA e não passa por ligação: o ponteiro é sempre relativo e o validar o confere.
     raiz = Path(os.path.abspath(arquivo.parent))
     try:
@@ -437,41 +504,64 @@ def arquivar(arquivo: Path, pasta: Path, nome: str | None) -> tuple[int, dict]:
     if protegido_na_fundacao(raiz, [*partes, nome]):  # o validar não leria o histórico (R177-VAL-01 e a variante)
         return 1, {"ok": False, "erro": f"o histórico ({rel}) ficaria em caminho protegido (segredo, estado ou dados "
                                         "de projeto), que o validar não lê; nada foi alterado"}
+    nome_livro = f"EFEITOS-REALIZADOS-{carimbo}.md"
+    rel_livro = "/".join((*partes, nome_livro))
+    if consolidar and protegido_na_fundacao(raiz, [*partes, nome_livro]):
+        return 1, {"ok": False, "erro": f"o livro de efeitos ({rel_livro}) ficaria em caminho protegido; nada foi "
+                                        "alterado"}
     if falha_no_caminho(raiz, partes) == "ligacao":  # "ausente" serve: o que falta é criado abaixo, sem ligação
         return 1, {"ok": False, "erro": f"a pasta do histórico ({pasta}) passa por ligação (link simbólico ou "
                                         "junção); nada foi alterado"}
-    destino = raiz.joinpath(*partes, nome)
+    destino, livro = raiz.joinpath(*partes, nome), raiz.joinpath(*partes, nome_livro)
     try:
         destino.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         return 1, {"ok": False, "erro": f"a pasta do histórico ({pasta}) não pôde ser usada: {type(exc).__name__}"}
-    try:  # O_EXCL: não sobrescreve nem segue ligação já plantada no nome
-        fd = os.open(destino, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o644)
-    except FileExistsError:
-        return 1, {"ok": False, "erro": f"o histórico {destino} já existe; não sobrescrevo"}
-    with os.fdopen(fd, "wb") as fh:
-        fh.write(original)
+    erro = _criar_conferido(destino, raiz, original)
+    if erro:
+        return 1, {"ok": False, "erro": f"o histórico: {erro}; nada foi alterado"}
     h = hashlib.sha256(original).hexdigest()
-    try:  # releitura antes de qualquer outra mudança
-        relido = ler_contido(destino, raiz.resolve(), TETO_HISTORICO)
-    except (AcimaDoTeto, OSError):
-        relido = b""
-    if hashlib.sha256(relido).hexdigest() != h:
-        destino.unlink()
-        return 1, {"ok": False, "erro": "a cópia do histórico não conferiu; nada foi alterado"}
     ponteiro = f"Histórico arquivado: {rel} (sha256 {h})"
     lines = original.decode("utf-8").splitlines()
     pos = next((i for i, l in enumerate(lines) if re.match(REQUIRED["project_id"], l.strip())), 0)
     lines.insert(pos, ponteiro)
+    res = {"ok": True, "historico": str(destino), "sha256": h, "ponteiro": ponteiro}
+    if consolidar:
+        conteudo = (CABECALHO_DO_LIVRO.format(quando=carimbo) + "Ações já realizadas que não devem ser repetidas:\n"
+                    + "".join(f"- {c}\n" for c in chaves)).encode("utf-8")
+        for n in range(1, 10):  # o mesmo segundo de um livro anterior ganha sufixo; nunca sobrescreve
+            erro = _criar_conferido(livro, raiz, conteudo)
+            if not erro or "já existe" not in erro:
+                break
+            nome_livro = f"EFEITOS-REALIZADOS-{carimbo}-{n + 1}.md"
+            rel_livro, livro = "/".join((*partes, nome_livro)), raiz.joinpath(*partes, nome_livro)
+        if erro:
+            destino.unlink(missing_ok=True)
+            return 1, {"ok": False, "erro": f"o livro de efeitos: {erro}; nada foi alterado"}
+        h_livro = hashlib.sha256(conteudo).hexdigest()
+        ponteiro_livro = f"Efeitos arquivados: {rel_livro} (sha256 {h_livro})"
+        anteriores = [i for i, linha in enumerate(lines) if LIVRO.match(linha.strip())]
+        for i in reversed(anteriores[1:]):  # o livro novo leva as chaves dos anteriores: um ponteiro só
+            del lines[i]
+        if anteriores:
+            lines[anteriores[0]] = ponteiro_livro
+        else:
+            lines.insert(pos + 1, ponteiro_livro)
+        res.update(livro=str(livro), sha256_livro=h_livro, ponteiro_livro=ponteiro_livro, chaves_no_livro=len(chaves))
     try:  # temporário e troca de nome: nunca através do nome, que pode ter virado ligação ou vínculo físico (R177D-2)
         gravacao.publicar(arquivo, ("\n".join(lines) + "\n").encode("utf-8"))
     except OSError as exc:
         destino.unlink(missing_ok=True)  # o histórico recém-criado sai com o resto: nada fica pela metade
+        if consolidar:
+            livro.unlink(missing_ok=True)
         return 1, {"ok": False, "erro": f"a RETOMADA não pôde ser reescrita ({type(exc).__name__}): nada foi alterado"}
-    return 0, {"ok": True, "historico": str(destino), "sha256": h, "ponteiro": ponteiro,
-               "itens_nao_repetir": len(itens_nao_repetir(lines)),
-               "proximo_passo": "reescreva a RETOMADA de forma enxuta: estado atual e uma linha por item de "
-                                "'Ações já realizadas' (a parte antes do primeiro ':' é conferida pelo validar)"}
+    res["itens_nao_repetir"] = len(itens_nao_repetir(lines))
+    res["proximo_passo"] = ("reescreva a RETOMADA de forma enxuta: estado atual e uma linha por item de 'Ações já "
+                            "realizadas' (a parte antes do primeiro ':' é conferida pelo validar)")
+    if consolidar:
+        res["proximo_passo"] = ("reescreva a RETOMADA de forma enxuta: os itens de 'Ações já realizadas' que estão no "
+                                "livro podem sair do índice; cite o livro em 'Arquivos mínimos para leitura'")
+    return 0, res
 
 
 def main() -> int:
@@ -482,6 +572,9 @@ def main() -> int:
     a = sub.add_parser("arquivar"); a.add_argument("--arquivo", type=Path, required=True)
     a.add_argument("--historico", type=Path, required=True, help="pasta dos históricos (ex.: evidence/retomada)")
     a.add_argument("--nome", help="nome do arquivo do histórico (padrão: RETOMADA-<data>.md)")
+    a.add_argument("--consolidar-efeitos", action="store_true",
+                   help="grava também o livro EFEITOS-REALIZADOS-<data>.md com as chaves de todos os efeitos já "
+                        "realizados e aponta para ele no índice")
     args = ap.parse_args()
     if args.cmd == "criar":
         if args.saida.exists():
@@ -496,7 +589,7 @@ def main() -> int:
         print(json.dumps({"ok": False, "erro": recusa or "arquivo de retomada inexistente"}, ensure_ascii=False))
         return 1
     if args.cmd == "arquivar":
-        codigo, res = arquivar(args.arquivo, args.historico, args.nome)
+        codigo, res = arquivar(args.arquivo, args.historico, args.nome, args.consolidar_efeitos)
         print(json.dumps(res, ensure_ascii=False, indent=2))
         return codigo
     res = validar(args.arquivo)

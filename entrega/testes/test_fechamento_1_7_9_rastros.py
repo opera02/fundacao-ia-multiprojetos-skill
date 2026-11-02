@@ -206,13 +206,17 @@ class TestRastrosFechamento(unittest.TestCase):
                         f"if grep -rqI chave {t}; then echo sim; fi"):
             with self.subTest(comando=comando):
                 self.assertEqual(self.estado(f"cd {p}", comando), "contaminada")
-        # O cd entre chaves ou depois de prefixo pode não mudar o shell (pipeline, função, nohup): a pasta fica
-        # incerta, e o caminho relativo seguinte não prova nada para nenhum dos lados.
-        for grupo in (f"{{ cd {p}/ambiente/fundacao; ls; }}", f"{{ cd {p}/ambiente/fundacao; ls; }} | head",
+        # O cd entre chaves com pipeline, como corpo de função ou depois de prefixo (nohup) pode não mudar o shell: a
+        # pasta fica incerta, e o caminho relativo seguinte não prova nada para nenhum dos lados.
+        for grupo in (f"{{ cd {p}/ambiente/fundacao; ls; }} | head",
                       f"f() {{ cd {p}/ambiente/fundacao; }}", f"nohup cd {p}/ambiente/fundacao"):
             with self.subTest(grupo=grupo):
                 self.assertEqual(self.estado(f"cd {p}", grupo, "cat ../../bancada/iteration-1/prompts.json"),
                                  "nao_medido")
+        # 1.7.10 (F5): sem pipe, o grupo roda no próprio shell e o cd vale; de dentro da fundação, ../../bancada fica
+        # na raiz própria.
+        self.assertEqual(self.estado(f"cd {p}", f"{{ cd {p}/ambiente/fundacao; ls; }}",
+                                     "cat ../../bancada/iteration-1/prompts.json"), "sem_acesso_no_rastro")
         # O alvo do cd continua conferido.
         self.assertEqual(self.estado(f"cd {p}", f"{{ cd {self.bancada.as_posix()}; }}"), "contaminada")
 

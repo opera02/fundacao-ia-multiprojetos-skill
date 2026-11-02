@@ -46,7 +46,7 @@ DERIVADOS = {"__pycache__", ".pytest_cache"}  # não são conferidos nem copiado
 # registry/ para cada raiz de teste, e o fonte antigo guardado em kit_backup/ pela promoção do ensaio virava regressão
 # falsa (revisão de segurança da 1.7.7, R177-ATU-01).
 FORA_DOS_DADOS = {"registry": frozenset({"kit_backup", "kit_preparo", "kit_install.json", "atualizacoes.jsonl",
-                                         "inventario-host.json"})}
+                                         "inventario-host.json", "ultima-copia.json"})}
 EXECUTAVEIS = (".py", ".pyw", ".pyc", ".pyd", ".so")  # o que o Python importa de uma pasta no caminho
 EXECUTAVEIS_NA_RAIZ = EXECUTAVEIS + (".pth",)  # no primeiro nível da raiz, também o que o `site` leria (R177B-B-06)
 # Módulos de primeiro nível que o kit importa de fora da biblioteca padrão (o SDK do MCP, em mcp_servidor.py). Pacote

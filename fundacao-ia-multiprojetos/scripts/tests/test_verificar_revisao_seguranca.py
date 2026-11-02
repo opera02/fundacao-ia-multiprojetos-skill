@@ -336,9 +336,9 @@ class Conferidor(unittest.TestCase):
                        '- Confiança:', 'não estabelece que a fundação é segura', 'REVISAO-SEGURANCA.md',
                        'verificar_revisao_seguranca.py', 'não declare a auditoria aprovada', 'Situação da observação',
                        'Hipóteses não comprovadas', 'Invariância', 'Escopo efetivamente examinado', 'AVISOS-DE-TERCEIROS.md',
-                       'wc -l < "$TMPDIR/aud/C1.txt"', 'não renumere', 'Linhas na saída (`wc -l`) e exibidas',
+                       'wc -l < "<aud>/C1.txt"', 'não renumere', 'Linhas na saída (`wc -l`) e exibidas',
                        "grep -F -- '<pedaço do trecho>'", 'não conte a olho', 'apague-a depois da conferência',
-                       'mkdir -p "$TMPDIR/aud"', '{ <comando>; } > "$TMPDIR/aud/C1.txt" 2>&1',
+                       'mktemp -d "${TMPDIR:-/tmp}/aud.XXXXXXXX"', '{ <comando>; } > "<aud>/C1.txt" 2>&1',
                        '& { <comando> } *>&1 | Out-File', 'Select-String -SimpleMatch', "grep -n 'C[0-9]'",
                        'Não ponha limite dentro das', 'só as afirmações que um achado ou a invariância usam',
                        'Nos achados, não entra fato que o quadro não tenha', 'Saída agrupada', 'a pendência não o descreve',
@@ -387,10 +387,11 @@ class Conferidor(unittest.TestCase):
 
     def test_skill_md_routes_read_only_audit_to_lean_skeleton_before_first_command(self):
         # 1.7.9: a auditoria da fundação em uso, só lendo, chega ao esqueleto antes do primeiro passo da seção 1 (que já
-        # lê a RETOMADA e roda o inventário) e pelo mapa (seção 8); o arquivo apontado existe. R179-38: só nesse pedido,
-        # dito "auditoria de segurança" ou "revisão de segurança" (a auditoria operacional, que lê o estado, não). Com
-        # "leia primeiro" sem condição, quase todas as execuções começavam pelo esqueleto em pedidos que não eram
-        # auditoria, e o escopo dele (sem banco, sem executar código) chegou a impedir que se fechasse uma etapa pendente.
+        # lê a RETOMADA e, se o pedido deixa sondar o host, roda o inventário: R179-36) e pelo mapa (seção 8); o arquivo
+        # apontado existe. R179-38: só nesse pedido, dito "auditoria de segurança" ou "revisão de segurança" (a
+        # auditoria operacional, que lê o estado, não). Com "leia primeiro" sem condição, quase todas as execuções
+        # começavam pelo esqueleto em pedidos que não eram auditoria, e o escopo dele (sem banco, sem executar código)
+        # chegou a impedir que se fechasse uma etapa pendente.
         skill = (SCRIPT.parent.parent / 'SKILL.md').read_text(encoding='utf-8')
         secoes = {m['n']: m['corpo'] for m in re.finditer(r'^## (?P<n>\d+)\.[^\n]*\n(?P<corpo>.*?)(?=^## |\Z)', skill,
                                                            re.S | re.M)}
@@ -443,12 +444,19 @@ class Conferidor(unittest.TestCase):
         skill = (SCRIPT.parent.parent / 'SKILL.md').read_text(encoding='utf-8')
         item3 = ' '.join(skill.split('\n3. **Identifique o ambiente', 1)[1].split('\n4. ', 1)[0].split())
         self.assertIn('Se o pedido deixa sondar o host, rode', item3)
-        self.assertIn('mas lê PATH e `/proc`', item3)
-        self.assertIn('Pedido restrito a uma pasta: não rode e declare o ambiente não inventariado.', item3)
+        # 1.7.10 (R179-36 F3 e F5): o item 3 diz o que o script lê fora da pasta, como o docstring dele (conferido em
+        # test_ajustes_179_inventario.py), e a regra do pedido restrito a uma pasta vale para todos os passos (item 1).
+        self.assertIn('mas lê PATH, algumas variáveis de ambiente, `/proc` e, no Windows, o registro; procura programas '
+                      'só nas pastas absolutas do PATH', item3)
+        item1 = ' '.join(skill.split('\n1. **Fixe o escopo autorizado**', 1)[1].split('\n2. ', 1)[0].split())
+        self.assertIn('Pedido restrito a uma pasta vale para todos os passos: fora dela e desta skill, não leia, liste nem '
+                      'rode nada; o que ficar de fora é "não medido".', item1)
         escopo = ' '.join(TEMPLATE.with_name('AUDITORIA-SEGURANCA.md').read_text(encoding='utf-8')
                           .split('- Fora do escopo por regra:', 1)[1].split('\n- ', 1)[0].split())
-        self.assertIn('o host fora da árvore (o inventário do ambiente, `inspecionar_ambiente.py`, lê PATH e `/proc`: não '
-                      'rode)', escopo)
+        # 1.7.10 (R179-36, F6 e F3): "sondar o host" no lugar de "o host fora da árvore", largo demais (o próprio
+        # esqueleto grava na pasta temporária), e o que o inventário lê, como o docstring do script.
+        self.assertIn('sondar o host: o inventário do ambiente (`inspecionar_ambiente.py`) lê PATH, algumas variáveis de '
+                      'ambiente e `/proc` e, no Windows, o registro; não rode.', escopo)
         codigo = (SCRIPT.parent / 'inspecionar_ambiente.py').read_text(encoding='utf-8')
         self.assertIn('/proc/mounts', codigo)  # o motivo do texto continua verdadeiro
 

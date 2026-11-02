@@ -1,0 +1,61 @@
+{
+  "schema_version": "fundacao.clientes/1",
+  "_modelo": {
+    "o_que_e": "Modelo da skill (assets/templates/CLIENTES-MODELO.json) do índice de clientes e processos de um projeto que trabalha por cliente e processo. A sessão do projeto o copia para projects/<projeto>/clientes.json, apaga esta chave _modelo, troca os exemplos fictícios pelos códigos reais e aplica o trecho_para_o_INSTRUCOES no INSTRUCOES.md do projeto, no corte. É só uma convenção de nome: não muda o banco da fundação nem o kit, e nenhum script da 1.7.10 lê este arquivo.",
+    "convencao_do_caso": "Cada processo de um cliente é um caso, com o id <codcliente>-<processo>. <codcliente> é o código do cliente, nunca o nome: letras minúsculas e dígitos, sem hífen. <processo> é o número do processo só com dígitos: os 20 do número CNJ, sem pontos nem hífen; sem número CNJ, um código interno sem hífen.",
+    "regra_do_id": "A do identificador da fundação (validate_id, em fundacao/core/paths.py do kit): de 1 a 40 caracteres, só a-z, 0-9 e hífen, sem hífen nas pontas nem dois seguidos. Com um hífen só, entre o código do cliente e o do processo, basta não passar de 40 caracteres.",
+    "sem_dado_pessoal": "Não grave aqui nome, CPF, CNPJ, endereço, telefone, e-mail nem trecho de documento. O dado de cada cliente fica em data/, registrado no catálogo do projeto.",
+    "limite_da_1_7_10": "Na sessão do projeto no Ubuntu, a identidade sessao-<projeto> não alcança dado de caso pelo serviço da fundação, só o do projeto: memória e fontes por caso esperam a decisão assinada do titular de abrir caso por caso. Um nível de cliente no banco, com concessão por cliente, fica para uma versão com migração.",
+    "trecho_para_o_INSTRUCOES": [
+      "## Clientes e processos (convenção de caso)",
+      "",
+      "- Cada processo de um cliente é um caso, com o id `<codcliente>-<processo>`. Exemplo fictício: `c0001-00000010020260000000`.",
+      "- `<codcliente>` é o código do cliente, nunca o nome: letras minúsculas e dígitos, sem hífen.",
+      "- `<processo>` é o número do processo só com dígitos: os 20 do número CNJ, sem pontos nem hífen. Sem número CNJ, use um código interno sem hífen (exemplo: `adm0001`).",
+      "- O id tem no máximo 40 caracteres, pela regra de identificador da fundação. A convenção é só de nome: o banco da fundação não muda.",
+      "- O índice fica em `clientes.json`, nesta pasta: os clientes pelo código e os casos de cada um. Nunca grave nele nome, CPF, CNPJ, endereço, telefone, e-mail nem trecho de documento; o dado do cliente fica em `data/`, registrado no catálogo.",
+      "- O trabalho de um processo usa o id do caso no nome da pasta (exemplo: `outputs/<id do caso>/`), para um caso não se misturar com outro.",
+      "- Na sessão do Ubuntu, o serviço da fundação não entrega dado de caso, só o do projeto. Memória e fontes por caso esperam a decisão assinada do titular de abrir caso por caso.",
+      "- Depois de mudar o `clientes.json`, confira na pasta do projeto (código 0 e \"ok\"):",
+      "  `python3 -I -B -c \"import json,re,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); s=re.compile('[a-z0-9]+'); c=[(k.get('codigo'),x) for k in d['clientes'] for x in k['casos']]; e=[str(x.get('id')) for k,x in c if not (isinstance(k,str) and s.fullmatch(k) and isinstance(x.get('processo'),str) and s.fullmatch(x['processo']) and x.get('id')==k+'-'+x['processo'] and len(x['id'])<=40)]; ids=[x.get('id') for k,x in c]; e+=[str(i) for i in ids if ids.count(i)>1]; print('ok' if not e else 'fora da regra ou repetido: '+', '.join(sorted(set(e)))); sys.exit(1 if e else 0)\" clientes.json`"
+    ]
+  },
+  "projeto": "<projeto>",
+  "atualizado_em": "AAAA-MM-DD",
+  "clientes": [
+    {
+      "codigo": "c0001",
+      "casos": [
+        {
+          "id": "c0001-00000010020260000000",
+          "processo": "00000010020260000000",
+          "numero": "cnj",
+          "situacao": "ativo",
+          "aberto_em": "AAAA-MM-DD",
+          "encerrado_em": null
+        },
+        {
+          "id": "c0001-adm0001",
+          "processo": "adm0001",
+          "numero": "interno",
+          "situacao": "encerrado",
+          "aberto_em": "AAAA-MM-DD",
+          "encerrado_em": "AAAA-MM-DD"
+        }
+      ]
+    },
+    {
+      "codigo": "c0002",
+      "casos": [
+        {
+          "id": "c0002-00000020020260000000",
+          "processo": "00000020020260000000",
+          "numero": "cnj",
+          "situacao": "ativo",
+          "aberto_em": "AAAA-MM-DD",
+          "encerrado_em": null
+        }
+      ]
+    }
+  ]
+}

@@ -12,9 +12,14 @@ A origem é aberta somente leitura. Se ela estiver em modo WAL e sem os arquivos
 `-wal`/`-shm` (banco fechado), o próprio SQLite os cria vazios ao abrir; a saída
 lista esses arquivos em `arquivos_auxiliares_criados` (não alteram dados).
 
+Antes de abrir a origem, a trava do banco entre o Windows e o Ubuntu (item I7 da integração da
+1.7.10; emenda E7 dos contratos do lote 2): o marcador `banco.trava` do OUTRO lado na pasta do
+banco (o state/ da fundação, que o porteiro do Ubuntu segura; num banco de projeto, normalmente
+ausente) recusa, vivo, velho ou ilegível. A regra vem do kit desta skill (core/trava_banco.py).
+
 Uso: python backup_sqlite.py --origem app.sqlite --destino ref/app.sqlite
-Código 1 se a integridade falhar, as contagens divergirem ou a cópia não puder ser feita
-(erro em JSON; nada fica criado no destino).
+Código 1 se a integridade falhar, as contagens divergirem, o banco estiver travado pelo outro lado
+ou a cópia não puder ser feita (erro em JSON; nada fica criado no destino).
 """
 
 from __future__ import annotations
@@ -24,6 +29,25 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+
+KIT = Path(__file__).resolve().parents[1] / "assets" / "fundacao-kit"  # o kit desta skill (a trava do banco)
+
+
+def _trava_banco():
+    """core/trava_banco.py do kit DESTA skill (item I7 da integração da 1.7.10), importado só quando um banco vai ser
+    aberto; um `fundacao` carregado de outro lugar recusa, como em assets/host/fundacao_titular.py."""
+    if str(KIT) not in sys.path:
+        sys.path.insert(0, str(KIT))
+    from fundacao.core import trava_banco
+    if not Path(trava_banco.__file__).resolve().is_relative_to(KIT.resolve()):
+        raise ImportError("o kit carregado não é o desta skill (" + str(trava_banco.__file__) + ")")
+    return trava_banco
+
+
+def conferir_trava(origem: Path) -> None:
+    """A trava do banco antes de abrir `origem`: o marcador do outro lado na pasta dele levanta BancoTravado; sem o kit
+    desta skill, ImportError (a cópia não é feita sem a conferência). Sem marcador, ou com o do mesmo lado, nada."""
+    _trava_banco().conferir(Path(origem).parent)
 
 
 def uri_somente_leitura(path: Path) -> str:
@@ -65,6 +89,7 @@ def resumo(con: sqlite3.Connection) -> dict:
 
 
 def summary(path: Path) -> dict:
+    conferir_trava(path)  # antes de abrir (item I7 da integração)
     con = sqlite3.connect(uri_somente_leitura(path), uri=True)
     try:
         con.execute("BEGIN")  # todas as contagens no mesmo instante
@@ -91,6 +116,16 @@ def main() -> int:
     if not args.origem.is_file():
         # sqlite3.connect criaria um banco vazio na origem e a "referência" sairia vazia.
         return erro("origem inexistente: nada copiado e nada criado")
+    try:  # antes de abrir a origem e de criar qualquer coisa no destino (item I7 da integração; emenda E7)
+        trava = _trava_banco()
+    except ImportError as exc:
+        return erro("cópia não realizada: a trava do banco (banco.trava) não foi conferida, porque o kit desta skill "
+                    "não carregou; nada copiado e nada criado", exc)
+    try:
+        trava.conferir(args.origem.parent)
+    except trava.BancoTravado as exc:
+        return erro("cópia não realizada: o banco de origem está (ou pode estar) em uso pelo outro lado ("
+                    + trava.MARCADOR + " na pasta dele); nada copiado e nada criado", exc)
     auxiliares = [Path(str(args.origem) + s) for s in ("-wal", "-shm")]
     existiam = {p for p in auxiliares if p.exists()}
     # Pastas que faltam para o destino, da mais funda para a mais rasa: em caso de falha, só elas

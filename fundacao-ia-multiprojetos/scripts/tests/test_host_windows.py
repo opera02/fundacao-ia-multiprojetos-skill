@@ -77,18 +77,32 @@ class _Base(unittest.TestCase):
         self.chave = self.base / "ssh" / "fundacao_titular"
         self.chave.parent.mkdir()
         self.ancora = self.base / "ProgramData" / "FundacaoIA" / "confianca" / "allowed_signers"
+        # 1.7.10 (I11): a cópia protegida da ferramenta do titular também vai para a pasta de ensaio, nunca para a
+        # C:\ProgramData real (como a âncora).
+        self.ferramentas = self.base / "ProgramData" / "FundacaoIA" / "ferramentas"
         self.n = 0
+        # 1.7.10: o script copia os 7 hooks dos perfis; os 4 novos são do pacote HOOKS do lote 2 e, até a integração,
+        # entram na cópia de ensaio da skill como substitutos (os 3 de antes são os da skill, byte a byte).
+        from test_host_projeto_apoio import skill_de_ensaio
+        self.ps1 = skill_de_ensaio(self.base) / "assets" / "host" / "windows" / "preparar-maquina.ps1"
 
     def tearDown(self):
         subprocess.run(["icacls", str(self.base), "/reset", "/T", "/C", "/Q"], capture_output=True, timeout=120)
         shutil.rmtree(self.base, ignore_errors=True)
 
-    def rodar(self, *args, relatorio: bool = True, python: str | Path | None = sys.executable):
+    def rodar(self, *args, relatorio: bool = True, python: str | Path | None = sys.executable, copias=None):
+        """`copias`: o que vai sobre as cópias de segurança. Sem -Backups nem -SemBackups, o script recusa antes de
+        gravar (revisão da terceira rodada da integração, defeito 1, o portão da I21 b no preparar-maquina.ps1): por
+        padrão, -SemBackups quando o teste não passa -Backups (o que os testes de antes testavam: nada das cópias);
+        `()` não passa nenhum dos dois."""
+        if copias is None:
+            copias = () if "-Backups" in map(str, args) else ("-SemBackups",)
         self.n += 1
         rel = self.base / f"relatorio-{self.n}.json"
-        cmd = [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(PS1),
+        cmd = [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(self.ps1),
                "-Raiz", str(self.raiz), "-Titular", "titular", "-Chave", str(self.chave), "-Ancora", str(self.ancora),
-               *(["-Python", str(python)] if python else []), *map(str, args)]
+               "-Ferramentas", str(self.ferramentas), *(["-Python", str(python)] if python else []),
+               *map(str, copias), *map(str, args)]
         if relatorio:
             cmd += ["-Relatorio", str(rel)]
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=ENV,
@@ -136,9 +150,10 @@ class Simulacao(_Base):
         acoes = {i["id"]: i["acao"] for i in rel["itens"]}
         self.assertEqual(acoes["chave"], "criar")
         self.assertEqual(acoes["ancora"], "criar")
-        for ident in ("hook:guarda_caminho.py", "hook:guarda_identidade.py", "settings.json", "settings.wsl.json",
-                      "settings.local.json"):
+        for ident in ("hook:guarda_caminho.py", "hook:guarda_identidade.py", "settings.json",
+                      "settings.local.json"):  # 1.7.10: o settings.wsl.json único saiu (cada projeto tem o seu)
             self.assertEqual(acoes[ident], "criar", ident)
+        self.assertNotIn("settings.wsl.json", acoes)
         ancora = self.item(rel, "ancora")
         self.assertTrue(ancora["exige_admin"])
         self.assertIn("confirmação", ancora["detalhe"])  # acento certo: o .ps1 é lido como UTF-8 (BOM)
@@ -170,6 +185,7 @@ class SemUac(_Base):
         self.publica = gerar_chave(self.chave, SENHA_DE_ENSAIO)
 
     def test_instala_hooks_e_perfis_e_deixa_a_ancora_pendente(self):
+        (self.base / "Backups").mkdir()  # 1.7.10: as pastas informadas são conferidas antes de gravar
         p, rel = self.rodar("-SemUAC", "-Projeto", "caso-real", "-Backups", str(self.base / "Backups"))
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
         self.assertEqual(rel["python_conferencia"]["versao"], "3.12.10")
@@ -181,25 +197,28 @@ class SemUac(_Base):
         win = json.loads((claude / "settings.json").read_text(encoding="utf-8"))
         gancho = win["hooks"]["PreToolUse"][0]["hooks"][0]
         self.assertEqual(gancho["command"], sys.executable)
-        self.assertEqual(gancho["args"][1], str(claude / "hooks" / "guarda_caminho.py"))
-        wsl = json.loads((claude / "settings.wsl.json").read_text(encoding="utf-8"))
-        fs = wsl["sandbox"]["filesystem"]
-        self.assertTrue(any(c.endswith("/Fundacao Teste/state") for c in fs["allowWrite"]))
-        self.assertTrue(any(c.endswith("/Fundacao Teste/projects/lab-a") for c in fs["denyWrite"]))
-        self.assertTrue(any(c.endswith("/Backups") for c in fs["allowWrite"]))
+        self.assertEqual(gancho["args"], ["-I", "-B", str(claude / "hooks" / "guarda_caminho.py")])  # 1.7.10: -I -B
+        # 1.7.10: o projeto vai ao env do settings.json, o outro projeto e as cópias ficam negados à leitura, e o
+        # perfil do Ubuntu sai da área do titular (preparar-wsl.sh), não daqui.
+        self.assertEqual(win["env"]["FUNDACAO_PROJECT"], "caso-real")
+        self.assertIn("Read(./projects/lab-a/**)", win["permissions"]["deny"])
+        self.assertTrue(any(r.startswith("Read(//") and r.endswith("/Backups/**)") for r in win["permissions"]["deny"]))
+        self.assertTrue(any(r.startswith("Edit(//") and r.endswith("/Backups/**)") for r in win["permissions"]["deny"]))
+        self.assertFalse((claude / "settings.wsl.json").exists())
         local = json.loads((claude / "settings.local.json").read_text(encoding="utf-8"))
-        self.assertEqual(local["env"], {"FUNDACAO_PRINCIPAL": "titular", "FUNDACAO_PROJECT": "caso-real"})  # 1.7.0
+        self.assertEqual(local["env"], {"FUNDACAO_PRINCIPAL": "titular"})  # 1.7.10: o projeto saiu do local
         chave = self.item(rel, "chave")
         self.assertEqual((chave["acao"], chave["estado_da_senha"]), ("igual", "presente"))
         self.assertEqual(chave["impressao_digital"], impressao(self.publica))
         self.assertEqual(self.item(rel, "ancora")["acao"], "pendente_admin")
         self.assertFalse(self.ancora.exists())
 
-    def test_skills_aninhadas_negadas_por_nome_nos_dois_perfis(self):
-        """1.7.0 (proposta 2): -NegarSkill, com nomes separados por vírgula, vira Skill(<nome>) nas negações."""
+    def test_skills_aninhadas_negadas_por_nome_no_perfil_do_windows(self):
+        """1.7.0 (proposta 2): -NegarSkill, com nomes separados por vírgula, vira Skill(<nome>) nas negações. Na 1.7.10
+        o perfil do Ubuntu é de cada projeto e soma as negações de registry/projetos-host.json (test_host_projeto_*)."""
         p, _rel = self.rodar("-SemUAC", "-Projeto", "caso-real", "-NegarSkill", "skill-da-copia,outra-skill")
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
-        for perfil in ("settings.json", "settings.wsl.json"):
+        for perfil in ("settings.json",):
             negadas = json.loads((self.raiz / ".claude" / perfil).read_text(encoding="utf-8"))["permissions"]["deny"]
             self.assertLessEqual({"Skill(skill-da-copia)", "Skill(outra-skill)"}, set(negadas), perfil)
 
@@ -209,8 +228,8 @@ class SemUac(_Base):
         p, rel = self.rodar("-SemUAC", "-Projeto", "caso-real")
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
         acoes = {i["id"]: i["acao"] for i in rel["itens"]}
-        for ident in ("hook:guarda_caminho.py", "hook:guarda_identidade.py", "settings.json", "settings.wsl.json",
-                      "settings.local.json"):
+        for ident in ("hook:guarda_caminho.py", "hook:guarda_identidade.py", "settings.json",
+                      "settings.local.json", "projeto"):  # 1.7.10: sem o settings.wsl.json único
             self.assertEqual(acoes[ident], "igual", ident)
         depois = {k: v for k, v in fotografia(self.raiz).items() if "evidence" not in k}
         self.assertEqual(depois, {k: v for k, v in antes.items() if "evidence" not in k})
@@ -258,20 +277,30 @@ class SemUac(_Base):
         p, rel = self.rodar("-SemUAC", "-Projeto", "caso-real")
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
         self.assertEqual(json.loads(local.read_text(encoding="utf-8")),
-                         {"env": {"FUNDACAO_PRINCIPAL": "titular", "FUNDACAO_PROJECT": "caso-real"}})
+                         {"env": {"FUNDACAO_PRINCIPAL": "titular"}})  # 1.7.10: o projeto vai ao env do settings.json
         item = self.item(rel, "settings.local.json")
         self.assertEqual(item["acao"], "atualizar")
         self.assertIn("FUNDACAO_PERMITIR_TROCA_IDENTIDADE", Path(item["anterior"]).read_text(encoding="utf-8"))
 
     def test_o_que_o_windows_grava_passa_na_conferencia_do_wsl(self):
         """1.7.7: o preparar-wsl.sh só fixa o perfil igual ao que o modelo gera e o settings.local.json só com a
-        identidade; o que este script grava (com backups, pasta só de leitura e skill negada) tem de passar."""
+        identidade; o que este script grava (com backups, pasta só de leitura e skill negada) tem de passar. Na 1.7.10
+        o perfil do projeto é gerado da raiz e do registro que o Windows deixa (gerar-perfil-projeto)."""
+        for pasta in ("Backups", "Origem"):
+            (self.base / pasta).mkdir()  # 1.7.10: as pastas informadas são conferidas antes de gravar
         p, _rel = self.rodar("-SemUAC", "-Projeto", "caso-real", "-Backups", str(self.base / "Backups"),
                              "-SomenteLeitura", str(self.base / "Origem"), "-NegarSkill", "skill-da-copia")
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
         claude = self.raiz / ".claude"
         ajudante = str(SKILL / "assets" / "host" / "preparo_host.py")
-        for args in (("conferir-perfil-wsl", "--perfil", claude / "settings.wsl.json", "--raiz", self.raiz),
+        perfil = self.base / "settings.wsl.json"
+        vagas = ("--raiz", self.raiz, "--perfil-windows", "/mnt/c/Users/<usuario>", "--area-raiz",
+                 self.base / "area-inexistente")
+        r = subprocess.run([sys.executable, "-I", "-B", ajudante, "gerar-perfil-projeto", *map(str, vagas), "--saida",
+                            str(perfil), "--projeto", "caso-real"], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=120)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for args in (("conferir-perfil-wsl", "--perfil", perfil, *vagas),
                      ("conferir-identidade", "--arquivo", claude / "settings.local.json", "--titular", "titular")):
             with self.subTest(args[0]):
                 r = subprocess.run([sys.executable, "-I", "-B", ajudante, *map(str, args), "--projeto", "caso-real"],
@@ -349,7 +378,10 @@ class Funcoes(_Base):
     def test_linha_da_ancora_no_formato_da_barreira(self):
         dados = self.ps(f"@{{ l = Get-LinhaAncora -Titular 'titular' -LinhaPublica '{self.publica}' }} | "
                         "ConvertTo-Json -Compress")
-        self.assertEqual(dados["l"], 'titular namespaces="fundacao-decisao" ' + self.publica)
+        # 1.7.10: a ficha de aberturas é assinada em fundacao-abertura (contratos do lote 2, §5) e o livro de cópias
+        # assinado confere em fundacao-copia contra a mesma âncora (folha da integração, I22).
+        self.assertEqual(dados["l"], 'titular namespaces="fundacao-decisao,fundacao-abertura,fundacao-copia" '
+                         + self.publica)
 
     def test_mesclar_a_ancora_sem_perder_nem_trocar_em_silencio(self):
         outra = gerar_chave(self.base / "ssh" / "outra", SENHA_DE_ENSAIO)

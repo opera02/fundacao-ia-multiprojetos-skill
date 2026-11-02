@@ -1,4 +1,4 @@
-"""Regressões documentais de E7/E9/E13; não medem obediência de um modelo."""
+"""Regressões documentais de E7/E9/E13 (e, na 1.7.10, das sondas do sandbox); não medem obediência de um modelo."""
 import unittest
 
 from apoio import SKILL
@@ -18,6 +18,25 @@ class EscopoEContinuidade(unittest.TestCase):
             'infraestrutura conhecida', 'pasta do projeto confirmada pelo serviço',
         ):
             self.assertIn(regra, retomada)
+
+    def test_glob_sem_pasta_e_poda_pelo_nome_das_pastas(self):
+        # 1.7.10: o Glob com padrão sem pasta casa em qualquer profundidade (desce em `projects/`), e a poda só vale pelo
+        # nome das duas pastas (revisão de segurança final da 1.7.9, F1). Os comandos completos ficam nos modelos da
+        # auditoria e da revisão (test_verificar_revisao_seguranca.py).
+        retomada = item(secao(self.texto, '1. Antes de qualquer ação'), 2)
+        for regra in (
+            'sem poda de `projects/` e `state/` pelo nome das duas (`find` com `-name` e `-prune`, `grep` com '
+            '`--exclude-dir`; no PowerShell, `-Exclude` não poda)',
+            'O Glob com padrão sem pasta (`*`, `*.md`) desce em todas as subpastas: para ver a raiz, use `ls <raiz>`.',
+        ):
+            self.assertIn(regra, retomada)
+
+    def test_regra_2_diz_que_o_isolamento_em_mnt_e_logico(self):
+        # 1.7.10: nas sondas de 31/10/2026, com a raiz em `/mnt/e`, o sandbox não confinou os comandos; nenhuma frase
+        # promete ali barreira do sistema operacional antes do canário do projeto.
+        regra2 = ' '.join(self.texto.split('2. **Autorização fora do modelo.**', 1)[1].split('\n3. ', 1)[0].split())
+        self.assertIn('No Ubuntu com a raiz em `/mnt/<x>`, o isolamento é lógico até o canário do projeto passar: nas '
+                      'sondas de 31/10/2026, em `/mnt/e`, o sandbox não confinou comandos.', regra2)
 
     def test_decisao_aplicavel_dispensa_pergunta_repetida(self):
         autonomia = ' '.join(secao(self.texto, '4. Autonomia, decisão e bloqueio').split())

@@ -20,7 +20,7 @@ parada — `references/comunicacao-leigo.md`.
 - A6 Modelo reutilizável de projeto
 - A7 Dois projetos distintos: reutilização e isolamento
 - A8 Entrega, operação e retomada
-- §Host Preparo da máquina para dados reais (Windows e WSL2)
+- §Host Preparo da máquina e de cada projeto para dados reais (Windows e WSL2)
 - §Kit Comandos do kit de referência
 
 ---
@@ -31,12 +31,15 @@ parada — `references/comunicacao-leigo.md`.
 anteriores (estado e evidências, não autorização); `AGENTS.md`/`CLAUDE.md`.
 
 **Ações**
-1. `python <skill>/scripts/inspecionar_ambiente.py --pasta <raiz> --somente-localizar` — não executa
-   programas nem grava. Sem `--somente-localizar`, roda `--version` de CLIs (claude, codex, git…),
-   `py -0p`/`pymanager list` e `wsl --list` (lista; não inicia WSL): só se o escopo permitir executar
-   CLIs. `--saida <raiz>/evidence/ambiente/inventario-<data>.json` grava (exige escrita autorizada;
-   recusa arquivo existente) [auditoria da 1.4.1, A18]. Nunca instala nem lê credenciais. Confira
-   `pasta.sistema_de_arquivos` (exFAT/FAT = sem permissões do SO).
+1. Inventário do ambiente, só se o pedido deixa sondar o host (SKILL.md §1, itens 1 e 3):
+   `python <skill>/scripts/inspecionar_ambiente.py --pasta <raiz> --somente-localizar`. Não executa programas nem
+   grava, mas lê PATH, algumas variáveis de ambiente, `/proc` e, no Windows, o registro; procura programas só nas
+   pastas absolutas do PATH. Pedido restrito a uma pasta: não rode, e o ambiente fica "não medido" [achado R179-36;
+   1.7.10]. Sem `--somente-localizar`, roda `--version` de CLIs (claude, codex, git…), `py -0p`/`pymanager list` e
+   `wsl --list` (lista; não inicia WSL): só se o escopo permitir executar CLIs.
+   `--saida <raiz>/evidence/ambiente/inventario-<data>.json` grava (exige escrita autorizada; recusa arquivo
+   existente) [auditoria da 1.4.1, A18]. Nunca instala nem lê credenciais. Confira `pasta.sistema_de_arquivos`
+   (exFAT/FAT = sem permissões do SO).
 2. Leia as instruções aplicáveis e classifique o acesso: Windows nativo, WSL ou remoto.
 3. Procure fundação anterior: `registry/`, `state/state.sqlite`, pacote `fundacao/`,
    `registry/kit_install.json`, `evidence/`. Se existir, este fluxo vira **extensão**:
@@ -48,8 +51,8 @@ anteriores (estado e evidências, não autorização); `AGENTS.md`/`CLAUDE.md`.
 5. Defina orçamento de laboratório: teto de chamadas reais (padrão 4), regra de
    parada e despesas possíveis; valores desconhecidos ficam "não medido".
 
-**Saídas:** `evidence/ambiente/inventario-<data>.json` (com escrita autorizada), `DIAGNOSTICO.md` (seções 1, 6, 7),
-`ACESSOS.json`, `ORCAMENTO.md`, `PERMISSOES.md` (leitura × gravação × ação externa;
+**Saídas:** `evidence/ambiente/inventario-<data>.json` (só com o inventário rodado e escrita autorizada),
+`DIAGNOSTICO.md` (seções 1, 6, 7), `ACESSOS.json`, `ORCAMENTO.md`, `PERMISSOES.md` (leitura × gravação × ação externa;
 onde a autorização será aplicada fora do modelo).
 
 **Critério:** itens essenciais respondidos ou bloqueios precisos; nada alterado fora de `evidence/`.
@@ -128,8 +131,11 @@ que é canônico × reconstruível.
 3. Preserve: histórico Git quando houver (um bundle **não** leva arquivos soltos,
    alterações não registradas, configuração local nem hooks) + cópia do que está
    fora do Git + banco SQLite pela **API de backup** (nunca copiar o arquivo em uso
-   sem o `-wal`) + receita de recriação do ambiente; credenciais **não** entram
-   [Livro p28–29; 3.0 R13.2].
+   sem o `-wal`) + receita de recriação do ambiente; credenciais seguem o mecanismo
+   próprio delas e não entram no pacote [Livro p28–29; 3.0 R13.2]. No kit não é assim
+   [Decisão; 1.7.10]: o `backup criar` deixa fora o `.env`, mas leva como está, sem ler, o
+   arquivo com cara de segredo, contado em `segredos_incluidos` (capacidade 11); o
+   `manifesto.py criar` não lê nome de segredo (vai para `excluidos`).
    Ferramentas: `python <skill>/scripts/manifesto.py criar --raiz <origem> --saida <ref>/manifesto.json`;
    `python <skill>/scripts/backup_sqlite.py --origem <db> --destino <ref>/state.sqlite`;
    no kit: `python -m fundacao backup criar --destino <ref> --rotulo baseline-a05-001`.
@@ -279,56 +285,169 @@ concluída é o ponto de continuidade.
 
 ---
 
-## §Host — preparo da máquina para dados reais (Windows e WSL2)
+## §Host — preparo da máquina e de cada projeto para dados reais (Windows e WSL2)
 
-**Quando:** antes de dados reais (itens 6, 7 e 11 de `assets/templates/CHECKLIST-DADOS-REAIS.md`), com o titular
-presente, porque os dois scripts gravam na área dele e pedem senha de administrador. Origem: implantação real de
-2026-10-20 (a âncora em cinco voltas, o perfil do WSL em três versões, perfis e hooks copiados à mão) [Decisão]. O
-que cada um garante e por quê: `references/seguranca-isolamento.md` §5.
+**Quando:** antes de dados reais (itens 6, 7 e 11 de `assets/templates/CHECKLIST-DADOS-REAIS.md` e o item C de
+`assets/templates/CHECKLIST-PROJETO.md`), com o titular presente: os scripts gravam na área dele e pedem senha de
+administrador (UAC no Windows, `sudo` no Ubuntu). Origem: implantação real de 2026-10-20 (a âncora em cinco voltas, o
+perfil do WSL em três versões, perfis e hooks copiados à mão) e a 1.7.10 (perfil, lançador e área do titular por
+projeto) [Decisão]. O que cada camada garante e até onde: `references/seguranca-isolamento.md` §5 e §8.
 
-**Ordem** (cada passo confere antes o que já existe; repetir não duplica nada):
-1. **Executor, só leitura:** roda os dois em simulação e entrega ao titular um cartão de parada
-   (`references/comunicacao-leigo.md`) com os comandos abaixo prontos, já com os caminhos da máquina.
-2. **Titular, no PowerShell comum do Windows** (sem "Executar como administrador"; o UAC aparece só para a âncora;
-   aberto a partir de um terminal do PowerShell 7, o script descarta os caminhos de módulo do 7 [Decisão; 1.7.2]):
-   ```
-   powershell -ExecutionPolicy Bypass -File "<skill>/assets/host/windows/preparar-maquina.ps1" -Raiz "<raiz>" -Titular <id> -Projeto <projeto> -Backups "<pasta de backup em outro disco>"
-   ```
-   `-Projeto` também grava o projeto autenticado das sessões (`FUNDACAO_PROJECT`, que o `guarda_caminho.py` exige para
-   liberar a escrita) no `settings.local.json` [Decisão; 1.7.0] e deixa nele só a identidade e o projeto, porque a
-   sessão de dados reais carrega o arquivo inteiro; o anterior vai para `.claude/anteriores/` [Decisão; auditoria
-   Codex Security da 1.7.6, #5]. Opcionais: `-NegarSkill nome1,nome2` (skills aninhadas em pastas de dados, listadas
-   por `scripts/instrucoes_aninhadas.py`, negadas por nome nos dois perfis), `-SomenteLeitura "<pasta>"` (origem que a
-   sessão só lê), `-Python <python.exe>` e `-TrocarChave` (troca de chave, com cópia da âncora anterior); `-Simular`
-   ou `-WhatIf` só mostram o plano. Sem `-Python`, o interpretador sai das instalações registradas do Windows ou do
-   PATH, nunca do `.claude/settings.json` existente; com ou sem ele, só roda o python.exe do instalador oficial
-   (assinatura da Python Software Foundation), sem ligação no caminho e sem escrita para outras contas comuns;
-   recusado, o script para com código 2 sem executar nada [Decisão; auditoria Codex Security da 1.7.6, #3]. Se a chave
-   ainda não existir, o ssh-keygen pede a senha duas vezes: só o titular a digita e a anota fora do computador, junto
-   com a impressão digital que o script mostra no fim.
-3. **Titular, no terminal do Ubuntu** (o sudo pede a senha do Linux só para pacotes, AppArmor e `wsl.conf`):
-   ```
-   bash "<skill vista do WSL>/assets/host/wsl/preparar-wsl.sh" --raiz "<raiz vista do WSL>" --projeto <projeto> --titular <id> --claude-versao <versão> --claude-sha256 <hash do manifesto assinado>
-   ```
-   `--titular` é o mesmo `-Titular` do passo 2. O script só fixa no lançador o que confere inteiro: o perfil igual ao
-   que o modelo da skill gera para a raiz (cada projeto da raiz, menos o da sessão, com escrita negada), os hooks
-   iguais aos da skill e o `settings.local.json` só com a identidade de `--titular` e o projeto. Diferença: para
-   (código 1) e aponta o passo 2; projeto criado depois dele também pede o passo 2 de novo [Decisão; auditoria Codex
-   Security da 1.7.6, #5]. Sem o Claude Code no Ubuntu, o script para (código 3) e mostra o comando oficial de
-   instalação; o login também é do titular. Depois, no PowerShell do Windows: `wsl --terminate <distribuição>`.
-4. **Titular, no terminal do Ubuntu:** `bash ~/abrir-fundacao.sh` abre a sessão de dados reais (lançador gerado do
-   modelo `assets/host/wsl/abrir-sessao.sh`, com o perfil `assets/host/wsl/settings.wsl.json` já preenchido). Ele
-   confere pelo SHA-256 também o `settings.local.json` e o titular fixado no preparo: mudou depois, não abre; repita
-   os passos 2 e 3.
-5. **Executor:** repete as simulações (tudo "igual", âncora protegida e a impressão digital anotada pelo titular) e
-   registra em `evidence/host/` o relatório do script do Windows, os SHA-256 e o que ficou pendente. Simulação nunca
-   vale como execução real: sem a execução do titular, o passo fica pendente na RETOMADA.
+**Honestidade (registre sempre):** com a raiz em `/mnt/<letra>` (o disco do Windows visto do Ubuntu), o sandbox do
+Claude Code não confinou os comandos nas sondas de 31/10/2026. Até o canário (passo 6) passar nessa forma de caminho,
+o isolamento entre projetos no Ubuntu é lógico (perfil, hooks e porteiro), e nenhuma abertura vale sem a ficha
+assinada e o canário aprovado.
 
-**Códigos dos dois scripts:** 0 pronto e conferido (ou simulação sem erro) · 1 parou ou há conflito · 2 uso
-incorreto (nada alterado) · 3 falta um passo do titular (no Windows, UAC recusado ou `-SemUAC`; no Ubuntu, instalar o
-Claude Code e fazer o login). O hash oficial de cada versão do Claude Code está no manifesto assinado
-(`references/fontes-verificadas.md` §1); sem `--claude-sha256`, o lançador fixa o binário atual, registrado como não
-conferido.
+**Forma fixa dos passos do titular** [Decisão; 1.7.10; revisão de segurança, CI-F1]: o titular copia cada comando dele
+do modelo da skill instalada (a pasta da skill no perfil dele), nunca da cópia que a sessão preencheu; recusa comando
+cujo programa fique dentro de `<raiz>/projects/`; e a sessão não muda estes passos. O cartão de parada só preenche os
+valores (raiz, projeto, identidade, pastas).
+
+**Ordem** (cada passo confere antes o que já existe; repetir não duplica nada). Os passos 2 a 5 voltam a cada projeto
+novo; os passos 4 e 5, e o canário com o perfil novo, depois de cada atualização da fundação
+(`references/fluxo-c-operar.md` C6).
+1. **Executor, só leitura:** roda as simulações (`-Simular` nos scripts do Windows, `--simular` no do Ubuntu) e
+   entrega ao titular um cartão de parada (`references/comunicacao-leigo.md`) com os comandos abaixo prontos, já com
+   os caminhos da máquina. Nunca roda `wsl --shutdown` nem `--terminate`: fechar o Ubuntu é do titular, e com o
+   Ubuntu ligado o executor para e pede.
+2. **Titular, uma vez por projeto vindo de outra pasta (fluxo B), no terminal dele** (`python` no Windows, `python3`
+   no Ubuntu): registra a origem.
+   ```
+   python <skill>/assets/host/preparo_host.py registrar-projeto --raiz "<raiz>" --projeto <projeto> --origem "<pasta da origem>"
+   ```
+   Grava `registry/projetos-host.json` (`fundacao.projetos_host/1`), que só o titular grava: os perfis negam às sessões
+   a escrita nele. Opcionais, repetíveis: `--somente-leitura "<pasta>"` (outra pasta que o projeto só lê) e
+   `--negar-skill <nome>` (skill aninhada que `scripts/instrucoes_aninhadas.py listar` achou na origem). A pasta tem
+   de existir e ficar fora da raiz; o registro feito no Windows (`D:\...`) vale no Ubuntu (`/mnt/d/...`). O registro
+   só cresce: não há comando para tirar uma pasta dele (pasta que mudou de lugar: registre a nova e apague a antiga
+   da lista `origens` do projeto, à mão).
+3. **Titular, no PowerShell comum do Windows, um projeto por vez** (sem "Executar como administrador"):
+   ```
+   powershell -ExecutionPolicy Bypass -File "<skill>/assets/host/windows/preparar-projeto.ps1" -Raiz "<raiz>" -Titular <id> -Projeto <projeto> -Backups "<pasta das cópias, em outro disco>"
+   ```
+   `-Backups` são as cópias de segurança (as mesmas regras do passo 4), repassadas ao preparo da máquina; com o disco
+   delas desligado agora, `-BackupsAusente` com a mesma pasta (só a forma é conferida, e a negação vale quando o disco
+   voltar); se ainda não há cópias, `-SemBackups` no lugar dele. Sem nenhum dos dois (ou com `-Backups` só de espaços),
+   recusa com código 2 antes de gravar qualquer coisa, também na simulação, e mostra o comando pronto com `-Backups`;
+   os dois juntos também recusam. Depois da primeira cópia (`registry/ultima-copia.json`, que o `backup criar` grava),
+   o `-SemBackups` também recusa, e o comando pronto já traz a pasta das cópias: confira se é a sua (o registro só
+   recusa e sugere, nunca aceita; uma sessão o forja). Lê o registro e roda o preparo da máquina (passo 4) com as
+   origens e as pastas só de leitura de **todos** os projetos registrados e com as skills negadas de todos, somadas.
+   Pasta registrada de outro projeto que
+   sumiu (disco não montado) vira aviso e segue com o Edit negado; a do próprio projeto para o preparo dele (código 2).
+   O `-Projeto` daqui é o da sessão do Ubuntu: o projeto das sessões do Windows não muda (para trocá-lo de propósito,
+   `-ProjetoWindows <id>` com `-TrocarProjeto`). Recusa com o Ubuntu ligado (código 4): feche as janelas dele e, no
+   PowerShell, rode `wsl --terminate <distribuição>`. No fim, mostra o comando do passo 5, já com os caminhos.
+   `-AssinarFicha` assina a ficha de aberturas do projeto pela ferramenta fixa do titular (a cópia protegida, se
+   instalada e conferida; senão, a da skill, que avisa na tela). É o último recurso: ele roda dentro do PowerShell
+   deste script, que carrega o perfil do PowerShell, e uma sessão pode ter gravado esse perfil. A forma recomendada é a
+   caixa Executar (Win+R), com o comando que o `abertura preparar` mostra (`references/fluxo-c-operar.md`, "Projetos
+   no Ubuntu").
+4. **Titular, no PowerShell comum: o preparo da máquina, por último no Windows**:
+   ```
+   powershell -ExecutionPolicy Bypass -File "<skill>/assets/host/windows/preparar-maquina.ps1" -Raiz "<raiz>" -Titular <id> -Projeto <projeto das sessões do Windows> -Backups "<pasta das cópias, em outro disco>"
+   ```
+   - **Um perfil só, refeito inteiro:** o perfil das sessões do Windows é um arquivo só
+     (`<raiz>/.claude/settings.json`), e cada preparo o refaz inteiro, só com o que recebe. Por isso os dois scripts
+     exigem `-Backups` ou, enquanto não há cópias, um `-SemBackups` explícito: sem nenhum dos dois, recusam com código 2
+     antes de gravar qualquer coisa, com o comando pronto, e o do projeto (passo 3) repassa as cópias a este
+     [Decisão; 1.7.10]. Rodado sozinho, este já nega a edição das origens e das pastas só de leitura de todos os
+     projetos de `registry/projetos-host.json`, lidas pelo ajudante (caminho só do Ubuntu fica de fora);
+     `-SomenteLeitura` fica para a pasta fora do registro. Rodado por último, ele fecha o Windows com o projeto das
+     sessões do Windows e com o que só ele recebe (`-SomenteLeitura`, `-NegarSkill`): o que vier só pela linha de
+     comando, fora de `registry/projetos-host.json`, vira pendência no relatório e na tela, porque o próximo preparo de
+     um projeto (passo 3) refaz o perfil sem isso; para durar, registre a pasta ou a skill (passo 2). Com `-SemBackups`,
+     o relatório deixa a pendência de rodá-lo de novo com `-Backups`; com uma cópia registrada em
+     `registry/ultima-copia.json`, o `-SemBackups` recusa (código 2), e o comando pronto traz a pasta dela.
+   - Calcula o plano inteiro antes da chave, do UAC e de qualquer gravação [Decisão; 1.7.10]. `-Projeto` é o projeto das
+     sessões do Windows (o do coordenador), gravado no `env` do perfil; trocá-lo exige `-TrocarProjeto`, e sem a opção
+     há conflito e nada é gravado. `-Backups` e `-SomenteLeitura` aceitam várias pastas, separadas por vírgula seguida
+     de unidade (`"D:\a,E:\b"`); cada uma tem de existir, num disco local, fora da raiz e sem conter a raiz (a raiz de um
+     disco só das cópias, `"F:\"`, vale como está). `-BackupsAusente` leva as cópias num disco desligado agora: a forma
+     é conferida, a existência não, e elas saem negadas na leitura e na edição como as de `-Backups`.
+   - Faz: a chave do titular (`~/.ssh/fundacao_titular`; se faltar, o `ssh-keygen` pede a senha duas vezes: só o
+     titular a digita e a anota fora do computador, com a impressão digital que o script mostra no fim; chave que abre
+     sem senha é recusada); a âncora das decisões (`C:\ProgramData\FundacaoIA\confianca\allowed_signers`, de dono
+     Administradores), com a linha do titular nos namespaces `fundacao-decisao`, `fundacao-abertura` (a ficha de
+     aberturas) e `fundacao-copia` (o livro de cópias assinado), pelo UAC; a linha da mesma chave sem um deles (a da
+     1.7.9, só com o primeiro, ou a de uma 1.7.10 de antes, sem `fundacao-copia`) é trocada pela nova no mesmo UAC, com
+     a mesma chave; no mesmo UAC, a cópia protegida da ferramenta do titular
+     (`C:\ProgramData\FundacaoIA\ferramentas\<versão>`); os hooks da skill em `<raiz>/.claude/hooks` (também os do
+     Ubuntu); o perfil das sessões do Windows e o `settings.local.json` só com a identidade. O perfil único do Ubuntu
+     da 1.7.9 vai para `.claude/anteriores/`, como tudo o que o preparo troca.
+   - A cópia protegida só registra um Python instalado para todos os usuários. Com o Python por usuário (em `AppData`),
+     a forma do Windows de assinar a ficha fica pendente, com o motivo e sem UAC para ela, e vale a do Ubuntu (passo 5).
+   - O Python que roda o ajudante e os hooks do Windows é o de `-Python` ou o das instalações registradas do Windows e
+     do PATH, nunca o do perfil existente; só o python.exe do instalador oficial (assinatura da Python Software
+     Foundation, pin em `assets/host/windows/pins-python.json`), sem ligação no caminho e sem escrita para outras
+     contas comuns. Recusado, o script para com código 2 sem executar nada [Decisão; auditoria Codex Security da 1.7.6,
+     #3].
+   - Opcionais: `-NegarSkill nome1,nome2`, `-TrocarChave` (troca de chave, com cópia da âncora anterior), `-Simular` ou
+     `-WhatIf` (só mostram o plano) e `-SemUAC` (a âncora e a cópia protegida ficam pendentes). Aberto a partir do
+     PowerShell 7, o script descarta os caminhos de módulo do 7 [Decisão; 1.7.2].
+5. **Titular, no terminal do Ubuntu, como o seu usuário, sem `sudo` na frente** (o script pede o `sudo` sozinho, só no
+   que exige administrador; rodado como root, recusa com código 2). Antes, feche as sessões do Ubuntu e, no
+   PowerShell, rode `wsl --terminate <distribuição>`; depois abra um terminal novo do Ubuntu só para o preparo, para
+   nenhuma sessão rodar durante ele (o espelho em `<raiz>/.claude/projetos/` é gravado como root):
+   ```
+   bash "<skill vista do WSL>/assets/host/wsl/preparar-wsl.sh" --raiz "<raiz vista do WSL>" --projeto <projeto> --titular <id> --perfil-windows "/mnt/c/Users/<usuario>" --claude-versao <versão> --claude-sha256 <hash do manifesto assinado>
+   ```
+   `--titular` é o mesmo `-Titular` do Windows; `--projeto` se repete, um por projeto; `--perfil-windows` é a pasta do
+   Windows do titular, que o perfil do projeto nega (o script a deduz quando a skill está em
+   `/mnt/c/Users/<usuario>/...`). Opcionais: `--seccomp-versao <versão>` (o filtro seccomp do sandbox, decisão do
+   titular; sem ele, o relatório diz "sockets sem filtro"), `--canario <relatório>` (passo 6) e `--simular`.
+   - Na máquina ("igual" quando já feito): os pacotes que faltam (`bubblewrap`, `socat`, `python3-venv` e, sem o node,
+     `nodejs` e `npm`), o perfil do AppArmor do `bwrap` quando o Ubuntu restringe namespaces, um só bloco `[interop]`
+     desligado no `/etc/wsl.conf` (vale depois de reiniciar o Ubuntu: no PowerShell do Windows,
+     `wsl --terminate <distribuição>`) e o Claude Code copiado para `~/.local/share/fundacao-ia/claude/<versão>/claude`,
+     fora da limpeza automática de versões, e fixado pelo SHA-256 (sem o hash informado, o do binário atual, registrado
+     como não conferido). O lançador único da 1.7.9 (`~/abrir-fundacao.sh`) é aposentado.
+   - Para cada projeto, com `sudo` (`assets/host/preparo_host.py instalar-projeto`): a área do titular, de dono root,
+     `/etc/fundacao-ia/projetos/<projeto>/` (o perfil gerado do modelo `assets/host/wsl/settings.wsl.json`,
+     `porteiro.json`, `mcp.json`, `aberturas.json`, `ficha/`, `plugins/` e `hashes.json`), as cópias conferidas da
+     skill e do Claude Code, o lançador `/usr/local/bin/abrir-fundacao-<projeto>` (do modelo
+     `assets/host/wsl/abrir-sessao.sh`) e a cópia protegida da ferramenta do titular em
+     `/usr/local/lib/fundacao-ia/<versão>/`, de dono root, de onde roda a forma do Ubuntu de assinar a ficha.
+   - Só fixa o que conferiu inteiro: os hooks da raiz iguais aos da skill (por isso o Windows vem antes), o kit da raiz
+     igual ao da skill (um `.pyc` solto, um `.git` ou um `.sqlite` em `fundacao/` recusam: rode antes a atualização,
+     C6) e a ficha assinada da caixa de entrada. Sem o Claude Code no Ubuntu, para (código 3) e mostra o comando oficial
+     de instalação. Projeto criado depois na raiz: o lançador dos outros recusa abrir até este passo rodar de novo.
+6. **Titular, no terminal do Ubuntu: o canário** (`scripts/ensaio_isolamento_wsl.py`; passo a passo no item C de
+   `assets/templates/CHECKLIST-PROJETO.md`). A IA não o roda. Depois do passo 5, que fixa o Claude Code, ele monta uma
+   fundação fictícia numa pasta nova do mesmo disco da raiz, fora dela, e abre sessões curtas do Claude Code, que
+   gastam a assinatura do titular: 12 com um barramento `/run/user/*/bus` no host, 11 sem. Vale só o relatório da forma
+   de caminho da raiz (`drvfs:/mnt/<letra>` para a raiz no disco do Windows; o de `ext4` só serve com a raiz no ext4),
+   com o mesmo Claude Code fixado (versão e SHA-256). Só com `conclusao.confina_comandos: true` (código 0), o titular o
+   instala rodando de novo o passo 5 com `--canario <relatório>` (só o relatório que o ensaio da skill instalada gravou
+   na casa dele, nunca um arquivo de `projects/`): o relatório vai para a área do titular, e só então a
+   ficha de aberturas de um projeto é aplicada. Com `false` ou `null`, não instale: as aberturas ficam fechadas, o
+   isolamento continua lógico, e o resultado vai para o checklist e para a RETOMADA do projeto. O canário vem antes de
+   qualquer dado real: se os comandos não ficarem confinados, a sessão de um projeto também pode gravar na pasta do
+   Windows do titular, por `/mnt/c` (um atalho na pasta Inicializar, por exemplo), com efeito no próximo logon (risco
+   deduzido das sondas, não medido).
+   Refaça-o a cada perfil novo: o relatório instalado vale enquanto o Claude Code fixado e a forma de caminho forem os
+   mesmos, sem conferir o perfil.
+7. **Titular, no terminal do Ubuntu, como o seu usuário (sem `sudo`):** `abrir-fundacao-<projeto>` abre a sessão do
+   projeto. O lançador confere pelo SHA-256 o que o preparo fixou. O que mudou desde então recusa: se a mudança foi do
+   titular (uma atualização da fundação ou um projeto novo, por exemplo), rode de novo o passo 5; se não foi, não abra
+   e avise o executor, como diz o lançador. Ele recusa também root, outro usuário, outra sessão do mesmo projeto, a
+   interoperabilidade com o Windows ligada e a trava de manutenção; inicia o porteiro e abre o Claude Code na pasta do
+   projeto. Na primeira sessão de cada projeto, o titular faz o `/login` (a configuração do Claude Code é por
+   projeto). Feche antes as sessões do Windows que operam a fundação: o banco não abre pelos dois lados
+   (`references/fluxo-c-operar.md`, "Projetos no Ubuntu").
+8. **Executor:** repete as simulações (tudo "igual", a âncora protegida e a impressão digital anotada pelo titular) e
+   registra em `evidence/host/` os relatórios dos scripts do Windows, os SHA-256 e o que ficou pendente.
+   Simulação nunca vale como execução real: sem a execução do titular, o passo fica pendente na RETOMADA e no checklist
+   do projeto.
+
+**Códigos.** `preparar-maquina.ps1`: 0 pronto e conferido (ou simulação sem erro) · 1 parou ou há conflito · 2 uso
+incorreto (nada alterado; também sem `-Backups` nem `-SemBackups`, ou com `-SemBackups` e uma cópia registrada, com o
+comando pronto) · 3 tudo feito menos a âncora
+ou a cópia protegida, que esperam o UAC (recusado, ou com `-SemUAC`). `preparar-projeto.ps1`: os mesmos, e 4 com o
+Ubuntu ligado (nada alterado). `preparar-wsl.sh`: 0 pronto ·
+1 parou (veja a linha `[erro]`) · 2 uso incorreto · 3 falta algo que só o titular faz (instalar o Claude Code, o `npm`
+ou o `corepack`). O hash oficial de cada versão do Claude Code está no manifesto assinado
+(`references/fontes-verificadas.md` §1).
 
 ---
 
@@ -339,6 +458,7 @@ python <skill>/scripts/instalar_kit.py --destino <raiz> [--simular]   # plano an
 python <skill>/scripts/instalar_kit.py --destino <raiz> --atualizar   # atualização C6: guarda a versão anterior
 python <skill>/scripts/atualizar_fundacao.py checar --raiz <raiz>     # atualização C6 em um comando: só lê, sem executar a raiz
 python <skill>/scripts/atualizar_fundacao.py aplicar --raiz <raiz> --backups <outro disco>  # backup, ensaio em cópias conferidas, promoção
+#   1.7.10: recusa com o WSL ligado, trava a manutenção (state/manutencao.json) e amplia a política de backup (C6)
 python <skill>/scripts/atualizar_fundacao.py desfazer --registro <arq>  # volta o código; só registro ancorado em registry/atualizacoes.jsonl
 # Códigos: 0 composição verificada · 3 incompleta (conflito; --manter-conflitos = estado misto registrado)
 #          4 ligação/junção para fora do destino (nada escrito) · 5 falha na promoção (desfeita; com
@@ -363,6 +483,10 @@ python -m fundacao componente listar | habilitar --id source_manifest
 python -m fundacao eventos verificar
 python -m fundacao eventos exportar --destino <raiz>/evidence/eventos.jsonl      # audit ou admin na fundação
 python -m fundacao backup criar --destino <ref> --rotulo baseline-a05-001        # admin na fundação
+python -m fundacao backup situacao              # idade da última cópia; com mais de 7 dias, o comando da próxima (C9)
+python -m fundacao banco situacao               # a trava do banco (state/banco.trava), sem abrir o banco nem exigir identidade
+python -m fundacao banco destravar --confirmar  # só o titular: tira o marcador velho do outro lado; recusa o vivo
+python -m fundacao abertura vigente --projeto <p> --json   # a ficha de aberturas em vigor, sem banco nem identidade
 python -m fundacao backup restaurar --origem <ref> --destino <nova-pasta> --retiradas <raiz>/state/retiradas.jsonl
 #   autorizada pela fundação viva; com a origem danificada, pela cópia ancorada (livro ou --sha256-manifesto)
 #   sem âncora: só com --aceitar-copia-sem-ancora "<motivo>" (fica na trilha); não liberada = código 3

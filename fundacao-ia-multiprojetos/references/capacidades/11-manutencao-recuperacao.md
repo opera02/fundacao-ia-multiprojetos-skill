@@ -16,7 +16,9 @@ Ordem sugerida na 3.0: A35 (backup) antes de A33 (atualização) [3.0 R13.6].
 - Origem e licença de cada dependência conferidas na revisão instalada [Livro p25].
 - Armadilhas Windows/WSL [3.0 R14.3; Livro p199]: projeto e banco no sistema de
   arquivos do ambiente principal (WSL: `~/fundacao`, não `/mnt/c`); nunca abrir o mesmo
-  SQLite pelo Windows e pelo WSL; `.gitattributes` com `* text=auto eol=lf`;
+  SQLite pelo Windows e pelo WSL (na 1.7.10, conferido pela trava do banco, `state/banco.trava`, no sentido
+  Windows ← Ubuntu: com o marcador do outro lado, o kit, o atualizador e o `scripts/backup_sqlite.py` recusam abrir o
+  banco; `../seguranca-isolamento.md` §8.2); `.gitattributes` com `* text=auto eol=lf`;
   `PYTHONUTF8=1`; fora do OneDrive; alias da Store do `python` desligado; `.venv` não
   compartilhada entre Windows e Linux. Python: identifique o gerenciador antes de lançar
   `python` (pode instalar automaticamente se não houver runtime) [Verificado 2026-10-18].
@@ -36,7 +38,10 @@ código antigo e os testes do ensaio de cópias conferidas (`scripts/codigo_conf
 (`scripts/registro_atualizacao.py`) só aceita registro ancorado em `registry/atualizacoes.jsonl`, só mexe nas áreas de
 código do kit, só se o código ainda é o que a atualização deixou, e devolve também o registro da instalação. Com o kit
 igual, só as instruções da raiz são regeneradas, se a skill mudou o texto (C6). Revisão de segurança da 1.7.7: a
-promoção apaga o `__pycache__` das áreas de código, e nada é gravado através de ligação ou vínculo físico (C6).
+promoção apaga o `__pycache__` das áreas de código, e nada é gravado através de ligação ou vínculo físico (C6). Na
+1.7.10, o `checar`, o `aplicar` e o `desfazer` conferem a trava do banco pelo kit da skill antes de abrir o banco: com
+o marcador do outro lado (vivo, velho ou ilegível), param na etapa `banco`, sem abrir nada; com o velho ou o ilegível,
+o motivo traz o comando do titular (`banco destravar --confirmar`).
 
 ## Habilitar, desabilitar e substituir (R47) [Livro A34]
 Ver `references/capacidades/08-ferramentas-hooks-mcp-skills-plugins.md` §1 e `references/fluxo-c-operar.md` C8. Ciclo didático:
@@ -47,13 +52,56 @@ de painel) [Livro p170]. Negativas para usuário comum dão o mínimo para conti
 causa detalhada fica no relatório administrativo [Livro p172]. [3.0 R13.6] Interruptor
 por projeto e global; deprecação em 3 passos.
 
+## Versão em uso do projeto (1.7.10)
+[Decisão; 1.7.10.] O que roda fora da proteção do sandbox — as tarefas agendadas e os servidores de um projeto — roda
+de `<raiz>/em-uso/<p>/atual/`, separada da pasta que a IA edita (`scripts/versao_em_uso.py`):
+- **propor** (a IA, na sessão): a lista dos arquivos da pasta de trabalho, com o SHA-256 de cada um, sem seguir
+  ligação e sem nome forte nem pasta de segredo (segredo não vai pela proposta). A proposta fica em `outputs/` do
+  projeto, para o aceite assinado do titular;
+- **promover** (o titular, no terminal dele, fora do Claude): só com o aceite assinado sobre essa proposta e esse
+  SHA-256, conferido pelo kit da raiz com a identidade do terminal dele. Um aceite vale para uma promoção só: o
+  registro guarda a proposta e a decisão usadas, e o aceite já usado recusa. A proposta vale para a troca a partir
+  da versão em uso de quando foi feita: promoção ou volta registrada depois recusa ("a versão em uso mudou depois da
+  proposta"), e a sessão propõe de novo [revisão de segurança, KIT-F1]. Copia só os arquivos listados, pela cópia
+  conferida da skill (`scripts/copia_segura.py`: sem seguir ligação, com o SHA-256 da proposta). A versão nova é
+  montada ao lado, no mesmo volume, e entra no lugar de `atual` por renomeação; a anterior vai para `anteriores/`.
+  Recusa passageira do Windows na renomeação ganha nova tentativa, com as mesmas esperas do kit; se a nova não entra,
+  a anterior volta;
+- **pedir-volta** (a IA, na sessão): grava em `outputs/` do projeto o pedido de volta
+  (`fundacao.versao_em_uso.volta/1`): a anterior pedida (`--para <nome em anteriores/>`; sem ela, a mais recente), o
+  motivo nas palavras do titular e a data. É a entrega do aceite, como a proposta; o pedido não lê `em-uso/`;
+- **voltar** (o titular, no terminal dele, fora do Claude): `--pedido`, `--pedido-sha256` e `--decisao`. Só com o
+  aceite assinado sobre esse pedido e esse SHA-256, conferido pelo kit da raiz como no `promover`, com a identidade do
+  terminal dele; um aceite vale para uma volta só (o registro guarda o pedido e a decisão usados). A anterior é
+  conferida contra o manifesto dela e precisa ter entrado em uso por uma promoção do registro; a que estava em uso vai
+  para `anteriores/`. Sem `--para`, vale a anterior mais recente. Com ou sem `--para`, o pedido vale só para a volta a
+  partir da versão em uso de quando foi feito: promoção ou volta registrada depois dele recusa (peça outra volta). Sem
+  `--para`, a data mais de 5 minutos à frente do relógio de quem roda o `voltar` também recusa (com `--para`, a data
+  não conta);
+- **conferir**: o envoltório das tarefas e dos servidores roda antes de executar; arquivo alterado, ausente, a mais ou
+  ligação dá código 1. `__pycache__`, `.git` e os caches de ferramenta em `atual/` contam como a mais, com uma dica: as
+  tarefas Python rodam com `python -B`. `.venv`, `venv` e `node_modules` não são conferidas, e o conferir o diz
+  (`nao_conferido` e "não conferido: <pasta>", também no stderr) em vez de um ok calado: código posto ali roda sem
+  acusação [revisão de segurança, KIT-F5].
+
+Cada promoção e cada volta vão para `em-uso/<p>/registro.jsonl`; registro que existe e não se lê recusa o
+`promover`, o `voltar` e o `conferir`, em vez de valer como vazio. Uma troca por vez (`em-uso/<p>/.trava`). As
+ferramentas de arquivo da sessão gravam só no projeto (`guarda_caminho.py`), e, no Ubuntu, os comandos só onde o
+sandbox confina: com a raiz em `/mnt/e`, um comando da sessão alcança `em-uso/` por fora. A assinatura autoriza a
+troca, mas não protege a pasta (isolamento lógico, `../seguranca-isolamento.md` §8). A cópia de segurança leva
+`em-uso/` (política da raiz, abaixo). O corte de um projeto para a fundação segue o roteiro
+`assets/templates/ROTEIRO-CORTE.md`, com os comandos prontos do `promover` e do `voltar` (passos 8.3 e 8.5).
+
 ## Backup e restauração (R44, R45, R31, R56)
 - Conjunto de recuperação: código e dependências (versão + ambiente recriável) ·
   estado e memória (snapshot consistente + histórico) · fontes e permissões (arquivos e
   políticas vigentes) · derivados (cópia validada **ou** reconstrução) [Livro p174].
 - SQLite: `Connection.backup()` ou `VACUUM INTO`; nunca copiar sem o `-wal`;
   `PRAGMA integrity_check` [Livro p174; 3.0 R13.2]. Credenciais seguem seu próprio
-  mecanismo e não entram no pacote [Livro p174].
+  mecanismo e não entram no pacote [Livro p174]. **No kit não é assim** [Decisão; 1.7.10]: o `.env` fica fora, mas o
+  arquivo com cara de segredo (nome forte ou pasta de segredo da regra única) entra como está, sem ser lido, e é
+  contado em `segredos_incluidos`; o manifesto diz isso e diz que a cópia não é cifrada. Guarde a cópia como guarda a
+  fundação. Tirar os segredos da cópia ou cifrá-la é decisão do titular.
 - RPO (perda máxima tolerada) e RTO (tempo para recuperar) definidos antes; depois,
   medidos (exemplo hipotético: snapshot 10h, falha 10h20, utilizável 11h05 → janela
   de perda 20 min, recuperação 45 min) [Livro p174].
@@ -166,12 +214,55 @@ por projeto e global; deprecação em 3 passos.
   vazio criado antes é trocado pela pasta preparada, e as permissões próprias dele não ficam: a
   resposta avisa (`aviso_permissoes` na restauração, `aviso` no backup) [revisão de segurança da
   1.7.7, R177-KIT-05].
-- **Backup completo** [Decisão; implantação real de 2026-10-19/20]: além do kit (`fundacao/`,
-  `registry/`, `templates/`, `projects/`) e do banco, a cópia leva por padrão os registros da
-  fundação — `docs/`, `evidence/`, `ferramentas/`, `tests/` e `RETOMADA.md`; troque a lista em
+- **Backup completo** [Decisão; implantação real de 2026-10-19/20; 1.7.10]: além do kit (`fundacao/`,
+  `registry/`, `templates/`, `projects/`, `AGENTS.md` e `CLAUDE.md`) e do banco, a cópia leva por padrão os registros
+  da fundação — `docs/`, `evidence/`, `ferramentas/`, `tests/` e `RETOMADA.md`; troque a lista em
   `registry/backup_policy.json` (`{"incluir": [...]}`). Caminho inválido na política (absoluto,
-  com `..`, em `state/` ou `.git`) ou destino dentro de uma pasta copiada recusam antes de
-  copiar; segredos continuam fora.
+  com `..`, em `state/` ou `.git`) recusa antes de copiar; a política compara `state/` e `.git` sem caixa e pelo
+  caminho resolvido (`State`, `STATE`, `state.`, `state `, `.` e ligação no meio também recusam), e o motivo vai no
+  erro. O `backup criar` e o `backup restaurar` recusam destino dentro da raiz (inclusive `<raiz>/copias` e
+  `<raiz>/projects/<p>/outputs/x`): guarde e restaure fora dela, de preferência em outro disco. No desastre (banco
+  perdido), rode o `backup restaurar` com `--raiz` na raiz danificada, para o kit poder recusar destino dentro dela
+  [revisão de segurança, KIT-F2 e KIT-F7]. Ficam fora as pastas reconstruíveis (`__pycache__`, `.venv`,
+  `node_modules` e, desde a 1.7.10, `.cache`, onde o perfil do Ubuntu põe os caches de npm, pip e uv) e o `.env`; o
+  `.git` só entra dentro dos projetos (abaixo).
+  **Política da raiz na 1.7.10:** o `scripts/atualizar_fundacao.py aplicar`, antes da cópia DEPOIS, acrescenta à lista
+  `incluir` as áreas `em-uso` (de onde rodam as tarefas fora da sessão) e `.claude/projetos` (o espelho por projeto e a
+  caixa de entrada das fichas de aberturas assinadas, que não se reconstroem). Só acrescenta, preserva o resto e não
+  repete; sem o arquivo, ele nasce com a lista padrão mais essas duas; política estragada ou com ligação no caminho
+  fica como está, e o resumo diz o que acrescentar à mão. O `desfazer` não a volta: a lista maior vale também para o
+  kit anterior.
+- **O `.git` dos projetos** [Decisão; 1.7.10]: entra só dentro de `projects/<projeto>/`, fora de `data/` e de pastas
+  reconstruíveis, por cópia crua (o kit nunca executa git). Ficam fora os hooks (código que rodaria depois, também os
+  dos submódulos), os `*.lock` e cada arquivo comum fora de `objects/` que traga credencial em URL de remoto, cabeçalho
+  de autenticação (`http.extraheader`) ou programa configurado (`core.fsmonitor` que não seja booleano,
+  `core.hooksPath`, `core.sshCommand`, `credential.helper`, filtros `clean` e `smudge`, `include` e `includeIf` e
+  afins); um `config` acima de 1 MiB fica fora sem conferir. O manifesto conta os levados, os excluídos (com o motivo)
+  e os que mudaram durante a cópia (repositório vivo), sem conteúdo.
+- **Situação da cópia e aviso semanal** [Decisão; 1.7.10]: o `backup criar` grava `registry/ultima-copia.json`
+  (`fundacao.ultima_copia/1`), e o `backup verificar` com sucesso, com a âncora conferida e na fundação viva, anota a
+  verificação nele.
+  `python -m fundacao backup situacao` (administração ou auditoria) diz a idade da última cópia, pelo registro e pelo
+  livro de cópias, e, passados 7 dias, avisa (`W_COPIA_ANTIGA`) com os comandos prontos da próxima cópia (rótulo
+  `semanal-AAAA-Sss`, na pasta da última) e da verificação. Nas sessões do Windows, o hook
+  `assets/hooks/aviso_copia.py` lê só esse registro e, sem cópia ou com a última passando de 7 dias, lembra no início
+  da sessão, com o mesmo comando. É lembrete, não prova: quem grava `registry/` forja o registro; a prova é o
+  `backup verificar` com o `sha256_manifesto` guardado fora da cópia.
+- **Trava de manutenção** [Decisão; 1.7.10]: `state/manutencao.json` existe do começo ao fim do `backup criar`, também
+  na falha, e do `aplicar` da atualização; o lançador do Ubuntu não abre sessão com ela. Trava que já existia não é
+  trocada nem removida por quem não a criou. O `backup criar` devolve um resumo; a lista de arquivos, só com
+  `--detalhar` (ela está sempre no `manifest.json` da cópia).
+- **Trava do banco** [Decisão; 1.7.10]: o backup do kit não percorre `state/` — leva o banco pela API de backup do
+  SQLite —, então o marcador `state/banco.trava`, que o porteiro do Ubuntu grava, nunca vai na cópia nem volta na
+  restauração. O `scripts/backup_sqlite.py` confere a trava pelo kit da skill antes de abrir a origem: com o marcador
+  do outro lado na pasta dela, recusa (`BancoTravado`, código 1) sem abrir nem criar nada.
+- **Nova tentativa no WinError 5** [Decisão; falha real de 31/10/2026: o `backup criar` rodou 22 minutos e terminou
+  com acesso negado na renomeação final]: a promoção e as renomeações do preparo repetem só a recusa passageira do
+  Windows (WinError 5, 32 e 33: antivírus, indexador ou Explorador com a pasta aberta), com esperas de 1, 2, 4, 8, 15 e
+  30 s e nova conferência a cada vez; esgotadas, `E_PROMOCAO`, com as tentativas e os atributos do preparo, sem
+  conteúdo. O que sobra do preparo é contado e informado (`W_SOBRA_DO_PREPARO`), nunca apagado em silêncio: a sobra
+  pode ter dados da fundação, e apagá-la é do titular, depois de conferir. No `aplicar`, a cópia ANTES que falha na
+  promoção tenta de novo uma vez, com rótulo novo, se o destino não existe.
 - **Ligações** [Decisão; varredura da 1.4.5, #24]: ligação (link simbólico ou junção) em
   `fundacao/`, `registry/`, `templates/`, `projects/` ou nos registros não é seguida: fica em
   `ligacoes_nao_seguidas`, com aviso, e o conteúdo dela não entra na cópia; ligação dentro da
@@ -242,11 +333,26 @@ Use identificador e política de idempotência. Revalide aprovações (hash) na 
 | Banco de origem corrompido ou ausente | restauração autorizada pela cópia ancorada (livro ou `--sha256-manifesto`); sem âncora, ninguém; origem intocada |
 | Restaurar sobre a origem / sobrescrever referência anterior | recusado |
 | Atualização com retorno | retorno em ambiente isolado preserva leitura do estado |
+| `.git` de um projeto (1.7.10) | levado sem hooks, sem `*.lock` e sem config com credencial ou programa; levados e excluídos contados no manifesto, sem conteúdo |
+| `.cache` de um projeto (1.7.10) | fora da cópia (reconstruível); a verificação continua passando |
+| Renomeação final recusada pelo Windows (WinError 5, 32 ou 33) (1.7.10) | nova tentativa com espera; esgotada, `E_PROMOCAO`, e a sobra do preparo contada (`W_SOBRA_DO_PREPARO`) |
+| Última cópia com mais de 7 dias (1.7.10) | `backup situacao` avisa (`W_COPIA_ANTIGA`) com o comando da próxima; no Windows, o lembrete no início da sessão |
+| Cópia ou atualização em andamento (1.7.10) | `state/manutencao.json` presente; o lançador do Ubuntu não abre sessão |
+| `aplicar` da 1.7.10 numa raiz sem `em-uso` e `.claude/projetos` na política | os dois acrescentados à lista `incluir`, o resto preservado; política estragada fica como está, com aviso |
+| `voltar` da versão em uso sem o aceite assinado sobre o pedido de volta, com um aceite já usado ou depois de outra promoção ou volta (1.7.10) | recusa; nada trocado em `em-uso/` |
+| `promover` com um aceite já usado, ou de uma proposta feita antes de outra promoção ou volta (1.7.10, revisão de segurança KIT-F1) | recusa; nada trocado |
+| `conferir` com `.venv`, `venv` ou `node_modules` em `atual/` (1.7.10, KIT-F5) | código 0 com `nao_conferido` e o aviso "não conferido: <pasta>"; com `__pycache__` a mais, código 1 e a dica |
+| Marcador `state/banco.trava` do outro lado (vivo, velho ou ilegível) no atualizador ou no `scripts/backup_sqlite.py` (1.7.10) | param sem abrir o banco nem criar nada, com o motivo; no velho ou ilegível, também o comando do titular |
 
 ## Com o kit e scripts
 Para migrar memória para o esquema 5, retornar uma instalação da 1.7.9 ou adotar o livro de cópias assinado,
-leia [compatibilidade e retorno](../atualizacao-1.7.9.md). O modo estrito usa `--exigir-livro-assinado`;
-preparar o documento não assina nem aprova a entrada. A chave continua com o titular.
+leia [compatibilidade e retorno](../atualizacao-1.7.9.md); para atualizar para a 1.7.10 ou voltar dela,
+[a atualização para a 1.7.10](../atualizacao-1.7.10.md). A linha da âncora da 1.7.9 (e a de uma 1.7.10 de antes)
+não tem o namespace `fundacao-copia`: o `preparar-maquina.ps1` da 1.7.10 a troca pela linha com ele, com a mesma
+chave, no UAC da âncora, e até o titular rodá-lo com o UAC a adoção do livro assinado não confere (Limites
+conhecidos, no texto da 1.7.10).
+O modo estrito usa `--exigir-livro-assinado`; preparar o documento não assina nem aprova a entrada. A chave continua
+com o titular.
 
 `fundacao/core/backup.py` (`create_backup`, `verify_backup`, `restore` com reaplicação),
 `fundacao/core/ancora_copia.py` (âncora e quem verifica ou restaura), `fundacao/core/preparo.py`
@@ -260,7 +366,14 @@ preparar o documento não assina nem aprova a entrada. A chave continua com o ti
 `tests/test_auditoria_1_7_7_preparo.py` (trocas por ligação e preparo alterado),
 `tests/test_revisao_1_7_7_kit.py` (livro e raiz que são a própria cópia, aviso do livro, verificação sem ler através
 de ligação, anexos de `state/` sem seguir ligação e destino criado antes),
-`tests/test_backup_completo.py`, `tests/test_restauracao_revisoes.py`; cenários
-CEN-09 e CEN-16. `scripts/backup_sqlite.py` e a CLI
+`tests/test_backup_completo.py`, `tests/test_restauracao_revisoes.py`; 1.7.10: `fundacao/core/manutencao.py` (trava
+de manutenção, última cópia, situação e a regra do `.git`), `fundacao/core/limpeza.py` (sobra do preparo contada),
+`fundacao/cli_backup.py` (`backup situacao` e `--detalhar`) e os testes `tests/test_backup_1710_git.py`,
+`tests/test_backup_1710_cache.py`, `tests/test_backup_1710_limpeza.py`, `tests/test_backup_1710_promocao.py` e
+`tests/test_backup_1710_manutencao.py`, com `scripts/tests/test_atualizar_fundacao_1710.py` (política da raiz e nova
+tentativa da cópia ANTES), `scripts/tests/test_versao_em_uso.py` e `scripts/tests/test_integ_fluxob_1710_versao.py`
+(o `voltar` com o aceite assinado sobre o pedido de volta, um aceite por volta, e o `promover` pela cópia conferida),
+`scripts/tests/test_atualizar_fundacao_trava_banco.py` e `scripts/tests/test_backup_sqlite_trava.py` (a trava do banco
+antes de abri-lo); cenários CEN-09 e CEN-16. `scripts/backup_sqlite.py` e a CLI
 montam a URI do SQLite com `Path.as_uri()` (codifica `#`, `%` e espaços; sem isso, `#` vira
 fragmento e o SQLite abriria outro arquivo).

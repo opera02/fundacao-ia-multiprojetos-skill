@@ -10,9 +10,25 @@ Efeitos (auditoria da 1.4.1, A18):
                        `pymanager list` ou `py -0p` e `wsl --list --verbose` (lista; não inicia WSL).
   --saida ARQ          grava o JSON (cria as pastas) e recusa arquivo existente (código 1, nada
                        executado) para não apagar evidência anterior. Sem --saida, nada é gravado.
-Nunca instala nada, não lê credenciais nem valores de variáveis de ambiente, não muda
-autenticação. Para Python, consulta apenas o interpretador que já está executando este script;
-outros lançadores são listados pelo gerenciador (o lançador pode instalar Python
+O que lê fora da pasta, nos dois modos (R179-36 F3, 1.7.10; antes, este texto dizia que não lia
+valores de variáveis de ambiente):
+  variáveis de ambiente  PATH, só as pastas absolutas (e PATHEXT, no Windows), para localizar os
+                         programas: a pasta atual não entra (`localizar`); no Windows, onde o
+                         shutil.which olha antes a pasta atual salvo com NoDefaultCurrentDirectoryInExePath,
+                         o script define essa variável no próprio processo (e ela passa aos
+                         programas que ele roda com --version); os valores de CODESPACES,
+                         REMOTE_CONTAINERS, SHELL (grava só o nome do programa) e PYTHONUTF8; só a
+                         presença de COMSPEC e PSModulePath; no Windows, PROCESSOR_ARCHITEW6432
+                         e PROCESSOR_ARCHITECTURE (a arquitetura);
+  sistema                CPUs, RAM e espaço livre do volume da pasta; fora do Windows, os.uname
+                         (sistema, versão e arquitetura), /proc/version, /proc/mounts e se /.dockerenv
+                         existe; no Windows, o registro (LongPathsEnabled) e APIs do sistema (memória,
+                         volume da pasta e versão do Windows, por sys.getwindowsversion);
+  Python                 as pastas de módulos do interpretador em execução, para saber se os módulos
+                         opcionais existem (importlib.util.find_spec: não os importa).
+Sistema e versão vêm sem processo (`sistema_operacional`). Nunca instala nada, não lê credenciais
+nem muda autenticação. Para Python, consulta apenas o interpretador que já está executando este
+script; outros lançadores são listados pelo gerenciador (o lançador pode instalar Python
 automaticamente se não houver nenhum — por isso não executamos `python --version` às cegas).
 
 Uso: python inspecionar_ambiente.py [--pasta DIR] [--saida inventario-<data>.json] [--somente-localizar]
@@ -71,6 +87,37 @@ def ram_bytes() -> int | None:
         return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
     except Exception:
         return None
+
+
+def sistema_operacional() -> dict:
+    """Sistema, versão e arquitetura sem abrir processo (R179-36 F3, 1.7.10).
+
+    `platform.platform()` desempacotava o `uname()` em seis campos e forçava o `processor` preguiçoso, que no Linux
+    roda `uname -p` (CPython, `platform._Processor.from_subprocess`), inclusive com --somente-localizar.
+    `platform.system()`, `release()` e `machine()` não tocam o `processor` e, fora do Windows, vêm do `os.uname()`.
+    No Windows, o `uname()` do `platform` roda o comando `ver` (`platform._syscmd_ver`) quando a consulta WMI falha
+    (CPython 3.12, `platform._win32_ver`): lá, a versão vem de `sys.getwindowsversion()` e a arquitetura, das
+    variáveis PROCESSOR_ARCHITEW6432 e PROCESSOR_ARCHITECTURE. A versão é a de major/minor/build, a mesma da consulta
+    WMI; o `platform_version` vem da versão do kernel32.dll e pode ficar atrás (10.0.26100 num 10.0.26200)."""
+    if sys.platform == "win32":
+        versao = sys.getwindowsversion()
+        maquina = os.environ.get("PROCESSOR_ARCHITEW6432") or os.environ.get("PROCESSOR_ARCHITECTURE")
+        return {"plataforma": f"Windows-{versao.major}.{versao.minor}.{versao.build}", "maquina": maquina or None}
+    nome = "-".join(p for p in (platform.system(), platform.release()) if p)
+    return {"plataforma": nome or None, "maquina": platform.machine() or None}
+
+
+def localizar(nome: str) -> str | None:
+    """Caminho absoluto do programa, procurado só nas pastas absolutas do PATH (revisão do AJUSTES-179, 1.7.10).
+
+    A pasta atual não entra: no Windows, o shutil.which do Python 3.12 olha antes a pasta atual, salvo com
+    NoDefaultCurrentDirectoryInExePath definida (o terminal comum não a define; o `main` a define no próprio processo);
+    nos dois sistemas, entrada vazia ou relativa do PATH é a pasta atual. Sem isso, um git.bat ou um `git` posto na
+    pasta atual (código importado é dado, não programa) seria dado como o git e rodaria com --version. O caminho
+    relativo que ainda sobrar (sem a variável no Windows) é descartado: o programa fica como ausente."""
+    pastas = os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep) if p and os.path.isabs(p))
+    caminho = shutil.which(nome, path=pastas) if pastas else None
+    return caminho if caminho and os.path.isabs(caminho) else None
 
 
 def access_kind() -> str:
@@ -146,9 +193,11 @@ def main() -> int:
         print(json.dumps(recusa, ensure_ascii=False))
         return 1
     pasta = args.pasta.resolve()
+    if sys.platform == "win32":  # o shutil.which não olha a pasta atual (`localizar`)
+        os.environ.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
     tools = {}
     for name in sorted(set(SAFE_VERSION) | set(LIST_ONLY)):
-        path = shutil.which(name)
+        path = localizar(name)
         entry = {"presente": bool(path), "caminho": path}
         if path and args.somente_localizar:
             entry["nivel"] = "presente (execução desativada por --somente-localizar)"
@@ -171,8 +220,7 @@ def main() -> int:
         "schema_version": "fundacao.inventario_ambiente/1",
         "observado_em": datetime.now(timezone.utc).isoformat(),
         "acesso": access_kind(),
-        "sistema": {"plataforma": platform.platform(), "maquina": platform.machine(),
-                    "cpus": os.cpu_count(), "ram_bytes": ram_bytes()},
+        "sistema": {**sistema_operacional(), "cpus": os.cpu_count(), "ram_bytes": ram_bytes()},
         "pasta": {"caminho": str(pasta), "existe": pasta.exists(), "livre_bytes": usage.free,
                   "no_onedrive": "onedrive" in str(pasta).lower(),
                   "sistema_de_arquivos": (fs := filesystem_of(pasta)),

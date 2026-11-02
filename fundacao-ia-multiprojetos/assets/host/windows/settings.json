@@ -16,16 +16,25 @@
       "Read(./**/*secret*)",
       "Read(./**/*.kdbx)",
       "Read(./**/auth.json)",
+      "{{SEGREDOS_DA_REGRA_UNICA}}",
       "Read(./state/**)",
+      "Read(./projects/*/data/**)",
       "Read(~/.claude/.credentials.json)",
       "Read(~/.codex/auth.json)",
       "Read(~/.ssh/**)",
-      "Edit(./.claude/**)"
+      "{{LEITURA_NEGADA}}",
+      "WebFetch",
+      "WebSearch",
+      "Edit(./.claude/**)",
+      "Edit(./registry/projetos-host.json)",
+      "{{EDICAO_NEGADA}}"
     ]
   },
   "claudeMdExcludes": ["**/projects/*/data/**"],
   "env": {
-    "FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*"
+    "FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*",
+    "FUNDACAO_RAIZ": "{{RAIZ}}",
+    "FUNDACAO_SEM_DADOS": "1"
   },
   "hooks": {
     "SessionStart": [
@@ -41,6 +50,18 @@
             "statusMessage": "sinais_sessao: lembrando a retomada após compactação"
           }
         ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}}",
+            "args": ["-I", "-B", "{{HOOK_AVISO}}"],
+            "timeout": 5,
+            "statusMessage": "aviso_copia: idade da última cópia de segurança"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -50,7 +71,7 @@
           {
             "type": "command",
             "command": "{{PYTHON}}",
-            "args": ["-B", "{{HOOK_CAMINHO}}"],
+            "args": ["-I", "-B", "{{HOOK_CAMINHO}}"],
             "timeout": 10,
             "onFailure": "block",
             "statusMessage": "guarda_caminho: conferindo destino da escrita"
@@ -63,10 +84,36 @@
           {
             "type": "command",
             "command": "{{PYTHON}}",
-            "args": ["-B", "{{HOOK_IDENTIDADE}}"],
+            "args": ["-I", "-B", "{{HOOK_IDENTIDADE}}"],
             "timeout": 10,
             "onFailure": "block",
-            "statusMessage": "guarda_identidade: conferindo troca de identidade"
+            "statusMessage": "guarda_identidade: conferindo troca de identidade e caminho de outro projeto (guarda-corpo)"
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}}",
+            "args": ["-I", "-B", "{{HOOK_REDE}}"],
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "guarda_rede: sessões do Windows sem web"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}}",
+            "args": ["-I", "-B", "{{HOOK_LEITURA}}"],
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "guarda_leitura (guarda-corpo: no Windows não há sandbox e o shell lê tudo)"
           }
         ]
       }

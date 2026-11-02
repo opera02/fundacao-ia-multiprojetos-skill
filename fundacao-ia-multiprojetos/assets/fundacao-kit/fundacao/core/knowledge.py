@@ -301,8 +301,16 @@ class KnowledgeService:
         return added
 
     def search(self, project_id: str, query: str, k: int = 5) -> list[dict]:
-        """Recuperação com autorização e estado aplicados no SQL, antes do top-k."""
+        """Recuperação com autorização e estado aplicados no SQL, antes do top-k. Depois da autorização, projeto
+        inexistente ou inativo é recusado como em `projects.project_root`, na mesma ordem e com o mesmo erro (1.7.10;
+        achado 4 da revisão do R179-37: o projeto arquivado com leitura ainda respondia à busca, na CLI e no MCP).
+        Entram no SQL só os recursos dos trechos (o projeto e cada caso) cuja leitura a política autoriza (1.7.10,
+        revisão do AJUSTES-179): o filtro lia a tabela acl direto e não via a concessão que a política deriva sem
+        linha no banco (a de `sessao-<p>` com a trava de projeto), e a busca pelo porteiro voltava vazia."""
         self.policy.require(self.principal, "read", resource_project(project_id))
+        projeto = self.con.execute("SELECT status FROM project WHERE project_id = ?", (project_id,)).fetchone()
+        if projeto is None or projeto["status"] != "active":
+            raise NotFound("projeto inexistente ou inativo", project_id=project_id)
         expr = fts_query(query)
         if expr is None:
             return []
@@ -311,6 +319,10 @@ class KnowledgeService:
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
         ).fetchone():
             return []
+        recursos = [r["resource"] for r in self.con.execute(  # dos trechos que o termo casa: pelo índice do FTS, sem
+            f"SELECT DISTINCT c.resource FROM {table} JOIN chunk c ON c.chunk_rowid = {table}.rowid"  # varrer chunk
+            f" WHERE {table} MATCH ? AND c.project_id = ?", (expr, project_id)).fetchall()
+            if self.policy.allowed(self.principal.principal_id, "read", r["resource"])]
         sql = (
             f"SELECT c.chunk_id, c.source_id, c.version, c.page, c.body, bm25({table}) AS score"
             f" FROM {table} JOIN chunk c ON c.chunk_rowid = {table}.rowid"
@@ -320,10 +332,10 @@ class KnowledgeService:
             " AND s.project_id = ? AND c.project_id = ?"
             " AND NOT EXISTS (SELECT 1 FROM tombstone t WHERE t.entity_id = c.source_id || '@' || c.version)"
             " AND NOT EXISTS (SELECT 1 FROM tombstone t WHERE t.entity_id = c.chunk_id)"
-            " AND EXISTS (SELECT 1 FROM acl a WHERE a.subject = ? AND a.resource = c.resource AND a.action = 'read')"
+            f" AND c.resource IN ({','.join('?' * len(recursos))})"  # só os recursos que a política autoriza
             f" ORDER BY bm25({table}) LIMIT ?"
         )
-        rows = self.con.execute(sql, (expr, project_id, project_id, self.principal.principal_id, k)).fetchall()
+        rows = self.con.execute(sql, (expr, project_id, project_id, *recursos, k)).fetchall() if recursos else []
         result = []
         seen = set()
         for r in rows:

@@ -38,11 +38,13 @@ class TestPerfisDaVersao170(unittest.TestCase):
         for perfil in (win, wsl):
             self.assertEqual(perfil["claudeMdExcludes"], ["**/projects/*/data/**"])
 
-    def test_web_negada_so_no_perfil_de_dados_reais(self):
+    def test_web_negada_nos_dois_perfis(self):
+        """1.7.10 (DESENHO §4 e §10): as sessões do Windows na raiz também ficam sem web; a pesquisa externa vai para
+        uma sessão de laboratório fora da raiz, sem dados da fundação. Antes, só o perfil de dados reais negava."""
         win = self.m.perfil_windows(raiz=r"E:\Fundacao Exemplo", python=r"C:\Py\python.exe")
         wsl = self.m.perfil_wsl(**self.kw)
         self.assertTrue({"WebFetch", "WebSearch"} <= set(wsl["permissions"]["deny"]))
-        self.assertFalse({"WebFetch", "WebSearch"} & set(win["permissions"]["deny"]))  # laboratório pesquisa
+        self.assertTrue({"WebFetch", "WebSearch"} <= set(win["permissions"]["deny"]))
 
     def test_conferencia_acusa_web_liberada_e_falta_de_exclusao(self):
         perfil = self.m.perfil_wsl(**self.kw)

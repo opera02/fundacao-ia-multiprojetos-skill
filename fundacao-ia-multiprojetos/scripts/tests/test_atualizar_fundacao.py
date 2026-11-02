@@ -134,6 +134,11 @@ class TestAtualizarFundacao(unittest.TestCase):
         self.assertEqual(res["regressoes"], ["test_local_versao.TestLocal.test_versao_antiga"])
         self.assertTrue(Path(res["registro"]).name.startswith("falha-atualizacao-kit-"))
         depois = {k: v for k, v in self.foto().items() if not k.startswith("evidence/atualizacoes/")}
+        # 1.7.10: o `backup criar` da cópia ANTES grava registry/ultima-copia.json (desenho 1.7.10, §7.1): é o único
+        # arquivo novo na raiz, e descreve a cópia ANTES.
+        ultima = json.loads((self.raiz / "registry" / "ultima-copia.json").read_text(encoding="utf-8"))
+        self.assertTrue(ultima["rotulo"].startswith("antes-kit-"), ultima)
+        depois.pop("registry/ultima-copia.json")
         self.assertEqual(depois, antes)                                           # raiz intacta
         self.assertIsNone(res["copia_de_ensaio"])                                 # cópia com dados apagada (1.5.1)
         self.assertIn("1.0.0", res["ensaio"]["suite_na_copia_atualizada"]["detalhes"][res["regressoes"][0]])

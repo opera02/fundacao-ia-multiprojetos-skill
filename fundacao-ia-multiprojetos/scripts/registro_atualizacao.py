@@ -11,6 +11,9 @@ comando continua lá: `atualizar_fundacao.py desfazer --registro <arq>`.
   recusa. Devolve os bytes que conferiu, por temporário e `os.replace`, e acrescenta a volta ao
   registry/kit_install.json.
 Recusa ou falha = `Parada` (etapa e motivo), que o `atualizar_fundacao.py` mostra em JSON.
+O `user_version` confere a trava do banco antes de abri-lo (item I7 da integração da 1.7.10; emenda E7 dos contratos
+do lote 2): com o marcador state/banco.trava do outro lado (o porteiro do Ubuntu segura o banco), o `checar`, o
+`aplicar` e o `desfazer` param na etapa `banco`, sem abrir nada. A trava vem do kit desta skill, nunca do da raiz.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ if str(AQUI) not in sys.path:  # carregado por caminho (testes): os módulos viz
 import gravacao_segura as gravacao  # noqa: E402  (gravação sem seguir ligação nem vínculo físico; R177-ATU-03)
 from codigo_conferido import AREAS_DE_CODIGO  # noqa: E402  (fundacao/, templates/, tests/)
 
+KIT = AQUI.parent / "assets" / "fundacao-kit"  # o kit desta skill: a trava do banco vem dele (item I7; emenda E7)
 LIVRO = Path("registry") / "atualizacoes.jsonl"  # âncora (SHA-256) de cada registro que o `desfazer` pode usar (#10)
 # Onde a atualização e o `desfazer` gravam: ligação no caminho ou vínculo físico ali recusa (R177-ATU-03).
 GRAVADOS = ("registry/kit_backup", "registry/kit_install.json", LIVRO.as_posix(), "evidence/atualizacoes")
@@ -61,10 +65,35 @@ def versao_do_kit(base: Path) -> str | None:
     return m.group(1) if m else None
 
 
+def _trava_banco():
+    """core/trava_banco.py do kit DESTA skill (item I7 da integração da 1.7.10; emenda E7), importado só quando o banco
+    vai ser aberto. Nunca o kit da raiz: ele é o que se confere e pode ser de versão anterior à trava; um `fundacao`
+    carregado de outro lugar recusa, como em assets/host/fundacao_titular.py."""
+    if str(KIT) not in sys.path:
+        sys.path.insert(0, str(KIT))
+    from fundacao.core import trava_banco
+    if not Path(trava_banco.__file__).resolve().is_relative_to(KIT.resolve()):
+        raise ImportError("o kit carregado não é o desta skill (" + str(trava_banco.__file__) + ")")
+    return trava_banco
+
+
 def user_version(raiz: Path):
+    """O `user_version` do banco da raiz, aberto só para leitura; None sem banco. Antes de abrir, a trava do banco (item
+    I7 da integração; emenda E7): o marcador state/banco.trava do outro lado — vivo, velho ou ilegível — para na etapa
+    `banco`, com o motivo e o comando do titular de trava_banco, e nada é aberto (a regra de AGENTS.md: o banco nunca é
+    aberto pelo Windows e pelo WSL ao mesmo tempo). O marcador do mesmo lado não muda nada."""
     db = Path(raiz) / "state" / "state.sqlite"
     if not db.is_file():
         return None
+    try:
+        trava = _trava_banco()
+    except ImportError as exc:
+        raise Parada("banco", "a trava do banco (state/banco.trava) não foi conferida, porque o kit desta skill não "
+                     "carregou (" + str(exc)[:200] + "): o banco não foi aberto")
+    try:
+        trava.conferir(db.parent)
+    except trava.BancoTravado as exc:
+        raise Parada("banco", str(exc), **exc.details)
     con = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)
     try:
         return con.execute("PRAGMA user_version").fetchone()[0]

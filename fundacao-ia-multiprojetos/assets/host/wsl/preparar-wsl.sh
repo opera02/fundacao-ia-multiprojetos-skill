@@ -1,33 +1,43 @@
 #!/usr/bin/env bash
-# Prepara o Ubuntu do WSL2 para a sessão de dados reais da fundação (skill fundacao-ia-multiprojetos).
+# Prepara o Ubuntu do WSL2 para as sessões de PROJETO da fundação (skill fundacao-ia-multiprojetos, 1.7.10).
 #
-# Rode no terminal do Ubuntu como o seu usuário, sem sudo na frente: o sudo pede a sua senha do Linux só no que
-# exige administrador, e o script diz antes o que é. Ordem: primeiro o preparar-maquina.ps1 no Windows (hooks,
-# perfis e identidade em <raiz>/.claude), depois este. Ele confere antes o que já existe (rodar de novo não repete):
-#  1. pacotes do sandbox do Claude Code, bubblewrap e socat (sudo apt-get install, com internet), e o perfil do
-#     AppArmor do bwrap quando o Ubuntu restringe namespaces (kernel.apparmor_restrict_unprivileged_userns = 1);
+# Rode no terminal do Ubuntu como o seu usuário, sem sudo na frente: o sudo pede a sua senha do Linux só no que exige
+# administrador, e o script diz antes o que é. Ordem: primeiro o preparar-maquina.ps1 (ou o preparar-projeto.ps1) no
+# Windows (hooks em <raiz>/.claude/hooks), depois este. Ele confere antes o que já existe (rodar de novo não repete):
+#  1. pacotes: bubblewrap e socat (sandbox do Claude Code), python3-venv, npm e corepack (ferramentas dos projetos,
+#     instaladas fora de /home: G1) e o perfil do AppArmor do bwrap quando o Ubuntu restringe namespaces;
+#  1b. o filtro seccomp do sandbox (npm install -g --ignore-scripts @anthropic-ai/sandbox-runtime@<versão>, a partir
+#     de / e sem rodar os scripts do pacote; documentação oficial conferida em 31/10/2026), só com --seccomp-versao;
+#     sem ele, o relatório diz "sockets sem filtro";
+#  1d. com --canario <relatório>, o relatório do ensaio real do canário (scripts/ensaio_isolamento_wsl.py) vai para a
+#     área do titular (sudo; preparo_host.py instalar-canario): sem ele, nenhuma ficha de aberturas é aplicada;
 #  2. /etc/wsl.conf com um só bloco [interop] desligado (enabled=false, appendWindowsPath=false), sem repetir blocos
 #     (sudo; cópia do anterior ao lado); vale depois de reiniciar o Ubuntu (wsl --terminate, no Windows);
 #  3. Claude Code fixado: cópia da versão em ~/.local/share/fundacao-ia/claude/<versão>/claude, que a limpeza
 #     automática de versões não apaga, com o SHA-256 conferido contra o informado (--claude-sha256, o do manifesto
 #     assinado da Anthropic) ou, sem ele, o do binário atual, registrado como não conferido;
-#  4. ligação da skill em ~/.claude/skills, se faltar, e conferência do que o Windows deixou na raiz: o perfil igual ao
-#     que o modelo da skill gera (com os projetos da raiz negados), os hooks iguais aos da skill e o settings.local.json
-#     só com a identidade do titular (--titular) e o projeto, porque a sessão o carrega inteiro;
-#  5. lançador (padrão ~/abrir-fundacao.sh, do modelo abrir-sessao.sh) com os SHA-256 do Claude Code, do perfil, dos
-#     hooks e do settings.local.json e o titular fixados; o ajudante confere de novo os mesmos bytes cujo hash fixa.
+#  4. o lançador único da 1.7.9 (~/abrir-fundacao.sh) é aposentado: a cópia fica ao lado e ele passa a mostrar o
+#     comando novo (cada projeto tem o seu);
+#  5. para cada --projeto, a área do titular de dono root (sudo): preparo_host.py instalar-projeto grava
+#     /etc/fundacao-ia/projetos/<p>/ (perfil, porteiro.json, mcp.json, aberturas.json, ficha, plugins, hashes.json),
+#     as cópias conferidas da skill e do Claude Code e o lançador /usr/local/bin/abrir-fundacao-<p>; ele confere antes
+#     os hooks da raiz (iguais aos da skill), o kit da raiz (igual ao da skill) e a ficha assinada da caixa de entrada.
+#     Grava também a cópia protegida da ferramenta do titular em /usr/local/lib/fundacao-ia/<versão do kit>/ (root,
+#     0755/0644, com o hashes.json que ela confere): dela roda a forma do Ubuntu de assinar a ficha (folha da
+#     integração da 1.7.10, I11).
 # O preparo só fixa o que conferiu inteiro [auditoria Codex Security da 1.7.6, #5]. Não instala o Claude Code nem faz
-# o login (credencial do titular): se faltar, mostra o comando e para.
+# o login (credencial do titular): se faltar, mostra o comando e para. Honestidade (contratos do lote 2 da 1.7.10, §0):
+# com a raiz em /mnt/<x>, o isolamento entre projetos é lógico até o canário passar no ambiente real.
 #
 # Códigos: 0 pronto (ou simulação sem erro) · 1 parou (veja a linha [erro]) · 2 uso incorreto
-#          · 3 falta algo que só o titular faz (instalar o Claude Code e fazer o login).
+#          · 3 falta algo que só o titular faz (instalar o Claude Code, fazer o login, o npm ou o corepack).
 set -uo pipefail
 
 AQUI=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SKILL_DIR=$(cd "$AQUI/../../.." && pwd)
 AJUDANTE="$AQUI/../preparo_host.py"
 RAIZ=""
-PROJETO=""
+PROJETOS=()
 TITULAR=""
 SIMULAR=0
 CLAUDE_VERSAO=""
@@ -35,20 +45,34 @@ CLAUDE_SHA256=""
 LANCADOR="$HOME/abrir-fundacao.sh"
 WSL_CONF="/etc/wsl.conf"
 PY=""
+PERFIL_WINDOWS=""
+AREA_RAIZ=""
+BIN_DIR=""
+TEMP_BASE=""
+SONDA_CMD=""
+SONDA_BINFMT=""
+FERRAMENTA_BASE=""
+SECCOMP_VERSAO=""
+CANARIO=""
 CODIGO=0
 REINICIAR=0
 DISTRO=${WSL_DISTRO_NAME:-Ubuntu}
+LANCADORES=()
 
 uso() {
   cat <<'FIM'
-Uso: bash preparar-wsl.sh --raiz "/mnt/d/IA/fundacao" --projeto <id> --titular <id> [--simular]
-       [--claude-versao <versão>] [--claude-sha256 <hash do manifesto assinado>]
-       [--lancador <arquivo>] [--wsl-conf <arquivo>] [--python <python3>]
---titular é a sua identidade, a mesma do -Titular do preparar-maquina.ps1: o lançador só abre com ela.
---simular só mostra o plano (nada é alterado). Sem --claude-versao, vale a versão para a qual ~/.local/bin/claude
-aponta. O hash oficial de cada versão está em platforms.linux-x64.checksum do manifesto
+Uso: bash preparar-wsl.sh --raiz "/mnt/d/IA/fundacao" --projeto <id> [--projeto <id>]... --titular <id> [--simular]
+       [--claude-versao <versão>] [--claude-sha256 <hash do manifesto assinado>] [--perfil-windows /mnt/c/Users/<usuario>]
+       [--seccomp-versao <versão>] [--canario <relatório do ensaio>] [--wsl-conf <arquivo>] [--python <python3>]
+       [--lancador <lançador antigo>]
+--titular é a sua identidade, a mesma do -Titular do preparar-maquina.ps1: ela assina as decisões que o porteiro
+registra. --canario instala o relatório do ensaio real (ensaio_isolamento_wsl.py rodar): sem ele, nenhuma abertura da
+ficha vale. --simular só mostra o plano (nada é alterado). Sem --claude-versao, vale a versão para a qual
+~/.local/bin/claude aponta. O hash oficial de cada versão está em platforms.linux-x64.checksum do manifesto
 https://downloads.claude.ai/claude-code-releases/<versão>/manifest.json, assinado (manifest.json.sig) pela chave de
 lançamento da Anthropic, impressão digital 31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE.
+Só para ensaio (sem sudo, em pastas temporárias): --area-raiz, --bin, --temp-base, --sonda-interop-cmd,
+--sonda-interop-binfmt e --ferramenta-base (a cópia protegida da ferramenta do titular; sem ela, o ensaio não a grava).
 FIM
 }
 
@@ -56,32 +80,55 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --simular) SIMULAR=1; shift ;;
     -h|--ajuda|--help) uso; exit 0 ;;
-    --raiz|--projeto|--titular|--claude-versao|--claude-sha256|--lancador|--wsl-conf|--python)
+    --raiz|--projeto|--titular|--claude-versao|--claude-sha256|--lancador|--wsl-conf|--python|--perfil-windows|--area-raiz|--bin|--temp-base|--sonda-interop-cmd|--sonda-interop-binfmt|--ferramenta-base|--seccomp-versao|--canario)
       if [ $# -lt 2 ]; then uso >&2; exit 2; fi
       case "$1" in
         --raiz) RAIZ=$2 ;;
-        --projeto) PROJETO=$2 ;;
+        --projeto) PROJETOS+=("$2") ;;
         --titular) TITULAR=$2 ;;
         --claude-versao) CLAUDE_VERSAO=$2 ;;
         --claude-sha256) CLAUDE_SHA256=$2 ;;
         --lancador) LANCADOR=$2 ;;
         --wsl-conf) WSL_CONF=$2 ;;
         --python) PY=$2 ;;
+        --perfil-windows) PERFIL_WINDOWS=$2 ;;
+        --area-raiz) AREA_RAIZ=$2 ;;
+        --bin) BIN_DIR=$2 ;;
+        --temp-base) TEMP_BASE=$2 ;;
+        --sonda-interop-cmd) SONDA_CMD=$2 ;;
+        --sonda-interop-binfmt) SONDA_BINFMT=$2 ;;
+        --ferramenta-base) FERRAMENTA_BASE=$2 ;;
+        --seccomp-versao) SECCOMP_VERSAO=$2 ;;
+        --canario) CANARIO=$2 ;;
       esac
       shift 2 ;;
     *) printf 'Opção desconhecida: %s\n' "$1" >&2; uso >&2; exit 2 ;;
   esac
 done
 
-if [ -z "$RAIZ" ] || [ -z "$PROJETO" ] || [ -z "$TITULAR" ]; then uso >&2; exit 2; fi
-if ! [[ $PROJETO =~ ^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$ ]]; then
-  printf 'Projeto inválido: %s\n' "$PROJETO" >&2; exit 2
-fi
+if [ -z "$RAIZ" ] || [ ${#PROJETOS[@]} -eq 0 ] || [ -z "$TITULAR" ]; then uso >&2; exit 2; fi
+for PROJETO in "${PROJETOS[@]}"; do  # a forma do kit e do porteiro: [a-z0-9-], 1 a 40, sem '--'
+  if ! [[ $PROJETO =~ ^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$ ]] || [[ $PROJETO == *--* ]]; then
+    printf 'Projeto inválido: %s (1 a 40 letras minúsculas, dígitos ou -, sem - nas pontas nem --)\n' "$PROJETO" >&2
+    exit 2
+  fi
+done
 if ! [[ $TITULAR =~ ^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$ ]]; then
   printf 'Titular inválido: %s\n' "$TITULAR" >&2; exit 2
 fi
 if [ -n "$CLAUDE_SHA256" ] && ! [[ $CLAUDE_SHA256 =~ ^[0-9a-f]{64}$ ]]; then
   printf 'SHA-256 inválido (64 dígitos hexadecimais minúsculos): %s\n' "$CLAUDE_SHA256" >&2; exit 2
+fi
+if [ -n "$SECCOMP_VERSAO" ] && ! [[ $SECCOMP_VERSAO =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+  printf 'Versão do filtro seccomp inválida (x.y.z): %s\n' "$SECCOMP_VERSAO" >&2; exit 2
+fi
+ENSAIO=0
+if [ -n "$AREA_RAIZ" ] || [ -n "$BIN_DIR" ] || [ -n "$TEMP_BASE" ] || [ -n "$SONDA_CMD" ] || [ -n "$SONDA_BINFMT" ] ||
+   [ -n "$FERRAMENTA_BASE" ]; then
+  if [ -z "$AREA_RAIZ" ] || [ -z "$BIN_DIR" ]; then
+    echo 'Ensaio: --area-raiz e --bin vão juntos (e as outras opções de ensaio só com eles).' >&2; exit 2
+  fi
+  ENSAIO=1
 fi
 if [ "$(id -u)" = "0" ]; then
   echo 'Rode como o seu usuário, sem sudo na frente: o script pede o sudo só quando precisa.' >&2; exit 2
@@ -90,9 +137,14 @@ if [ -z "$PY" ]; then
   if [ -x /usr/bin/python3 ]; then PY=/usr/bin/python3; else PY=$(command -v python3 || true); fi
 fi
 if [ -z "$PY" ]; then
-  echo 'Python 3 não encontrado (os hooks também precisam dele): sudo apt-get install -y python3' >&2; exit 2
+  echo 'Python 3 não encontrado (os hooks e o porteiro também precisam dele): sudo apt-get install -y python3' >&2; exit 2
 fi
 RAIZ=${RAIZ%/}
+if [ -z "$PERFIL_WINDOWS" ]; then
+  case "$SKILL_DIR" in
+    /mnt/[a-z]/Users/*) PERFIL_WINDOWS=$(printf '%s' "$SKILL_DIR" | cut -d/ -f1-5) ;;
+  esac
+fi
 
 relata() {  # ação, item, detalhe
   printf '  [%s] %s: %s\n' "$1" "$2" "$3"
@@ -121,6 +173,11 @@ em_wsl() {
   [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null
 }
 
+instala_pacotes() {  # pacotes do apt; devolve 0 se instalou
+  echo "Instalando $*: o sudo vai pedir a sua senha do Linux."
+  como_root apt-get update -q && como_root apt-get install -y "$@"
+}
+
 fim() {
   echo
   if [ "$REINICIAR" = 1 ]; then
@@ -130,7 +187,7 @@ fim() {
   local msg
   case "$CODIGO" in
     0) if [ "$SIMULAR" = 1 ]; then msg='simulação: o plano acima mostra o que a execução real faria'
-       else msg="Ubuntu preparado. Para abrir a sessão de dados reais: bash $LANCADOR"; fi ;;
+       else msg="Ubuntu preparado. Para abrir a sessão de cada projeto: ${LANCADORES[*]:-(nenhum)}"; fi ;;
     3) msg='falta algo que só você faz (veja a linha [pendente]); depois rode este script de novo' ;;
     *) msg='parou: veja a linha [erro]; nada além do que aparece acima foi alterado' ;;
   esac
@@ -139,41 +196,65 @@ fim() {
 }
 
 if [ "$SIMULAR" = 1 ]; then
-  echo 'Fundação de IA: preparo do Ubuntu (WSL2) para a sessão de dados reais   [SIMULAÇÃO: nada foi alterado]'
+  echo 'Fundação de IA: preparo do Ubuntu (WSL2) para as sessões de projeto   [SIMULAÇÃO: nada foi alterado]'
 else
-  echo 'Fundação de IA: preparo do Ubuntu (WSL2) para a sessão de dados reais'
+  echo 'Fundação de IA: preparo do Ubuntu (WSL2) para as sessões de projeto'
 fi
-echo "Raiz: $RAIZ   Projeto: $PROJETO   Titular: $TITULAR"
+echo "Raiz: $RAIZ   Projetos: ${PROJETOS[*]}   Titular: $TITULAR"
 
 # 0. Ambiente
 if em_wsl; then
   relata igual ambiente "WSL2 ($DISTRO)"
-elif [ "$SIMULAR" = 1 ]; then
-  relata aviso ambiente 'este terminal não é o do WSL; a simulação segue só para mostrar o plano'
+elif [ "$SIMULAR" = 1 ] || [ "$ENSAIO" = 1 ]; then
+  relata aviso ambiente 'este terminal não é o do WSL; segue só para mostrar o plano (ou o ensaio)'
 else
   relata erro ambiente 'rode no terminal do Ubuntu do WSL2'
   fim
 fi
 
-# 1. Pacotes do sandbox
+# 1. Pacotes do sandbox e das ferramentas dos projetos (G1: fora de /home, que o perfil do projeto não lê)
 faltam=()
 command -v bwrap >/dev/null 2>&1 || faltam+=(bubblewrap)
 command -v socat >/dev/null 2>&1 || faltam+=(socat)
+if ! command -v dpkg-query >/dev/null 2>&1 || ! dpkg-query -W -f='${Status}' python3-venv 2>/dev/null | grep -q 'install ok installed'; then
+  faltam+=(python3-venv)
+fi
+if ! command -v npm >/dev/null 2>&1 && ! command -v node >/dev/null 2>&1; then
+  faltam+=(nodejs npm)
+fi
 if [ ${#faltam[@]} -eq 0 ]; then
-  relata igual pacotes 'bubblewrap e socat presentes'
+  relata igual pacotes 'bubblewrap, socat e python3-venv presentes'
 elif [ "$SIMULAR" = 1 ]; then
   relata instalar pacotes "sudo apt-get install -y ${faltam[*]} (exige administrador do Linux: o sudo pede a sua senha; usa a internet)"
+elif instala_pacotes "${faltam[@]}" && command -v bwrap >/dev/null 2>&1 && command -v socat >/dev/null 2>&1; then
+  relata criar pacotes "instalados: ${faltam[*]}"
 else
-  echo "Instalando ${faltam[*]}: o sudo vai pedir a sua senha do Linux."
-  if como_root apt-get update -q && como_root apt-get install -y "${faltam[@]}" && command -v bwrap >/dev/null 2>&1 &&
-     command -v socat >/dev/null 2>&1; then
-    relata criar pacotes "instalados: ${faltam[*]}"
-  else
-    relata erro pacotes "a instalação não terminou; rode: sudo apt-get install -y ${faltam[*]}"
+  relata erro pacotes "a instalação não terminou; rode: sudo apt-get install -y ${faltam[*]}"
+fi
+if ! command -v npm >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1; then
+    relata pendente npm 'o node está instalado sem o npm: instale o npm do mesmo jeito que instalou o node (o preparo não troca o node)'
   fi
+elif ! command -v corepack >/dev/null 2>&1; then
+  relata pendente corepack 'corepack ausente: sudo npm install -g corepack@<versão fixada> (e rode este script de novo)'
+else
+  relata igual npm "npm e corepack presentes ($(npm --version 2>/dev/null || echo '?'))"
 fi
 
-# 1b. AppArmor do Ubuntu 24.04 ou mais novo (documentação do sandbox do Claude Code)
+# 1b. Filtro seccomp do sandbox (sem ele, "sockets are unrestricted")
+if [ -z "$SECCOMP_VERSAO" ]; then
+  relata aviso seccomp 'sockets sem filtro: o filtro seccomp do sandbox não foi pedido (--seccomp-versao <versão>, decisão do titular); /tmp, /run, /var/run, /mnt/wsl e /mnt/wslg ficam negados no perfil'
+elif ! command -v npm >/dev/null 2>&1; then
+  relata pendente seccomp 'o filtro seccomp precisa do npm (veja a linha do npm)'
+elif [ "$SIMULAR" = 1 ]; then
+  relata instalar seccomp "sudo npm install -g --ignore-scripts @anthropic-ai/sandbox-runtime@$SECCOMP_VERSAO (exige administrador do Linux; usa a internet)"
+elif (cd / && como_root npm install -g --ignore-scripts "@anthropic-ai/sandbox-runtime@$SECCOMP_VERSAO"); then
+  relata criar seccomp "@anthropic-ai/sandbox-runtime@$SECCOMP_VERSAO instalado sem rodar scripts do pacote (o preparo o confere nos caminhos fixos)"
+else
+  relata erro seccomp "não consegui instalar o filtro; rode: cd / && sudo npm install -g --ignore-scripts @anthropic-ai/sandbox-runtime@$SECCOMP_VERSAO"
+fi
+
+# 1c. AppArmor do Ubuntu 24.04 ou mais novo (documentação do sandbox do Claude Code)
 restrito=$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || true)
 if [ "$restrito" != "1" ]; then
   relata igual apparmor "não restringe o bubblewrap (sysctl: ${restrito:-ausente}); nada a fazer"
@@ -247,64 +328,89 @@ else
   fi
 fi
 
-# 4. Ligação da skill e o que o Windows preparou na raiz
-LIGACAO="$HOME/.claude/skills/fundacao-ia-multiprojetos"
-if [ -e "$LIGACAO" ] || [ -L "$LIGACAO" ]; then
-  relata igual skill "$LIGACAO presente"
-elif [ "$SIMULAR" = 1 ]; then
-  relata criar skill "ligação $LIGACAO para $SKILL_DIR"
-elif mkdir -p "$(dirname "$LIGACAO")" && ln -s "$SKILL_DIR" "$LIGACAO"; then
-  relata criar skill "ligação $LIGACAO para $SKILL_DIR"
-else
-  relata erro skill "não consegui criar a ligação $LIGACAO"
-fi
-PERFIL="$RAIZ/.claude/settings.wsl.json"
-if [ ! -f "$PERFIL" ]; then
-  relata erro perfil "$PERFIL não existe: rode antes, no PowerShell do Windows, o preparar-maquina.ps1 com -Projeto $PROJETO"
-elif saida=$("$PY" -I -B "$AJUDANTE" conferir-perfil-wsl --perfil "$PERFIL" --raiz "$RAIZ" --projeto "$PROJETO"); then
-  relata igual perfil "$PERFIL igual ao do modelo da skill (SHA-256 $(sha_de "$PERFIL")); confira as vagas: $saida"
-else
-  relata erro perfil "$PERFIL não é o que o modelo da skill gera para esta raiz ($saida): rode de novo o preparar-maquina.ps1 no Windows com -Projeto $PROJETO"
-fi
-for h in guarda_caminho.py guarda_identidade.py sinais_sessao.py; do
-  if [ ! -f "$RAIZ/.claude/hooks/$h" ]; then
-    relata erro "hook $h" "ausente em $RAIZ/.claude/hooks: rode o preparar-maquina.ps1 no Windows"
-  elif cmp -s "$RAIZ/.claude/hooks/$h" "$SKILL_DIR/assets/hooks/$h"; then
-    relata igual "hook $h" "igual ao da skill (SHA-256 $(sha_de "$RAIZ/.claude/hooks/$h"))"
+# 4. O lançador único da 1.7.9 é aposentado (cada projeto tem o seu na 1.7.10)
+AVISO_ANTIGO="# fundacao-ia-multiprojetos 1.7.10: lançador aposentado"
+if [ -f "$LANCADOR" ] && ! grep -qF "$AVISO_ANTIGO" "$LANCADOR" 2>/dev/null; then
+  if [ "$SIMULAR" = 1 ]; then
+    relata atualizar lancador-antigo "$LANCADOR (1.7.9) passa a mostrar o comando novo; a cópia fica em $LANCADOR.anterior-<data>"
+  elif cp -p "$LANCADOR" "$LANCADOR.anterior-$(date +%Y%m%dT%H%M%S)" &&
+       printf '%s\n' '#!/usr/bin/env bash' "$AVISO_ANTIGO" \
+         "echo 'Na 1.7.10 cada projeto tem o seu lançador: abrir-fundacao-<projeto> (veja o preparar-wsl.sh).' >&2" \
+         'exit 1' >"$LANCADOR.novo" && chmod 0755 "$LANCADOR.novo" && mv -f "$LANCADOR.novo" "$LANCADOR"; then
+    relata atualizar lancador-antigo "$LANCADOR aposentado (a cópia do anterior ficou ao lado)"
   else
-    relata erro "hook $h" "difere do hook da skill ($SKILL_DIR/assets/hooks/$h): rode de novo o preparar-maquina.ps1 no Windows"
+    relata erro lancador-antigo "não consegui aposentar $LANCADOR"
   fi
-done
-LOCAL="$RAIZ/.claude/settings.local.json"
-if [ ! -f "$LOCAL" ]; then
-  relata erro identidade "$LOCAL ausente: rode o preparar-maquina.ps1 no Windows"
-elif saida=$("$PY" -I -B "$AJUDANTE" conferir-identidade --arquivo "$LOCAL" --titular "$TITULAR" --projeto "$PROJETO"); then
-  relata igual identidade "$LOCAL só com a identidade de $TITULAR (SHA-256 $(sha_de "$LOCAL"))"
-else
-  relata erro identidade "$LOCAL não serve para a sessão de dados reais, que o carrega inteiro ($saida): rode de novo, no Windows, o preparar-maquina.ps1 com -Titular $TITULAR -Projeto $PROJETO (ele deixa só a identidade e guarda o anterior em .claude/anteriores)"
 fi
 
-# 5. Lançador com os hashes fixados (o ajudante confere de novo os mesmos bytes cujo hash fixa)
-if [ "$CLAUDE_OK" = 1 ] && [ "$CODIGO" != 1 ]; then
-  args=(lancador --raiz "$RAIZ" --projeto "$PROJETO" --titular "$TITULAR" --claude "$FIXO" --claude-versao "$CLAUDE_VERSAO"
-        --claude-sha256 "$CLAUDE_HASH" --origem-hash "$ORIGEM_HASH" --skill-md "$SKILL_DIR/SKILL.md")
-  if ! novo=$("$PY" -I -B "$AJUDANTE" "${args[@]}" --saida -); then
-    relata erro lancador "o modelo do lançador recusou: $novo"
-  elif [ -f "$LANCADOR" ] && [ "$(cat "$LANCADOR")" = "$novo" ]; then
-    relata igual lancador "$LANCADOR (SHA-256 $(sha_de "$LANCADOR"))"
+# 1d. Relatório do canário (contratos do lote 2, §0): sem ele aprovado, a ficha de nenhum projeto é aplicada
+if [ -n "$CANARIO" ]; then
+  args_canario=(instalar-canario --relatorio "$CANARIO")
+  if [ "$ENSAIO" = 1 ]; then args_canario+=(--area-raiz "$AREA_RAIZ"); fi
+  if [ "$SIMULAR" = 1 ]; then args_canario+=(--simular); fi
+  if [ "$ENSAIO" = 1 ] || [ "$SIMULAR" = 1 ]; then
+    saida=$("$PY" -I -B "$AJUDANTE" "${args_canario[@]}"); r=$?
   else
-    acao=criar
-    if [ -f "$LANCADOR" ]; then acao=atualizar; fi
-    if [ "$SIMULAR" = 1 ]; then
-      relata "$acao" lancador "$LANCADOR, com os SHA-256 do Claude Code, do perfil, dos hooks e da identidade fixados"
-    elif { [ "$acao" = criar ] || cp -p "$LANCADOR" "$LANCADOR.anterior-$(date +%Y%m%dT%H%M%S)"; } &&
-         "$PY" -I -B "$AJUDANTE" "${args[@]}" --saida "$LANCADOR.novo" >/dev/null && chmod 0755 "$LANCADOR.novo" &&
-         mv -f "$LANCADOR.novo" "$LANCADOR"; then
-      relata "$acao" lancador "$LANCADOR (SHA-256 $(sha_de "$LANCADOR"))"
-    else
-      relata erro lancador "não consegui gravar $LANCADOR"
-    fi
+    echo "Instalando o relatório do canário na área do titular (dono root): o sudo vai pedir a sua senha do Linux."
+    saida=$(sudo "$PY" -I -B "$AJUDANTE" "${args_canario[@]}"); r=$?
   fi
+  if [ "$r" = 0 ] && printf '%s' "$saida" | grep -q '"acao": "igual"'; then
+    relata igual canario "relatório do canário já na área do titular: $saida"
+  elif [ "$r" = 0 ]; then
+    relata criar canario "relatório do canário conferido e gravado na área do titular: $saida"
+  else
+    relata erro canario "o relatório do canário foi recusado (só o ensaio real com os comandos confinados vale): $saida"
+  fi
+else
+  relata aviso canario 'sem --canario: nenhuma abertura da ficha vale até o titular rodar o ensaio (scripts/ensaio_isolamento_wsl.py) e instalar o relatório'
+fi
+
+# 5. Área do titular (dono root) e lançador de cada projeto
+if [ -z "$PERFIL_WINDOWS" ]; then
+  relata erro perfil-windows 'informe --perfil-windows /mnt/c/Users/<usuario> (o seu usuário do Windows) (a pasta do Windows que o perfil do projeto nega)'
+fi
+CLAUDE_FONTE="$FIXO"
+if [ "$SIMULAR" = 1 ] && [ ! -f "$FIXO" ]; then
+  CLAUDE_FONTE="$VERSOES/$CLAUDE_VERSAO"  # na simulação a cópia fixada ainda não existe: o mesmo binário, mesmo hash
+fi
+if [ "$CLAUDE_OK" = 1 ] && [ "$CODIGO" != 1 ]; then
+  for PROJETO in "${PROJETOS[@]}"; do
+    args=(instalar-projeto --raiz "$RAIZ" --projeto "$PROJETO" --titular "$TITULAR" --claude "$CLAUDE_FONTE"
+          --claude-versao "$CLAUDE_VERSAO" --claude-sha256 "$CLAUDE_HASH" --origem-hash "$ORIGEM_HASH"
+          --perfil-windows "$PERFIL_WINDOWS" --casa "$HOME" --usuario "$(id -un)")
+    if [ "$ENSAIO" = 1 ]; then
+      args+=(--area-raiz "$AREA_RAIZ" --bin "$BIN_DIR")
+      [ -z "$TEMP_BASE" ] || args+=(--temp-base "$TEMP_BASE")
+      [ -z "$SONDA_CMD" ] || args+=(--sonda-interop-cmd "$SONDA_CMD")
+      [ -z "$SONDA_BINFMT" ] || args+=(--sonda-interop-binfmt "$SONDA_BINFMT")
+      [ -z "$FERRAMENTA_BASE" ] || args+=(--ferramenta-base "$FERRAMENTA_BASE")
+    fi
+    if [ "$SIMULAR" = 1 ]; then
+      if saida=$("$PY" -I -B "$AJUDANTE" "${args[@]}" --simular); then
+        relata instalar "projeto $PROJETO" "área do titular e lançador abrir-fundacao-$PROJETO (sudo: exige administrador do Linux). Plano: $saida"
+      else
+        relata erro "projeto $PROJETO" "o preparo recusou: $saida"
+      fi
+      continue
+    fi
+    if [ "$ENSAIO" = 1 ]; then
+      saida=$("$PY" -I -B "$AJUDANTE" "${args[@]}"); r=$?
+    else
+      echo "Gravando a área do titular do projeto $PROJETO (dono root): o sudo vai pedir a sua senha do Linux."
+      saida=$(sudo "$PY" -I -B "$AJUDANTE" "${args[@]}"); r=$?
+    fi
+    if [ "$r" != 0 ]; then
+      relata erro "projeto $PROJETO" "o preparo recusou: $saida"
+      continue
+    fi
+    lanc=$(printf '%s' "$saida" | grep -o '"lancador": "[^"]*"' | head -n 1 | sed 's/.*: "\(.*\)"$/\1/')
+    if printf '%s' "$saida" | grep -q '"acao": "\(criar\|atualizar\|remover\|instalar\)"'; then
+      relata atualizar "projeto $PROJETO" "área do titular e lançador $lanc conferidos e gravados. Relatório: $saida"
+    else
+      relata igual "projeto $PROJETO" "área do titular e lançador $lanc (nada mudou)"
+    fi
+    LANCADORES+=("$lanc")
+  done
 fi
 
 fim

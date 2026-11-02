@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "blockReadsOutsideWorkingDirectories": true,
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
@@ -16,24 +17,45 @@
       "Read(./**/*secret*)",
       "Read(./**/*.kdbx)",
       "Read(./**/auth.json)",
-      "Read(./state/**)",
+      "{{SEGREDOS_DA_REGRA_UNICA}}",
+      "Read(/{{RAIZ}}/state/**)",
       "Read(~/.claude/.credentials.json)",
       "Read(~/.codex/auth.json)",
       "Read(~/.ssh/**)",
       "Read(/{{PERFIL_WINDOWS}}/.claude/.credentials.json)",
       "Read(/{{PERFIL_WINDOWS}}/.codex/auth.json)",
       "Read(/{{PERFIL_WINDOWS}}/.ssh/**)",
-      "WebFetch",
-      "WebSearch",
-      "Edit(./.claude/**)",
+      "{{LEITURA_NEGADA}}",
+      "{{WEB_NEGADA}}",
+      "Edit(/{{RAIZ}}/.claude/**)",
+      "Edit(/{{RAIZ}}/registry/**)",
+      "Edit(/{{PROJETO_DIR}}/.claude/**)",
+      "Edit(/{{PROJETO_DIR}}/.porteiro/respostas/**)",
+      "Edit(/{{PROJETO_DIR}}/CLAUDE.local.md)",
       "Edit(/{{ANCORA_BASE}}/**)",
       "Edit(/{{SOMENTE_LEITURA}}/**)"
-    ]
+    ],
+    "allow": ["{{WEBFETCH_PERMITIDO}}"]
   },
   "claudeMdExcludes": ["**/projects/*/data/**"],
+  "syncClaudeAiSkills": false,
+  "syncClaudeAiPlugins": false,
+  "disableClaudeAiConnectors": true,
   "env": {
+    "FUNDACAO_PRINCIPAL": "sessao-{{PROJETO}}",
+    "FUNDACAO_PROJECT": "{{PROJETO}}",
+    "FUNDACAO_RAIZ": "{{RAIZ}}",
+    "FUNDACAO_PORTEIRO": "{{PROJETO_DIR}}/.porteiro",
+    "FUNDACAO_FERRAMENTAS": "{{FERRAMENTAS}}",
     "FUNDACAO_MCP_PERMITIDAS": "",
-    "DISABLE_AUTOUPDATER": "1"
+    "FUNDACAO_DOMINIOS_WEB": "{{DOMINIOS_WEB}}",
+    "DISABLE_AUTOUPDATER": "1",
+    "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
+    "PYTHONPATH": "{{RAIZ}}",
+    "XDG_CACHE_HOME": "{{PROJETO_DIR}}/.cache",
+    "npm_config_cache": "{{PROJETO_DIR}}/.cache/npm",
+    "PIP_CACHE_DIR": "{{PROJETO_DIR}}/.cache/pip",
+    "UV_CACHE_DIR": "{{PROJETO_DIR}}/.cache/uv"
   },
   "hooks": {
     "SessionStart": [
@@ -53,12 +75,25 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3",
+            "args": ["-I", "-B", "{{HOOK_FERRAMENTAS}}"],
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "guarda_ferramentas: só as ferramentas da lista do projeto"
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
         "hooks": [
           {
             "type": "command",
             "command": "/usr/bin/python3",
-            "args": ["-B", "{{HOOK_CAMINHO}}"],
+            "args": ["-I", "-B", "{{HOOK_CAMINHO}}"],
             "timeout": 10,
             "onFailure": "block",
             "statusMessage": "guarda_caminho: conferindo destino da escrita"
@@ -71,10 +106,36 @@
           {
             "type": "command",
             "command": "/usr/bin/python3",
-            "args": ["-B", "{{HOOK_IDENTIDADE}}"],
+            "args": ["-I", "-B", "{{HOOK_IDENTIDADE}}"],
             "timeout": 10,
             "onFailure": "block",
-            "statusMessage": "guarda_identidade: conferindo troca de identidade"
+            "statusMessage": "guarda_identidade: conferindo troca de identidade e caminho de outro projeto"
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3",
+            "args": ["-I", "-B", "{{HOOK_REDE}}"],
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "guarda_rede: só os domínios da ficha do projeto"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3",
+            "args": ["-I", "-B", "{{HOOK_LEITURA}}"],
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "guarda_leitura: outro projeto e state/ ficam fora"
           }
         ]
       }
@@ -86,9 +147,13 @@
     "failIfUnavailable": true,
     "allowUnsandboxedCommands": false,
     "filesystem": {
-      "allowWrite": ["{{BACKUPS}}", "{{RAIZ}}/state"],
+      "allowWrite": [],
       "denyWrite": [
         "{{RAIZ}}/.claude",
+        "{{RAIZ}}/registry",
+        "{{PROJETO_DIR}}/.claude",
+        "{{PROJETO_DIR}}/.porteiro/respostas",
+        "{{PROJETO_DIR}}/CLAUDE.local.md",
         "{{RAIZ}}/projects/{{OUTROS_PROJETOS}}",
         "{{SOMENTE_LEITURA}}",
         "{{ANCORA_BASE}}"
@@ -101,10 +166,11 @@
         "{{PERFIL_WINDOWS}}/.claude/.credentials.json",
         "{{PERFIL_WINDOWS}}/.codex"
       ],
-      "allowRead": ["{{RAIZ}}/state"]
+      "allowRead": ["{{RAIZ}}/fundacao", "{{ANCORA_BASE}}", "{{SOMENTE_LEITURA}}", "{{TEMP_PROJETO}}"]
     },
     "network": {
-      "allowedDomains": []
+      "allowedDomains": ["{{REDE_PERMITIDA}}"],
+      "strictAllowlist": true
     }
   }
 }

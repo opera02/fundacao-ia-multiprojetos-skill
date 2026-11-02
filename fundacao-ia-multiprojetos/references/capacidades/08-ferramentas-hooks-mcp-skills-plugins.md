@@ -81,7 +81,9 @@ de "não lido" guarda o SHA-256 do arquivo, que entra na comparação do `verifi
 [R177D-3].
 O `verificar` acusa hook acrescentado. Sobre um inventário do esquema 1, ele
 mostra uma vez o que o esquema 2 passou a ver: confira e regrave. Ficam de fora: plugins em pastas de skills,
-`--plugin-dir`, configurações gerenciadas, hooks no frontmatter de skills e agentes e pacotes `.mcpb`.
+`--plugin-dir`, configurações gerenciadas, hooks no frontmatter de skills e agentes e pacotes `.mcpb`. Na sessão de
+projeto da 1.7.10, os plugins entram justamente por `--plugin-dir`, a partir da área do titular no Ubuntu: quem os fixa
+é o `hashes.json` dessa área, que o lançador reconfere a cada abertura (§5).
 
 ## 2. Hooks (R33, R52)
 **Donos diferentes** [Livro p56]: Git (`pre-commit`), Claude Code (eventos do produto),
@@ -169,6 +171,30 @@ Na fundação, quem instala os hooks e os perfis no host é o titular, com
 `assets/host/windows/preparar-maquina.ps1` (e `assets/host/wsl/preparar-wsl.sh` para a sessão de dados reais
 no WSL2); ver `../seguranca-isolamento.md` §5 e `../fluxo-a-implantar.md` §Host.
 
+**Hooks da 1.7.10** [Decisão; 1.7.10]. O preparo do host registra cada hook com `python3 -I -B` (no Windows,
+`python -I -B`) e o caminho absoluto em `<raiz>/.claude/hooks/<hook>.py`; os de PreToolUse têm prazo de 10 s e
+`onFailure: block` e negam em evento ilegível (falha fechada); o `aviso_copia.py` nunca bloqueia:
+
+| Hook | Evento e matcher | Perfil | O que decide |
+|---|---|---|---|
+| `guarda_caminho.py` | PreToolUse `Edit\|Write\|MultiEdit\|NotebookEdit\|mcp__.*` | Ubuntu e Windows | escrita só no projeto; MCP só da lista |
+| `guarda_identidade.py` | PreToolUse `Bash\|PowerShell` | Ubuntu e Windows | troca de identidade; comando que cite outro projeto; comando recursivo conhecido (`rg`, `grep -r`, `find`, `ls -R`, `tree`, `du`, `cp -r`, `tar`, `zip`, `rsync`, `Get-ChildItem -Recurse` e afins) sobre `projects/`, a raiz ou acima; comando acima de 16 KiB |
+| `guarda_ferramentas.py` | PreToolUse `*` | só Ubuntu | só as ferramentas de `FUNDACAO_FERRAMENTAS`, a lista do `--tools` |
+| `guarda_rede.py` | PreToolUse `WebFetch\|WebSearch` | Ubuntu e Windows | WebFetch só para domínio da ficha; WebSearch só com a ficha |
+| `guarda_leitura.py` | PreToolUse `Read\|Grep\|Glob`, em grupo separado do de `mcp__.*` | Ubuntu e Windows | leitura de outro projeto e de `state/`; no Ubuntu, `/mnt/wslg/` e o filtro do Grep com barra invertida |
+| `sinais_sessao.py` | SessionStart `compact` e a linha de status | Ubuntu e Windows | lembra a retomada depois da compactação |
+| `aviso_copia.py` | SessionStart `startup\|resume` (prazo de 5 s, sem bloquear) | só Windows | lembra a cópia semanal |
+
+Os hooks decidem só pelo `tool_name` exato: matcher mais largo não amplia nada. Eles leem do `env` do perfil
+`FUNDACAO_FERRAMENTAS`, `FUNDACAO_MCP_PERMITIDAS` (vazia no Ubuntu; no Windows, `mcp__ccd_*`), `FUNDACAO_DOMINIOS_WEB`,
+`FUNDACAO_WEBSEARCH`, `FUNDACAO_PROJECT`, `FUNDACAO_RAIZ` e, no Windows, `FUNDACAO_SEM_DADOS`. Sem `FUNDACAO_RAIZ`
+(perfil da 1.7.9 ou feito à mão), o `guarda_leitura.py` e o `guarda_identidade.py` deduzem a raiz pela pasta onde
+estão instalados (`<raiz>/.claude/hooks/`), inclusive quando a raiz fica dentro de uma pasta chamada `projects`; o
+perfil gerado pelo preparo põe `FUNDACAO_RAIZ`. Os hooks mudaram de conteúdo na 1.7.10: depois de atualizar a skill,
+rode o preparo da máquina, que os recopia para `<raiz>/.claude/hooks`, e depois o do Ubuntu, que confere os da raiz
+contra os da skill e refaz os hashes da área. O que cada um nega, os falsos positivos declarados e os limites:
+`../seguranca-isolamento.md` §8.2. São guarda-corpos, não barreira do sistema.
+
 ## 3. MCP (R34)
 Cliente (inicia e pede) · servidor (oferece *tools*, *resources*, *prompts*) · host [Livro p60].
 Fatos conferidos [Verificado 2026-10-18]: protocolo vigente **2026-07-28** — sem sessões
@@ -226,6 +252,15 @@ Pendente: registrar o servidor no host (Claude Code `claude mcp add`; Codex
 `[mcp_servers.<nome>]`) altera a configuração do usuário e exige decisão dele; depois,
 prove o disparo pelo host com a mesma negativa entre projetos.
 
+**MCP na sessão de projeto: MCP de terceiro só na 1.7.11** [Decisão; 1.7.10]. Servidor MCP local roda fora do
+sandbox, com o acesso total do usuário (documentação de 31/10/2026: `../fontes-verificadas.md`); por isso só abre na
+1.7.11, com a jaula. Na 1.7.10, a sessão do projeto no Ubuntu carrega só o `mcp.json` da área do titular, que é
+sempre `{"mcpServers": {}}`, com `--strict-mcp-config`; `FUNDACAO_MCP_PERMITIDAS` fica vazia, e o
+`guarda_ferramentas.py` nega toda ferramenta `mcp__`; a seção `mcp` da ficha de aberturas é recusada ("1.7.11"); o
+lançador não abre com `.mcp.json` no projeto; e o perfil desliga os conectores do claude.ai
+(`disableClaudeAiConnectors`). O servidor MCP do kit (`fundacao/mcp_servidor.py`) não inicia numa sessão de projeto
+travada: ali a sessão usa `python -m fundacao ...`, que vai ao porteiro (`../seguranca-isolamento.md` §2).
+
 ## 4. Skills (R35)
 Fatos conferidos [Verificado 2026-10-18]: padrão Agent Skills — `name` 1–64 caracteres
 `a-z0-9-` igual à pasta; `description` até 1.024 (o quê **e** quando usar); opcionais
@@ -252,6 +287,17 @@ autorização ("confirme o projeto" orienta; quem decide é o código).
 `W_SKILL_DE_HOST_AINDA_NO_DISCO` enquanto o `SKILL.md` existir); (2) retirar a pasta do alcance do
 host — mover para uma pasta de guarda fora de `.claude/skills/` (ou `.agents/skills/`), conferindo
 os hashes — e confirmar que o host não a carrega mais. Só o passo 1 deixa a skill ativa no host.
+**Skills aninhadas por projeto, com negações que acumulam** [Decisão; 1.7.10]. O nome de skill aninhada que um projeto
+traz (o `scripts/instrucoes_aninhadas.py listar` dá os nomes e as negações sugeridas, §6) vai para o
+`registry/projetos-host.json` (`aninhadas_negadas`), que só o titular grava
+(`assets/host/preparo_host.py registrar-projeto --negar-skill <nome>`; os perfis negam às sessões a escrita nele). O
+preparo soma os nomes de todos os projetos e os nega por `Skill(<nome>)` no perfil do Windows e no de cada projeto do
+Ubuntu: o que um projeto trouxe aninhado fica negado também nos outros. Pela documentação (31/10/2026), desde a
+2.1.260 o nome sem qualificação também bloqueia a skill aninhada qualificada, e uma regra `allow` não abre exceção numa
+negação. Na sessão do Ubuntu, com `--setting-sources local`, as skills, os agentes e os comandos de
+`projects/<p>/.claude/` não deveriam carregar (o lançador só avisa se existirem; o canário mede a carga de uma
+`.claude/` em subpasta do projeto, não a desta pasta: §5). O caminho para levar uma skill a um projeto é o plugin
+candidato (§5).
 
 ## 5. Plugins (R36)
 Fatos conferidos [Verificado 2026-10-18]: Claude Code — `.claude-plugin/plugin.json`
@@ -269,6 +315,179 @@ recarregar e conferir versão carregada → negativa entre projetos pela nova ro
 desativar (sem seleção, sem novas chamadas nem processos) → desinstalar só o plugin
 (dados e evidências permanecem) → reinstalar versão preservada. Catálogo privado em Git
 fixado por tag/commit, revisão de diff. Quadro: `assets/templates/COMPATIBILIDADE-HOSTS.md`.
+
+### Plugin candidato do projeto (1.7.10)
+[Decisão; 1.7.10.] Na sessão de um projeto, skill, agente ou comando só carrega como plugin candidato: montado,
+conferido e revisado na sessão, aceito pelo titular, listado na ficha de aberturas assinada
+(`../seguranca-isolamento.md` §8.3) e instalado pelo preparo do titular, depois do canário. Até lá, nenhuma sessão o
+carrega (a confirmar: o `conclusao.carga_aninhada` do canário, item 12 de `assets/templates/CHECKLIST-PROJETO.md`,
+mede com `--setting-sources local` a carga de skill e agente de uma `.claude/` em subpasta do projeto; para a
+`projects/<p>/.claude/`, o ensaio não tem item, e o lançador só avisa). As recusas abaixo são do código (lista
+positiva e cópia que não segue ligação), não barreira do sistema: com a raiz em `/mnt/e`, o sandbox não confinou os
+comandos (`../seguranca-isolamento.md` §8.1). Quem decide é o caminho confiável: a regra do validador do kit (o módulo
+`aberturas_plugins`, com o `aberturas_markdown`), que vale na `abertura preparar|verificar`, na ferramenta do titular
+(`assets/host/fundacao_titular.py assinar-ficha`) e no instalador do preparo do Ubuntu. A ferramenta e o instalador
+rodam fora da sessão, cada um com o kit da própria cópia da skill, e o instalador copia cada arquivo pelo manifesto
+assinado. A conferência da sessão (`scripts/plugin_candidato.py`) aplica a mesma regra e recusa um pouco mais, como
+guarda-corpo: um candidato montado à mão passa por esse a mais no caminho confiável.
+
+1. **Montar** (sessão):
+   `python <skill>/scripts/plugin_candidato.py montar --raiz <raiz> --projeto <p> --nome <n> --origem <pasta>`, com a
+   origem dentro de `projects/<p>/`, copia para `projects/<p>/plugins-candidatos/<p>-<n>/`, que não pode existir. A
+   origem é uma skill avulsa (com `SKILL.md`) ou uma árvore com `skills/`, `agents/` e `commands/` (uma
+   `.claude/` ou um plugin); da raiz dela vem só a licença. Hooks, MCP, configuração e scripts ficam de fora,
+   listados em `nao_copiados`, com aviso de "1.7.11". Origem trazida pelo `scripts/importar.py` precisa ter sido
+   importada com `--sem-neutralizar-extensoes`: sem essa opção, `.claude/skills`, `.claude/agents` e
+   `.claude/commands` ficam no `EXTENSOES-NEUTRALIZADAS.zip`, e o `montar` não acha componente.
+2. **Conferir**: `python <skill>/scripts/plugin_candidato.py conferir --pasta <candidato>` dá código 0 se conforme
+   (imprime o manifesto e o `manifesto_sha256`) e 2 se recusado (com cada motivo; o que vem da regra do kit, que roda
+   por último, termina com "(regra do kit, aberturas_plugins.conferir_pasta_do_plugin)"). Recusado: corrija na cópia
+   de trabalho da origem, apague o candidato e monte de novo. Na sessão de um projeto, o script só lê pasta desse
+   projeto.
+3. **Revisar**: `python <skill>/scripts/plugin_candidato.py revisar --pasta <candidato> --saida <REVISAO.md>` grava o
+   esqueleto da revisão do titular, arquivo novo, só em `projects/<p>/outputs/` (por exemplo,
+   `outputs/plugins/<n>/REVISAO.md`; nunca em `.claude/` ou `.porteiro/`, nem como `CLAUDE.md` ou `AGENTS.md`). Todo
+   texto do candidato vai entre crases, para nada esconder parte da revisão.
+4. **Ficha e instalação**: a saída do `montar` e o `REVISAO.md` trazem a linha pronta da ficha,
+   `{"nome": "<p>-<n>", "origem": "plugins-candidatos/<p>-<n>", "manifesto_sha256": "..."}`. O titular aceita, a ficha
+   vai pela `abertura preparar`, e ele a assina pela ferramenta fixa dele. No Ubuntu, o preparo do titular (`sudo`)
+   confere a origem de novo, copia arquivo a arquivo pela cópia conferida (`scripts/copia_segura.py`) para
+   `/etc/fundacao-ia/projetos/<p>/plugins/<nome>/` e fixa os hashes; o lançador passa `--plugin-dir` com essa pasta.
+   Só com o canário aprovado.
+5. **Jeito novo de chamar**: o plugin se chama `<p>-<n>`; a skill vira `/<p>-<n>:<skill>` (por exemplo,
+   `/criador-opensquad:opensquad` no lugar de `/opensquad`), e o agente, `<p>-<n>:<agente>`.
+
+**O que o caminho confiável recusa** (lista positiva: o que não está nela recusa). O validador do kit recusa sozinho
+cada item abaixo. A conferência da sessão recusa o mesmo no candidato, salvo o que depende da ficha (a origem e o
+`manifesto_sha256` dela): pelas mesmas funções do kit (`allowed-tools` e menção `@`) ou pelas dela e, por último, pela
+regra do kit. As recusas que a integração trouxe para o caminho confiável (`allowed-tools`, menção, segredo, nomes,
+BOM e bit de execução) têm teste no kit (`assets/fundacao-kit/tests/test_aberturas_plugins_i16.py`).
+- **origem e pasta:** pasta do plugin ausente, ligação ou que não é pasta; origem fora do projeto, em `data/` ou numa
+  pasta protegida, ou com ligação no caminho; plugin sem `.claude-plugin/plugin.json`; `manifesto_sha256` diferente
+  do da ficha ("o plugin mudou desde o manifesto da ficha");
+- **nomes, recusados sem ler o arquivo:** nome fora do UTF-8 (o motivo mostra o nome escapado); nome forte e pasta de
+  segredo da regra única, fora do hash e sem a exceção dos exemplos (`*.example`, `*.sample`), pelas listas de
+  `assets/fundacao-kit/fundacao/core/manutencao.py`, iguais às de `scripts/regras_de_segredo.py` por teste,
+  comparadas em NFKC, sem caixa e com a barra invertida como separador (a pasta de segredo vale em qualquer nível,
+  também como nome de arquivo); e nome que muda entre o Windows e o Ubuntu: o que tem caractere da área privada do
+  Unicode, que o DrvFs (`/mnt/<letra>` no WSL) troca por controle ou `" * : < > ? \ |` (e esses, de volta, pela área
+  privada; sondado em 01/11/2026), o que tem um desses caracteres e o terminado em ponto ou espaço, que o Windows não
+  abre pelo nome. Sem isso, o mesmo candidato teria outra recusa ou outro manifesto em cada sistema;
+- **o que não é arquivo comum de um nome só:** ligação (link simbólico ou junção), vínculo físico, dispositivo e FIFO;
+- **forma:** na raiz, só as pastas `.claude-plugin/`, `skills/`, `agents/` e `commands/` (a pasta `hooks/` recusa com
+  a marca "1.7.11") e só os arquivos `README.md`, `LICENSE`, `LICENSE.md`, `LICENSE.txt` e `CHANGELOG.md`; em
+  `.claude-plugin/`, só o `plugin.json`; em `skills/`, `agents/` e `commands/`, só Markdown (`.md`); `.mcp.json` e
+  executável pela extensão, em qualquer ponto, com "1.7.11"; mods ficam de fora pela mesma lista;
+- **`plugin.json`:** fora do JSON estrito (com chave repetida, por exemplo); `hooks`, `mcpServers` e `lspServers`
+  ("1.7.11"); campo fora de `name`, `version`, `description`, `author`, `homepage`, `repository`, `license` e
+  `keywords`; `name` diferente do nome do plugin na ficha;
+- **tetos:** 500 arquivos, 1 MiB por arquivo, 16 MiB no total e 12 níveis de pasta;
+- **texto de todo Markdown, também os da raiz:** fora do UTF-8; caractere de controle, controle de direção (U+202A a
+  U+202E e U+2066 a U+2069) ou caractere de etiqueta do Unicode, CR sozinho, U+2028 e U+2029 (o YAML os lê como
+  quebra de linha e veria chaves que a conferência não veria; LF e CRLF valem); e o shell embutido (`!` seguido de
+  crase, ou cerca de crases ou de tils seguida de `!`), em qualquer ponto, com "1.7.11": o Claude Code 2.1.302 roda o
+  bloco cercado sem âncora de começo de linha (`../fontes-verificadas.md`). A licença da raiz que não é Markdown
+  (`LICENSE`, `LICENSE.txt`) só passa como texto UTF-8 sem controle, controle de direção, etiqueta, CR sozinho, U+2028
+  nem U+2029;
+- **BOM** (emenda E8): a marca U+FEFF só é tirada no começo de um Markdown, como o Claude Code 2.1.302 faz ao ler o
+  cabeçalho, e o cabeçalho que vem depois dela é conferido: um BOM não esconde um cabeçalho com `hooks`. Em qualquer
+  outro ponto, ela é caractere invisível e recusa;
+- **cabeçalho de todo Markdown de `skills/`, `agents/` e `commands/`, também de um Markdown de apoio:** se a primeira
+  linha com conteúdo começa com `---`, ela tem de ser só `---`, e o cabeçalho tem de fechar numa linha `---`, com, no
+  máximo, espaço ou tab no fim. Recusa, com "1.7.11": o cabeçalho fora dessa forma; a chave de primeiro nível fora da
+  lista do tipo da pasta (como `permissionMode`, `context`, `agent` e `version` numa skill), a linha que não é chave e
+  o cabeçalho todo recuado; `hooks` ou `mcpServers` em qualquer ponto do cabeçalho (num valor, numa chave recuada ou
+  num comentário); e o recurso de YAML que montaria uma chave sem a conferência ver: barra invertida, etiqueta (`!`),
+  âncora (`&`), alias (`*`), mesclagem (`<<`) e chave complexa (`?`);
+- **skill e comando** (todo `SKILL.md` de `skills/` e todo Markdown de `commands/`, também em subpasta: o que o
+  Claude Code invoca):
+  - o `allowed-tools`, em toda ocorrência da chave: fora do formato simples (curinga fora de parênteses, escape,
+    âncora ou bloco); com `Bash`, `PowerShell`, `pwsh`, `Shell`, `KillShell`, `KillBash`, `Monitor`, `WebFetch` ou
+    `WebSearch` (pelo começo do nome: `BashOutput` também) ou com um nome que tenha `mcp`, que só abrem pela ficha e
+    pelo perfil gerado dela (MCP, só na 1.7.11); com o que estiver fora de `Read`, `Grep`, `Glob`, `Write`, `Edit`,
+    `MultiEdit`, `NotebookEdit`, `TodoWrite`, `Task`, `Agent` e `Skill`; e com especificador entre parênteses que
+    aponta para fora, pelas formas da menção (abaixo), também o `..` sozinho, como em `Read(..)`;
+  - a menção com `@` para fora do plugin, em todo o texto: caminho absoluto, `~`, `%`, letra de unidade (também a
+    relativa do Windows, `C:x`), `file:`, um componente `..` (a barra, a barra invertida e o `#` separam) ou `$` em
+    qualquer ponto do alvo. O `$` conta porque o Claude Code 2.1.302 troca os argumentos (`$ARGUMENTS`, `$1`, `$nome`)
+    e as variáveis (`${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PROJECT_DIR}`, `${CLAUDE_PLUGIN_DATA}`, `${CLAUDE_SKILL_DIR}`)
+    antes de colher as menções, e o mesmo no `allowed-tools` (`../fontes-verificadas.md`). A menção é colhida como o
+    2.1.302 a colhe, com as duas varreduras dele, cada uma à parte: a forma entre aspas duplas (`@"..."`, a menção com
+    espaço no caminho), que cruza quebra de linha; e cada trecho sem espaço que começa com `@` (ou a traz logo depois
+    de uma pontuação chinesa ou japonesa). O kit soma uma varredura larga (aspas duplas, aspas simples ou o trecho até
+    o próximo espaço). Assim, uma menção dentro de um trecho entre aspas, mesmo cruzando linha, não fica escondida; um
+    teste diferencial prende isso contra uma transcrição da leitura do 2.1.302;
+- **bit de execução** (emenda E9): fora do Windows, o arquivo com bit de execução recusa, com "1.7.11". Numa montagem
+  9p ou drvfs sem a opção `metadata` (o DrvFs do WSL, `/mnt/<letra>`), todo arquivo aparece 0777, e o bit não prova
+  nada: ali ele não conta, e decide o conteúdo (o arquivo que começa com `#!`, ELF ou MZ recusa, com "1.7.11"). O kit
+  acha a montagem no `/proc/mounts`, sem executar programa, pelo objeto aberto, não pelo caminho, que uma ligação posta
+  depois da abertura desviaria. No ext4 e com `metadata`, vale o bit; no Windows, o kit não olha bit nem conteúdo. A
+  conferência da sessão confere o conteúdo em todo sistema; o kit, só no DrvFs sem `metadata`, o que a emenda E4
+  permite (a sessão pode ser mais estrita).
+
+**O que só a conferência da sessão recusa** (guarda-corpo: o kit aceita, e um candidato montado à mão passa por isso
+no caminho confiável; a forma inteira está no docstring de `scripts/plugin_candidato.py`):
+- na raiz, `README.md` e `CHANGELOG.md`: lá, só a licença (`LICENSE`, `LICENSE.md` ou `LICENSE.txt`);
+- no `plugin.json`, `homepage`, `repository`, `license` e `keywords` (só `name`, igual à pasta, `description`,
+  obrigatória, `version` e `author`) e o arquivo acima de 64 KiB;
+- comando ou agente fora do primeiro nível de `commands/` e `agents/`, arquivo solto em `skills/`, `SKILL.md`
+  aninhado, skill sem `SKILL.md` e candidato sem skill, agente nem comando;
+- no cabeçalho, as chaves `arguments` e `disallowed-tools` e a chave repetida; o agente sem `name` ou `description`;
+  o nome da pasta da skill, o do comando e o `name` do cabeçalho fora da forma de nome de skill do preparo do host
+  (sem `:` e sem `.` no fim);
+- nome oculto (salvo `.claude-plugin`), `CLAUDE.md` e `AGENTS.md`, e pastas como `hooks/`, `bin/` e `node_modules/`
+  abaixo da raiz;
+- o resto do que não funciona num nome do Windows (nome reservado, como `CON` e `NUL`, caractere invisível ou de
+  controle que o kit não confere no nome e mais de 255 bytes) e dois nomes que só diferem pela caixa ou pela forma
+  Unicode;
+- o arquivo que começa com `#!`, ELF ou MZ fora do DrvFs sem `metadata` (acima);
+- mais de 10.000 arquivos e pastas na varredura.
+
+Nome do plugin: o da ficha (minúsculas, números e hífen, até 64 caracteres), que a `abertura preparar` exige. Com
+`--`, fora do kebab-case, ou citando `claude`, `anthropic` ou `cc-plugin`, ele sai com aviso: o Claude Code reserva
+nomes assim (`../fontes-verificadas.md`), e a carga com `--plugin-dir` na versão fixada se confirma no canário.
+
+**O que o titular revisa no `REVISAO.md`:** a identificação (pasta, conformidade e `manifesto_sha256`); os
+componentes, com o que cada skill, agente e comando faz, as ferramentas e o modelo do cabeçalho e o jeito novo de
+chamar; os trechos marcados — instruções que parecem mandar ignorar regras ou ler fora do projeto, caracteres
+invisíveis, scripts e comandos citados, domínios citados (que só valem se forem para a ficha, em `rede.dominios` e
+`webfetch.dominios`), nomes e trechos de segredo (com o valor longo mascarado) e ferramentas citadas —; a lista de
+arquivos, com o começo do SHA-256; e a decisão, com a linha pronta da ficha. O esqueleto só marca, sem julgar: a
+fundação confere a forma, e o texto das instruções é o titular quem revisa.
+
+**Uma regra de conteúdo e uma receita de manifesto** [Decisão; 1.7.10; emendas E3 e E4]. O
+`plugins[].manifesto_sha256` da ficha é um só: o `sha256_do_manifesto` do kit
+(`assets/fundacao-kit/fundacao/core/aberturas_plugins.py`), o SHA-256 do JSON compacto (chaves ordenadas, separadores
+`,` e `:`, UTF-8 sem escape) da lista `{caminho, bytes, sha256}` dos arquivos, em ordem de caminho. O mesmo valor sai
+da `abertura preparar|verificar`, da ferramenta do titular, do `plugin_candidato.py` (`conferir`, `revisar` e a linha
+pronta da ficha) e do instalador do preparo do Ubuntu, sem réplica. A regra de conteúdo do caminho confiável é a do
+validador do kit; a conferência da sessão pode ser mais estrita, nunca mais frouxa. Ela aplica as regras dela e, por
+último, a do kit (`conferir_pasta_do_plugin`): o que o kit recusa, ela recusa, e o manifesto que o kit calcula, lendo
+os bytes de novo, tem de ser o dela. Comuns às duas, no mínimo: o shell embutido sem âncora, a recusa de CR sozinho,
+U+2028 e U+2029, e o cabeçalho que quebra em toda quebra de linha e fecha só numa linha `---` (com espaço ou tab no
+fim, no máximo). Os testes de `scripts/tests/test_plugin_regra_unica_1710.py` prendem as duas coisas: a receita, nas
+três pontas sobre a mesma pasta (sessão, kit e instalador); e a implicação, sobre um conjunto de candidatos aceitos e
+recusados: conforme na sessão implica sem erro no kit, o mesmo `manifesto_sha256` e a linha da ficha aceita.
+
+**Limites que ficam** (registre sempre):
+- no texto, as marcas de direção U+200E, U+200F e U+061C ficam fora das faixas do controle de direção (acima) e
+  passam, no kit e na sessão. A revisão do titular (`REVISAO.md`) conta U+200E e U+200F entre os caracteres
+  invisíveis; o U+061C, não;
+- a regra lê o arquivo, não a invocação: o argumento preenchido ao chamar a skill ou o comando (`$ARGUMENTS` e afins)
+  pode trazer uma menção `@` inteira, que o Claude Code colhe do texto já expandido. Nenhuma regra estática fecha
+  isso. A barreira é a negação de leitura do perfil do projeto (`../seguranca-isolamento.md` §5), a confirmar no
+  canário, que ainda não tem item para a menção;
+- o conteúdo decide só por `#!`, ELF e MZ. Um formato que o `binfmt_misc` do WSL roda por outra mágica (os bytes do
+  começo que o identificam), registrada à parte (Java, por exemplo), fica fora dessa lista; somar as mágicas ativas
+  fica para a 1.7.11. Como todo arquivo do plugin tem de ser texto UTF-8, as mágicas binárias já recusam; sobra uma
+  mágica de texto registrada por root;
+- no DrvFs, um texto com o bit pode ser rodado por um shell, que lê como script o que o sistema não reconhece. Esse
+  arquivo fica na área da sessão, onde o isolamento em `/mnt/e` é lógico. A cópia que o preparo do Ubuntu instala em
+  `/etc/fundacao-ia/projetos/<p>/plugins/<nome>/` é de dono root e sem bit de execução. Montar o DrvFs com
+  `metadata` (no `/etc/wsl.conf`) fica com o titular, na 1.7.11;
+- o kit do Windows (a ferramenta do titular e a `abertura preparar` ali) não confere o conteúdo; a sessão o confere em
+  todo sistema, e o instalador do Ubuntu, com a raiz num DrvFs sem `metadata`, também. Um candidato mudado depois da
+  conferência da sessão pode passar na assinatura do Windows e cair no instalador: falha fechada.
 
 ## 6. Quando usar o quê [3.0 R4.16]
 Instrução permanente → AGENTS.md/CLAUDE.md · procedimento repetível → skill · contexto

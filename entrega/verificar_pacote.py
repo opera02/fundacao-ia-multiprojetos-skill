@@ -55,8 +55,14 @@ em grupos passam.
 --exigir-transferencia-fixada (a CI pública e a etapa 03 da liberação, depois de acrescentar a linha): o mesmo, e a
 linha do zip principal da versão de dist/ tem de estar na lista (R177C-B-05). Antes de acrescentar a linha, a
 liberação confere a transferência pela forma do LEIA-ME; depois, exige também a transferência fixada.
---lista-so-cresce (só a CI pública, com a história inteira do git: fetch-depth 0): cada versão da lista nos commits
-que a tocaram está contida na atual — linha antiga trocada ou tirada reprova.
+--lista-so-cresce (a CI pública, com a história inteira do git: fetch-depth 0; e, desde a 1.7.8, a etapa 03 da
+liberação, depois de acrescentar a linha da transferência — a mesma conferência da CI): cada versão da lista nos
+commits que a tocaram está contida na atual — linha antiga trocada ou tirada reprova. Os commits vêm do
+`git log --full-history`: o log simplificado escondia o commit de ramo lateral que um merge descartou (-s ours) ou o
+da linha principal que um merge trocou (-X theirs) (revisão de segurança da 1.7.10, CI-F8); objeto trocado por
+`git replace` e grafts não valem, e o git log que falha, a versão que o git não lê e o repositório ainda sem commit
+reprovam. A lista leva os dois pacotes de cada versão e, desde a segunda passada da revisão de segurança da 1.7.7, o
+zip principal da transferência.
 
 Saída em JSON. Códigos: 0 confere · 1 diverge · 2 uso incorreto.
 """
@@ -367,23 +373,43 @@ def ler_historico(caminho: Path) -> tuple[dict[str, str], list[str]]:
 
 
 def conferir_crescimento(lista: Path) -> list[str]:
-    """--lista-so-cresce: cada versão de `lista` nos commits do git que a tocaram está contida na atual. Precisa do git
-    e da história inteira; sem eles, reprova."""
+    """--lista-so-cresce: cada versão de `lista` nos commits do git que a tocaram está contida na atual, também a dos
+    ramos unidos por merge (git log --full-history; CI-F8). Precisa do git e da história inteira; sem eles, reprova.
+    Endurecimento da revisão 1 do CI-F8: objeto trocado por `git replace` e o arquivo de grafts não valem (a história é
+    a dos objetos gravados); o git log que falha e a versão que o git show não lê, num commit que tem a lista, reprovam
+    (antes, valiam como "sem versão" e a conferência passava). Revisão 2: o repositório ainda sem commit reprova com
+    mensagem própria (antes da revisão 1, passava sem nada conferir; na revisão 1, saía como falha do git log)."""
+    ambiente = {**os.environ, "GIT_GRAFT_FILE": os.devnull}
+
     def git(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", "-C", str(lista.parent), *args], capture_output=True, timeout=120)
+        return subprocess.run(["git", "--no-replace-objects", "-C", str(lista.parent), *args], capture_output=True,
+                              timeout=120, env=ambiente)
     try:
         raso = git("rev-parse", "--is-shallow-repository")
         if raso.returncode != 0:
             return [f"{HISTORICO}: fora de um repositório git; --lista-so-cresce precisa da história dela"]
         if raso.stdout.decode().strip() == "true":
             return [f"{HISTORICO}: clone raso, sem a história da lista (na CI, fetch-depth: 0)"]
+        if git("rev-parse", "--verify", "-q", "HEAD").returncode != 0:  # revisão de segurança da 1.7.10, CI-F8, rev. 2
+            return [f"{HISTORICO}: o repositório ainda não tem commit; --lista-so-cresce precisa da história da lista"]
         rel = git("rev-parse", "--show-prefix").stdout.decode("utf-8").strip() + lista.name  # a partir da raiz do git
         atual = linhas_do_historico(lista.read_text(encoding="utf-8"))
         problemas = []
-        for commit in git("log", "--format=%H", "--", lista.name).stdout.decode().split():  # caminho da pasta atual
+        # --full-history: sem ele, o git log simplifica a história, e o merge igual a um dos pais esconde os commits do
+        # outro lado (o ramo lateral descartado por -s ours, a principal trocada por -X theirs; revisão de segurança
+        # da 1.7.10, CI-F8). O caminho é o da pasta atual.
+        log = git("log", "--full-history", "--format=%H", "--", lista.name)
+        if log.returncode != 0:
+            return [f"{HISTORICO}: o git não leu a história da lista (código {log.returncode}); --lista-so-cresce "
+                    "precisa dela inteira"]
+        for commit in log.stdout.decode().split():
             antiga = git("show", f"{commit}:{rel}")
-            faltam = linhas_do_historico(antiga.stdout.decode("utf-8", "replace")) - atual if antiga.returncode == 0 \
-                else set()  # o commit que a apagou não tem conteúdo
+            if antiga.returncode != 0:  # só o commit que apagou a lista não a tem; outra falha reprova
+                tem = git("ls-tree", "--name-only", "--full-tree", commit, "--", rel)
+                if tem.returncode != 0 or tem.stdout.strip():
+                    problemas.append(f"{HISTORICO}: o git não leu a lista do commit {commit[:12]}, que a tem")
+                continue
+            faltam = linhas_do_historico(antiga.stdout.decode("utf-8", "replace")) - atual
             if faltam:
                 problemas.append(f"{HISTORICO}: a lista só cresce, e {len(faltam)} linha(s) do commit {commit[:12]} "
                                  f"não estão mais nela (ex.: {sorted(faltam)[0][:100]})")
@@ -754,7 +780,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--exigir-transferencia", action="store_true",
                     help="confere entrega/transferencia/ (a CI pública e a etapa 03 da liberação; ver no topo)")
     ap.add_argument("--lista-so-cresce", action="store_true",
-                    help=f"confere pelo git que a {HISTORICO} só cresceu (só a CI pública, com fetch-depth 0)")
+                    help=f"confere pelo git que a {HISTORICO} só cresceu (a CI pública, com fetch-depth 0, e a etapa 03 "
+                         "da liberação, depois de fixar a linha da transferência)")
     ap.add_argument("--exigir-transferencia-fixada", action="store_true",
                     help="--exigir-transferencia e a linha do zip da versão de dist/ na lista (CI pública e etapa 03 da liberação)")
     a = ap.parse_args(argv)

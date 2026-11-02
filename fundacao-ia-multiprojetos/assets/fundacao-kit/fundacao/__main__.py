@@ -1,9 +1,10 @@
 """CLI da fundação: `python -m fundacao <comando>`.
 
-A identidade vem do lançador (variável FUNDACAO_PRINCIPAL), nunca de um
-argumento que o modelo possa escrever. Saída em JSON; erros em stderr com
-código 2, sem conteúdo protegido. Restauração não liberada, cópia que não confere, decisão que não
-confere, âncora desprotegida e tarefa não concluída: código 3.
+A identidade vem do lançador (variável FUNDACAO_PRINCIPAL), nunca de um argumento que o modelo possa escrever. Saída
+em JSON; erros em stderr com código 2, sem conteúdo protegido (o inesperado só com o tipo; o RuntimeError, texto fixo
+do kit, com a mensagem: revisão de segurança da 1.7.10, POR-02). Restauração não liberada, cópia e decisão que não
+conferem, âncora desprotegida e tarefa não concluída: código 3. Na sessão de projeto do Ubuntu (FUNDACAO_PORTEIRO), o
+comando vira pedido ao porteiro (porteiro_cliente.py); no modo travado, core/auth.py recusa o que a sessão não pede.
 """
 
 from __future__ import annotations
@@ -15,9 +16,9 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from . import KIT_VERSION, TEMPLATE_VERSION
-from .core import backup, components, decisoes, events, memory, projects, routing
-from .core.auth import Policy, principal_from_env
+from . import KIT_VERSION, TEMPLATE_VERSION, cli_backup, porteiro_cliente
+from .core import backup, components, decisoes, events, memory, projects, routing, trava_banco
+from .core.auth import Policy, assinante_da_decisao, principal_from_env, projeto_travado, raiz_da_execucao
 from .core.contracts import FundacaoError
 from .core.db import connect
 from .core.tasks import Coordinator
@@ -120,11 +121,11 @@ def cmd_status(args) -> dict:
         f"SELECT state, COUNT(*) FROM task WHERE project_id IN ({marcas}) GROUP BY state", autorizados)}
         if autorizados else {})
     return {"identidade": me.principal_id, "projetos_autorizados": autorizados,
+        "projeto_travado": projeto_travado(), "kit_version": KIT_VERSION,  # o aperto de mão do porteiro (1.7.10)
         "componentes": _componentes_visiveis(args.raiz, con, me, autorizados),
         "tarefas_por_estado": tarefas,  # só dos projetos que a identidade pode ler
         "eventos_cadeia_integra": ok, "primeiro_evento_quebrado": bad,
-        "eventos_diagnostico_global": "medido" if diagnostico_global else "nao_medido_sem_permissao",
-    }
+        "eventos_diagnostico_global": "medido" if diagnostico_global else "nao_medido_sem_permissao"}
 
 
 def cmd_projeto(args) -> dict:
@@ -222,8 +223,12 @@ def cmd_rota(args) -> dict:
 
 
 def cmd_backup(args) -> dict:
-    from .cli_backup import executar
-    return executar(args, _con)
+    return cli_backup.executar(args, _con)
+
+
+def cmd_banco(args) -> dict:
+    """Trava do banco entre o Windows e o Ubuntu (core/trava_banco.py), sem abrir o banco nem exigir identidade."""
+    return trava_banco.executar(args.raiz / "state", args.acao, confirmar=args.confirmar)
 
 
 def cmd_extensao(args):
@@ -243,10 +248,10 @@ def cmd_decisao(args) -> dict:
     me = principal_from_env(con)
     politica = decisoes.carregar_politica(args.raiz)
     ancora = decisoes.resolver_ancora(args.ancora)
-    if args.acao == "preparar":
+    if args.acao == "preparar":  # na sessão travada, o assinante vem da configuração do porteiro (1.7.10)
         _exigir_opcoes(args, "projeto", "tarefa", "entrega", "tipo", "motivo")
-        r = decisoes.preparar_decisao(args.raiz, con, me, projeto=args.projeto, tarefa=args.tarefa,
-                                      entrega=args.entrega, tipo=args.tipo, motivo=args.motivo,
+        r = decisoes.preparar_decisao(args.raiz, con, assinante_da_decisao(con, me), projeto=args.projeto,
+                                      tarefa=args.tarefa, entrega=args.entrega, tipo=args.tipo, motivo=args.motivo,
                                       decisao_id=args.decisao_id, ancora=ancora, politica=politica, shell=args.shell)
         return {**r, "politica": decisoes.resumo_politica(politica)}
     _exigir_opcoes(args, "arquivo")
@@ -289,21 +294,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--custo-usd", help="custo conferido, em dólares (decimal)")
     s.add_argument("--fonte", help="onde o custo foi conferido (painel, fatura)")
     s.set_defaults(func=cmd_rota)
-    s = sub.add_parser("backup"); s.add_argument("acao", choices=["criar", "verificar", "restaurar"])
-    s.add_argument("--destino", type=Path); s.add_argument("--origem", type=Path); s.add_argument("--rotulo", default="manual")
-    s.add_argument("--retiradas", type=Path, help="registro protegido de retiradas (obrigatório para liberar)")
-    s.add_argument("--aceitar-registro-nao-comprovado", action="store_true",
-                   help="decisão do administrador, depois de conferir o registro à mão: aceita registro sem "
-                        "identidade comprovada (cópia de kit anterior ou registro recriado); fica na trilha")
-    s.add_argument("--sha256-manifesto", help="âncora da cópia: o sha256_manifesto devolvido pelo `backup criar`, "
-                                              "guardado fora da cópia (verificar e restaurar)")
-    s.add_argument("--aceitar-copia-sem-ancora", metavar="MOTIVO",
-                   help="decisão do administrador, depois de conferir de onde veio a cópia: restaura cópia sem "
-                        "âncora externa, com o motivo; fica na resposta e na trilha")
-    s.set_defaults(func=cmd_backup)
-    s.add_argument("--exigir-livro-assinado", action="store_true", help="só aceita âncora do livro com assinatura válida do titular")
-    from . import cli_conhecimento, cli_copias, cli_memoria
-    for modulo in (cli_memoria, cli_copias, cli_conhecimento):
+    # backup: o parser de cli_backup (1.7.10); o laço de um módulo é a forma que o verificar_referencias.py lê
+    for modulo in (cli_backup,): modulo.registrar_parser(sub).set_defaults(func=cmd_backup)
+    s = sub.add_parser("banco", help="trava do banco entre o Windows e o Ubuntu (state/banco.trava)")
+    s.add_argument("acao", choices=["situacao", "destravar"]); s.add_argument("--confirmar", action="store_true")
+    s.set_defaults(func=cmd_banco)
+    from . import cli_aberturas, cli_conhecimento, cli_copias, cli_memoria
+    for modulo in (cli_memoria, cli_copias, cli_conhecimento, cli_aberturas):
         modulo.registrar_parser(sub).set_defaults(func=cmd_extensao, executor=modulo.executar)
     s = sub.add_parser("decisao", help="decisões do titular sobre entregas (assinatura ssh-keygen -Y)")
     s.add_argument("acao", choices=["preparar", "verificar", "registrar", "conferir-ancora", "comando"])
@@ -325,9 +322,10 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8")
         except (AttributeError, ValueError):
             pass
+    if (codigo := porteiro_cliente.desviar(argv)) is not None: return codigo  # sessão de projeto: vai ao porteiro
     args = build_parser().parse_args(argv)
-    args.raiz = args.raiz.resolve()
     try:
+        args.raiz = raiz_da_execucao(args)  # no modo travado, também recusa o que a sessão não pede (core/auth.py)
         resultado = args.func(args)
         _out(resultado)
         # Restauração não liberada (ex.: sem registro de retiradas), cópia que não confere, decisão que não confere,
@@ -340,11 +338,13 @@ def main(argv: list[str] | None = None) -> int:
     except FundacaoError as exc:
         sys.stderr.write(json.dumps(exc.as_dict(), ensure_ascii=False, default=str) + "\n")
         return 2
-    except (OSError, sqlite3.DatabaseError, json.JSONDecodeError) as exc:
-        # Erros de arquivo e de banco também seguem o contrato: JSON em stderr e código 2.
-        codigo = "E_BANCO" if isinstance(exc, sqlite3.DatabaseError) else "E_ARQUIVO"
-        sys.stderr.write(json.dumps({"error": {"code": codigo, "message": str(exc),
-                                               "tipo": type(exc).__name__}}, ensure_ascii=False) + "\n")
+    except Exception as exc:  # arquivo, banco e RuntimeError (do kit) com a mensagem; o inesperado, só o tipo (POR-02)
+        conhecido = isinstance(exc, (OSError, sqlite3.DatabaseError, json.JSONDecodeError))
+        texto = str(exc) if conhecido or isinstance(exc, RuntimeError) else "erro inesperado"  # db.py: texto fixo
+        erro = {"code": "E_BANCO" if isinstance(exc, sqlite3.DatabaseError) else "E_ARQUIVO" if conhecido else
+                "E_INESPERADO", "message": texto, "tipo": type(exc).__name__}
+        sobra = {"sobra_do_preparo": exc.sobra_do_preparo} if getattr(exc, "sobra_do_preparo", None) else {}
+        sys.stderr.write(json.dumps({"error": {**erro, **sobra}}, ensure_ascii=False, default=str) + "\n")
         return 2
 
 

@@ -25,21 +25,50 @@ lançador morrer (Windows: Job Object com o processo criado suspenso; Linux: gru
 que o lançador adota como subreaper, e sinal de morte do pai; no bubblewrap, o espaço de PIDs morre junto). Limites:
 mesmo kernel e mesma conta (falha do kernel ou do bwrap escapa); `/usr` e `/etc` legíveis; fora do Linux e do
 Windows, só o grupo de processos.
+
+Perfil de execução (1.7.10, desenho §8.4; escopo 0.10, respostas G3b e E1 do titular), pela linha de comando:
+  python execucao_isolada.py conferir-perfil --perfil <arq> [--projeto P]
+  python execucao_isolada.py rodar --perfil <arq> --perfil-sha256 <h> [--projeto P] [--registro <arq>] -- <argv>
+O `<h>` é o SHA-256 do perfil que o titular aprovou: o que o `conferir-perfil` mostra, com o texto para a folha de
+decisões. Nesta versão, nenhuma ficha assinada o prende: a seção `execucao` da ficha de aberturas, que o desenho prevê
+para isso, fica para a 1.7.11 [integração final da 1.7.10, item I24; antes, este texto e a ajuda do `rodar` davam o
+SHA-256 como o da ficha].
+O perfil (`fundacao.perfil_execucao/1`, dentro de `projects/<P>/`) diz o tipo — `comandos-do-projeto` (código NÃO
+preso, por decisão do titular) ou `ferramentas-de-terceiros` (código preso pelo manifesto, inclusive a venv) —, os
+modelos de argv (marcadores `{caminho}`, `{caminhos}` no fim e `{saida}`, só para caminhos do projeto), as montagens
+(árvore de trabalho ou código e alvos só leitura, uma pasta de saída gravável; a raiz nunca), a rede (negada: a lista
+de domínios fica com a jaula do porteiro), o ambiente, os limites e a validade. O lançador confere o SHA-256 do
+perfil contra o `<h>`, a validade, o argv contra os modelos e, no segundo
+tipo, o manifesto antes e depois; roda pela mesma caixa bubblewrap (sem ele, recusa: não há `--sem-isolamento`), com
+os caminhos de segredo das árvores montadas escondidos (fora do código preso, os nomes fortes e as pastas de segredo;
+dentro dele, só os nomes fortes, e uma pasta de segredo de outro nome lá recusa; as negações por caminho do perfil do
+host ainda não chegam à caixa); no segundo tipo, o que o manifesto não prende e a caixa veria (nome fraco, pasta
+ignorada, `.git`, arquivo especial, ligação para fora do sistema e do código preso) recusa com o passo pronto (o do
+nome fraco é um comando só, com cada caminho citado para o terminal do titular); e registra cada execução
+em `projects/<P>/outputs/execucao/registro.jsonl` (argv, código, duração e SHA-256 das saídas). O `rodar` fica amarrado
+ao projeto do lançador: com `FUNDACAO_PROJECT` (ou `FUNDACAO_PROJETO_TRAVADO`, do porteiro) definido, o perfil tem de
+ser desse projeto e o `--projeto` não troca de projeto; sem a variável, o `--projeto` é obrigatório.
+Códigos do `rodar`: 0 o programa terminou com 0; 1 terminou com outro código, no prazo ou no teto; 2 recusa (nada
+rodou); 3 a conferência depois da execução falhou.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 AQUI = Path(__file__).resolve().parent
@@ -346,7 +375,7 @@ def _ler(fluxo, teto: int, partes: list, estourou: threading.Event) -> None:
         pass
 
 
-def _rodar(args: list[str], cwd: str | None, env: dict, lim: dict) -> dict:
+def _rodar(args: list[str], cwd: str | None, env: dict, lim: dict, pass_fds: tuple = ()) -> dict:
     extra = ({"creationflags": 0x4} if os.name == "nt"  # CREATE_SUSPENDED: o Job Object vem antes da 1ª instrução
              else {"start_new_session": True, "preexec_fn": _limites_posix(lim)})
     antes = set()
@@ -354,7 +383,7 @@ def _rodar(args: list[str], cwd: str | None, env: dict, lim: dict) -> dict:
         _virar_subreaper()
         antes = {p for p, (pai, *_r) in _processos().items() if pai == os.getpid()}
     proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd,
-                            env=env, **extra)
+                            env=env, pass_fds=pass_fds, **extra)
     trabalho, partes, estourou = None, {"out": [], "err": []}, threading.Event()
     try:
         if os.name == "nt":
@@ -521,3 +550,83 @@ def _trabalho_windows(proc: subprocess.Popen, lim: dict):
             k32.CloseHandle(job)
         raise Recusa("o Windows recusou o Job Object que contém a árvore de processos: nada foi executado")
     return k32, job
+
+
+# --- Perfil de execução aprovado pelo SHA-256 (1.7.10, desenho §8.4) ------------------------------------------------
+# (Antes, "assinado": a seção `execucao` da ficha de aberturas, que o prenderia numa assinatura, é da 1.7.11; revisão
+# da terceira rodada da integração, defeito 3.)
+# O bloco do perfil foi para scripts/perfil_execucao.py (divisão por responsabilidade, como codigo_do_plano.py e
+# folha_do_plano.py desde a 1.7.7, que deixou este arquivo o maior de scripts/). O módulo do perfil usa as primitivas
+# desta caixa (o "motor"): elas são injetadas nos globais dele ANTES de ele ser executado, para ele não reimportar
+# esta caixa (o que faria um ciclo) e partilhar a mesma classe Recusa, o mesmo CODIGO e as mesmas montagens. O ponto
+# de entrada (main, abaixo) continua aqui e despacha conferir-perfil e rodar para o módulo do perfil.
+_MOTOR_DO_PERFIL = ("Recusa", "_dentro", "CODIGO", "_sha256_de", "_programa", "montagens_do_sistema", "sondar_bwrap",
+                    "_rodar", "limites", "PATH_ISOLADO", "_MIB", "NOMES_DE_SEGREDO", "REDE_NEGADA", "_FIXOS",
+                    "_montavel")
+_DO_PERFIL = ("ESQUEMA_PERFIL", "ESQUEMA_PLANO_PERFIL", "COMANDOS_DO_PROJETO", "FERRAMENTAS_DE_TERCEIROS", "MARCADORES",
+              "PYCACHE_DA_CAIXA", "NAO_PRESO_POR_DECISAO", "PRESO_PELO_PERFIL", "SEM_CAIXA_PARA_O_PERFIL",
+              "ler_perfil", "conferir_perfil", "rodar_perfil", "plano_do_perfil", "conferir_plano_do_perfil",
+              "casar_argv", "mascaras", "argv_bwrap_perfil", "abrir_sem_seguir", "bwrap_monta_por_descritor",
+              "folha_do_perfil", "_destino_do_registro", "projeto_do_lancador", "MASCARAS_REGRA")
+
+
+def _carregar_perfil():
+    """Carrega perfil_execucao.py injetando o motor (as primitivas desta caixa) nos globais dele antes de executá-lo."""
+    spec = importlib.util.spec_from_file_location("_execucao_isolada_perfil_execucao", AQUI / "perfil_execucao.py")
+    modulo = importlib.util.module_from_spec(spec)
+    g = globals()
+    for _n in _MOTOR_DO_PERFIL:
+        setattr(modulo, _n, g[_n])
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+PERFIL = _carregar_perfil()
+for _n in _DO_PERFIL:
+    globals()[_n] = getattr(PERFIL, _n)
+
+
+def main(argv: list | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # O comando vem depois de "--" e não passa pelo argparse (como no caracterizar.py).
+    opcoes, comando = (argv[:argv.index("--")], argv[argv.index("--") + 1:]) if "--" in argv else (argv, [])
+    ap = argparse.ArgumentParser(description="Execução pelo perfil aprovado pelo SHA-256 (1.7.10): conferir-perfil e "
+                                             "rodar.")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("conferir-perfil", help="confere o perfil sem rodar e mostra o SHA-256 e o texto da folha")
+    c.add_argument("--perfil", type=Path, required=True)
+    c.add_argument("--projeto", help="o projeto do lançador: o perfil tem de ser dele")
+    r = sub.add_parser("rodar", help="roda um comando pelo perfil aprovado, na caixa bubblewrap")
+    r.add_argument("--perfil", type=Path, required=True)
+    # De onde vem o SHA-256 hoje: do conferir-perfil, aprovado pelo titular; a seção `execucao` da ficha de aberturas,
+    # que o prenderia numa ficha assinada, é da 1.7.11 [integração final da 1.7.10, item I24: dizia "o da ficha"].
+    r.add_argument("--perfil-sha256", required=True,
+                   help="o SHA-256 do perfil que o titular aprovou: o que o conferir-perfil mostra (com o texto para a "
+                        "folha de decisões); a seção execucao da ficha de aberturas, que o prenderia, fica para a "
+                        "1.7.11")
+    r.add_argument("--projeto", help="o projeto do lançador (obrigatório sem FUNDACAO_PROJECT; com ela, o mesmo): o "
+                                     "perfil tem de ser dele")
+    r.add_argument("--registro", type=Path, help="registro das execuções (padrão: outputs/execucao/registro.jsonl)")
+    args = ap.parse_args(opcoes)
+    try:
+        if args.cmd == "conferir-perfil":
+            if comando:
+                raise Recusa("conferir-perfil não recebe comando")
+            res, codigo = conferir_perfil(args.perfil, args.projeto), 0
+        else:
+            res, codigo = rodar_perfil(args.perfil, args.perfil_sha256, comando, projeto=args.projeto,
+                                       registro=args.registro)
+    except (Recusa, OSError) as exc:
+        print(json.dumps({"erro": f"{exc}; nada foi executado"}, ensure_ascii=False), file=sys.stderr)
+        return 2
+    print(json.dumps(res, ensure_ascii=False, indent=2))
+    return codigo
+
+
+if __name__ == "__main__":
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+    raise SystemExit(main())

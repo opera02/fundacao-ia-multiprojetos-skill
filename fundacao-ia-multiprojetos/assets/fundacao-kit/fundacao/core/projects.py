@@ -16,8 +16,8 @@ import sqlite3
 from pathlib import Path
 
 from .. import TEMPLATE_VERSION
-from . import events
-from .auth import Policy, Principal, resource_project
+from . import events, limpeza
+from .auth import Policy, Principal, resource_project, trava
 from .contracts import SCHEMAS, AlreadyExists, NotFound, ValidationError, require_fields
 from .db import transaction, utcnow
 from .ids import new_id
@@ -146,18 +146,21 @@ def create_project(
             )
     except BaseException:
         if tmp.exists():
-            shutil.rmtree(tmp, ignore_errors=True)
+            limpeza.na_falha(tmp, pdir)  # contada: o que sobrar vai com o erro, não some em silêncio (1.7.10)
         raise
     return config
 
 
 def list_projects(con: sqlite3.Connection, principal: Principal) -> list[dict]:
-    """Lista somente projetos que a identidade pode ler."""
+    """Lista somente projetos que a identidade pode ler. No modo travado (1.7.10), só o projeto da trava — além da
+    política, que já nega os outros: a listagem não revela nem o nome de outro projeto (status, componentes)."""
     policy = Policy(con)
+    ligada, travado = trava()
     rows = con.execute("SELECT * FROM project WHERE status = 'active' ORDER BY project_id")
     return [
         dict(row) for row in rows
-        if policy.allowed(principal.principal_id, "read", resource_project(row["project_id"]))
+        if (not ligada or row["project_id"] == travado)
+        and policy.allowed(principal.principal_id, "read", resource_project(row["project_id"]))
     ]
 
 

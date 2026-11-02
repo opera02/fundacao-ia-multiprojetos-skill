@@ -30,7 +30,7 @@ estas mesmas regras; este modelo completo é o da revisão de uma versão.
    (`find <raiz> -type d \( -name projects -o -name state \) -prune -o -type f -print`,
    `grep -r --exclude-dir=projects --exclude-dir=state`; no PowerShell, `-Exclude` não poda:
    `Get-ChildItem -Force -LiteralPath <raiz> | Where-Object Name -notin 'projects','state' | Get-ChildItem -Force -Recurse -File`;
-   `-path` com início absoluto, barra invertida ou barra no fim não poda nada), e copie esse comando no registro de
+   `-path` com início absoluto, barra invertida ou barra no fim pode não podar), e copie esse comando no registro de
    operações. Descreva o método copiando os
    comandos, nunca de memória, e não afirme que um comando excluiu, delimitou ou cobriu algo: o comando diz. Antes
    de entregar, confira a lista inteira: travessia de `projects/` ou `state/` sem poda, saída cortada usada como
@@ -164,15 +164,32 @@ python -I -B -X utf8 -c "import json,sys; from pathlib import Path; print(json.d
 ```
 
 No Ubuntu, use `python3` se esse for o comando do ambiente. Sem recibo externo, envie somente `relatorio` no
-JSON, sem inventar recibos. O conferidor exige em cada achado local (com linha, registro ou "metadado"),
-evidência, cenário, impacto e uma confiança, cada um na mesma linha do campo. Nos achados, na coluna de afirmação
-do quadro, no título e no texto antes da primeira seção (fora de citação) e em seção fora deste modelo, aponta
-afirmação de alcance ("nenhum", "só", "todos",
-"qualquer", "não há", "é seguro") sem cobertura declarada ("não localizado nas fontes X", "busca sem corte",
-"condicional", "não medido"), recusa seção de avaliação positiva e recusa hash abreviado ("começo…fim") sem o hash
-inteiro correspondente em outro ponto do relatório. Escopo e cobertura não passam pela regra de alcance — lá
-"só" e "nenhum" descrevem o próprio método —, mas continuam sujeitos às regras de escrita. Nas pendências, "só",
-"somente", "apenas" e "único" são recusados: pendência diz o que não foi verificado, não o que foi.
+JSON, sem inventar recibos. O que o conferidor confere (1.7.10):
+
+- Em cada achado: local (com linha, registro ou "metadado"), evidência, cenário, impacto e uma confiança, cada um
+  na mesma linha do campo e sem o texto do modelo. O campo escrito num subitem recuado com 4 ou mais espaços não
+  conta.
+- Afirmação de alcance ("nenhum", "só", "todos", "qualquer", "não há", "é seguro") sem cobertura declarada ("não
+  localizado nas fontes X", "busca sem corte", "condicional", "não medido"): apontada nos achados, no título, no
+  texto antes da primeira seção (fora de citação), em seção fora deste modelo e, no quadro, na coluna de afirmação
+  da tabela e no item de lista, com as linhas que o continuam. Limite: o parágrafo entre as linhas do quadro não é
+  conferido; ponha cada afirmação numa linha da tabela ou num item de lista.
+- O subitem de lista recuado passa pelas regras de alcance e de hash. Ficam fora delas o bloco cercado por crases
+  e o bloco de código recuado (o que vem depois de linha vazia e fora de lista).
+- Nos achados, o campo Correção é recomendação e fica fora da regra de alcance, com as linhas recuadas que o
+  continuam, salvo a que é ela mesma outro campo do achado ou um título de achado.
+- Hash abreviado ("começo…" ou "começo…fim", fora de bloco de código; o começo tem 6 ou mais dígitos
+  hexadecimais, com letra e algarismo, e conta mesmo colado a uma palavra): precisa de um hash inteiro do relatório
+  com o mesmo começo e o mesmo fim. O fim é a sequência hexadecimal colada às reticências; com algarismo, ela é fim
+  mesmo colada a uma letra. Só de letras de a a f e com a palavra continuando depois dela ("…fim", "…do"), é parte
+  da palavra: confere-se só o começo. Limite: a palavra inteira só de letras de a a f ("…de", "…cada") entra como
+  fim. O intervalo do git na mesma linha (`git ... A...B`, os dois lados com 7 ou mais dígitos) não é abreviação.
+- Seção de avaliação positiva é recusada. Nas pendências, "só", "somente", "apenas" e "único" são recusados, salvo
+  nos campos de endurecimento sugerido e de hipótese: pendência diz o que não foi verificado, não o que foi.
+- Escopo, cobertura, comandos executados e esta conferência não passam pela regra de alcance — lá "só" e "nenhum"
+  descrevem o próprio método —, mas continuam sujeitos às regras de escrita; o título de cada seção passa pela regra.
+- A lista para em 50 erros; o resto aparece contado ("mais N erros").
+
 Corrija o próprio rascunho a partir dos erros e dos valores observados na cópia e repita a conferência antes de
 entregar. Se não puder executá-la dentro do escopo, deixe essa prova pendente.
 O interpretador lê o próprio script e suas dependências; a ausência de abertura de arquivos refere-se aos

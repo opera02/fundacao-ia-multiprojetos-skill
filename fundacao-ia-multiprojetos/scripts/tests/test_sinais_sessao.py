@@ -124,9 +124,12 @@ class IntegracaoDosSinais(unittest.TestCase):
         perfis = (m.perfil_windows(raiz=r"E:\Raiz Ficticia", python=r"C:\Py\python.exe"),
                   m.perfil_wsl(raiz="/tmp/raiz-ficticia", projeto="ficticio", perfil_windows="/tmp/perfil",
                                outros_projetos=[]))
-        for perfil in perfis:
+        # 1.7.10 (contratos do lote 2, §7): o Windows ganha o aviso da cópia em SessionStart startup|resume e os dois
+        # perfis ganham guarda_rede e guarda_leitura (o do projeto no Ubuntu, também guarda_ferramentas); o perfil do
+        # Ubuntu é de UM projeto e entrega o projeto do lançador (o mesmo que ele exporta).
+        for perfil, projeto in zip(perfis, (None, "ficticio")):
             with self.subTest(perfil=perfil["hooks"]):
-                grupo = perfil["hooks"]["SessionStart"]
+                grupo = [g for g in perfil["hooks"]["SessionStart"] if g["matcher"] == "compact"]
                 self.assertEqual(len(grupo), 1)
                 self.assertEqual(grupo[0]["matcher"], "compact")
                 hook = grupo[0]["hooks"][0]
@@ -136,8 +139,11 @@ class IntegracaoDosSinais(unittest.TestCase):
                 self.assertEqual(hook["onFailure"], "block")
                 self.assertIn("statusLine", perfil)
                 self.assertEqual(perfil["statusLine"]["type"], "command")
-                self.assertNotIn("FUNDACAO_PROJECT", perfil["env"])
-                self.assertEqual(len(perfil["hooks"]["PreToolUse"]), 2)
+                self.assertEqual(perfil["env"].get("FUNDACAO_PROJECT"), projeto)
+                guardas = {h["args"][-1].split("/")[-1].split("\\")[-1]: h["onFailure"]
+                           for g in perfil["hooks"]["PreToolUse"] for h in g["hooks"]}
+                self.assertEqual(guardas.get("guarda_caminho.py"), "block")
+                self.assertEqual(guardas.get("guarda_identidade.py"), "block")
         self.assertEqual(m.conferir_perfil_wsl(perfis[1], "/tmp/raiz-ficticia", "ficticio", []), [])
         perfis[1]["hooks"]["SessionStart"][0]["hooks"][0]["onFailure"] = "continue"
         self.assertTrue(m.conferir_perfil_wsl(perfis[1], "/tmp/raiz-ficticia", "ficticio", []))

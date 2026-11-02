@@ -18,6 +18,7 @@ C1 validar entrega · C2 diagnosticar falha · C3 corrigir dentro de limite · C
 retomar em outra sessão/provedor · C5 criar outro projeto · C6 atualizar componente
 · C7 promover para GOLD · C8 habilitar/desabilitar/substituir · C9 backup,
 restauração e retomada · C10 auditoria operacional · C11 avaliação final da matriz
+· Projetos no Ubuntu (1.7.10): porteiro, aberturas e trava do banco
 
 ---
 
@@ -90,6 +91,35 @@ devolve o código, e as instruções não editadas depois, se o `user_version` d
 com a âncora. Kit igual, skill nova [Decisão; defeito anotado na liberação da 1.7.6]: o `aplicar` confere o texto
 que `instrucoes_raiz.py gerar` produziria e, se for outro, regenera só as instruções da raiz, pelas mesmas regras
 (anteriores guardados, registro com o hash antes e depois, `desfazer` aceito); sem diferença, não escreve nada.
+
+**Na 1.7.10, o `aplicar` faz também** [Decisão; 1.7.10] (compatibilidade, o que muda e o que o `desfazer` não volta:
+[atualização para a 1.7.10](atualizacao-1.7.10.md)):
+- recusa com o WSL ligado, no começo e antes da restauração do ensaio, sem alterar nada, porque o banco não abre pelos
+  dois lados. Fechar o Ubuntu é do titular: ele fecha as sessões do Ubuntu e, no PowerShell, roda
+  `wsl --terminate <distribuição>`. O executor nunca roda `wsl --shutdown` nem `--terminate`: com o Ubuntu ligado, ele
+  para e pede. Com o marcador do Ubuntu em
+  `state/banco.trava`, o `checar`, o `aplicar` e o `desfazer` param na etapa `banco` ("Trava do banco", abaixo);
+- grava a trava de manutenção `state/manutencao.json` do começo ao fim, também na falha, e o lançador do Ubuntu não
+  abre sessão com ela; trava que já existe recusa: confira o pid e o host dela e, sem manutenção em andamento,
+  apague-a;
+- monta o ensaio numa pasta nova dentro de `--pasta-ensaio` (padrão: a de `--backups`, no disco das cópias; dentro da
+  raiz, recusa); mostra no começo a estimativa de tempo, e `--prazo` (segundos por subprocesso longo, no mínimo 60) tem
+  padrão derivado dela; conta o que sobra da limpeza do ensaio; tenta de novo, uma vez, a cópia ANTES que falha na
+  promoção;
+- depois da promoção e antes da cópia DEPOIS, acrescenta `em-uso` e `.claude/projetos` à lista `incluir` de
+  `registry/backup_policy.json` (o `desfazer` não a volta: capacidade 11).
+
+**Depois do `aplicar`, os passos do titular** (o atualizador não copia hooks nem mexe no host;
+`references/fluxo-a-implantar.md` §Host): numa fundação vinda da 1.7.9, primeiro o registro da origem de cada projeto
+vindo de outra pasta (passo 2 do §Host: o `registry/projetos-host.json` é novo, e o preparo do Ubuntu tira dele as
+origens; [atualização para a 1.7.10](atualizacao-1.7.10.md), Ordem, passo 3); no Windows, o preparo da máquina, com o
+UAC (`assets/host/windows/preparar-maquina.ps1`, passo 4 do §Host), que copia os hooks novos para
+`<raiz>/.claude/hooks/`, refaz o perfil do Windows e, com um Python instalado para todos os usuários, grava a cópia
+protegida da ferramenta do titular da versão nova; no Ubuntu, o `assets/host/wsl/preparar-wsl.sh` com cada projeto,
+que confere os hooks e o kit da raiz contra os da skill e refaz a área do titular, o lançador e a cópia protegida do
+Ubuntu; por fim, o canário, com o perfil novo (o item C do checklist de cada projeto volta a pendente). Até lá, o
+lançador de cada projeto recusa abrir: os hooks e o kit da raiz mudaram desde o preparo.
+
 Catraca [Decisão; 1.7.0]: no ensaio, teste que passava e some ou passa a ser pulado também é regressão, salvo
 retirada declarada pelo kit novo em `tests/testes_retirados.json` (ID → versão e motivo); o arquivo de código que
 o kit anterior instalou e o novo não tem mais (órfão) sai da raiz guardado no backup da promoção e volta no
@@ -214,10 +244,28 @@ retome sem repetir efeito confirmado; meça tempo e perda observável. Sem regis
 de retiradas disponível, a restauração não está pronta para usuários.
 Kit: `python -m fundacao backup restaurar --origem <ref> --destino <novo> --retiradas <log>`
 (backup e restauração copiam todos os projetos: exigem identidade com `admin` na fundação).
-A cópia leva `fundacao/`, `registry/`, `templates/`, `projects/`, o banco e os registros da fundação —
-`docs/`, `evidence/`, `ferramentas/`, `tests/` e `RETOMADA.md` —, sem complemento à parte; a lista dos
-registros fica em `registry/backup_policy.json` (`{"incluir": [...]}`). Segredos (`.env`) e o que é
-reconstruível (modelos, ambientes virtuais) ficam fora; destino dentro de pasta copiada é recusado.
+A cópia leva `fundacao/`, `registry/`, `templates/`, `projects/`, `AGENTS.md`, `CLAUDE.md`, o banco e os registros
+da fundação — `docs/`, `evidence/`, `ferramentas/`, `tests/` e `RETOMADA.md` e, depois do `aplicar` da 1.7.10,
+`em-uso/` e `.claude/projetos/` (C6) —, sem complemento à parte; a lista dos registros fica em
+`registry/backup_policy.json` (`{"incluir": [...]}`). Ficam fora o `.env` e o reconstruível (`__pycache__`, `.venv`,
+`node_modules` e, desde a 1.7.10, `.cache`); o `.git` só entra dentro dos projetos, sem ganchos nem configuração com
+credencial ou programa; o arquivo com cara de segredo entra como está, sem ser lido, contado em `segredos_incluidos`,
+e a cópia não é cifrada (capacidade 11). O `backup criar` e o `backup restaurar` recusam destino dentro da raiz
+(inclusive `<raiz>/copias`): guarde e restaure fora dela, de preferência em outro disco. No desastre, rode o
+`backup restaurar` com `--raiz` na raiz danificada, para o kit poder recusar destino dentro dela. A política compara
+`state/` e `.git` sem caixa e pelo caminho resolvido (`State`, `STATE`, `state.`, `.` e ligação no meio recusam) antes
+de copiar.
+Cópia semanal [Decisão; 1.7.10; capacidade 11]: o `backup criar` trava a manutenção (`state/manutencao.json`) do
+começo ao fim, também na falha, e o lançador do Ubuntu não abre sessão nesse meio-tempo; ele devolve um resumo (a
+lista de arquivos, só com `--detalhar`) e grava `registry/ultima-copia.json`, que o `backup verificar` bem-sucedido
+anota. `python -m fundacao backup situacao` (administração ou auditoria) diz a idade da última cópia e, passados 7
+dias, avisa (`W_COPIA_ANTIGA`) com os comandos prontos da próxima cópia e da verificação. Nas sessões do Windows, o
+hook `assets/hooks/aviso_copia.py` lembra o mesmo no início da sessão. É lembrete, não prova: a prova é o
+`backup verificar` com o `sha256_manifesto` guardado fora da cópia. Depois da primeira cópia numa pasta nova, o
+titular roda de novo o `assets/host/windows/preparar-maquina.ps1` com `-Backups` e a pasta das cópias: só assim o
+perfil das sessões do Windows nega a leitura e a edição delas; com a cópia registrada, os scripts do Windows recusam o
+`-SemBackups` e trazem a pasta no comando pronto (fluxo A §Host). A sobra de um preparo que falhou
+(`W_SOBRA_DO_PREPARO`) é contada, nunca apagada em silêncio: apagá-la é do titular, depois de conferir.
 Âncora da cópia [varredura da 1.4.5, #8]: o `backup criar` devolve `sha256_manifesto` e o anota em
 `state/copias.jsonl`, ao lado do registro protegido; guarde o código fora da pasta da cópia e o
 livro junto do registro. A restauração confere a cópia por ele (`--sha256-manifesto` ou o livro ao
@@ -327,3 +375,69 @@ dois projetos de aplicação; (3) desativação, substituição, restauração e
 mínima de resolução; não declare conclusão se algum requisito obrigatório não foi
 demonstrado. Registre o que o usuário demonstrou ao orientar, avaliar, pedir correção
 e criar projeto (R51) — o registro descreve o que foi observado, não o que se supõe.
+
+## Projetos no Ubuntu (1.7.10): porteiro, aberturas e trava do banco
+[Decisão; 1.7.10.] Cada projeto com dados reais trabalha numa sessão própria do Ubuntu, aberta pelo lançador
+`abrir-fundacao-<p>` (preparo: `references/fluxo-a-implantar.md` §Host). Com a raiz em `/mnt/<letra>`, as camadas
+abaixo são lógicas até o canário passar (`references/seguranca-isolamento.md` §8).
+
+**Porteiro: o banco pela fila.** Na sessão do projeto, `python3 -m fundacao ...` não abre o banco: o cliente do kit
+grava um pedido em `projects/<p>/.porteiro/pedidos/` e espera a resposta em `respostas/`. O porteiro
+(`assets/host/wsl/porteiro.py`), iniciado pelo lançador fora do sandbox, roda o kit com a identidade `sessao-<p>`,
+presa ao projeto do lançador, e devolve a mesma saída e o mesmo código de saída. As decisões que a sessão prepara
+continuam assinadas pelo titular.
+- Pedido tipado: só o mapa fixo do que a sessão usa — `status`; `tarefa criar|ver|concluir`;
+  `decisao preparar|verificar|registrar|comando|conferir-ancora`; `abertura preparar|verificar|vigente`;
+  `conhecimento listar|buscar`; `memoria licao propor|consultar|pendente`. Nunca `init`, `projeto`, `acl`,
+  `componente`, `backup`, `copia-assinatura`, `rota`, aprovar, curar, `--raiz` ou `--ancora`. Na 1.7.10, nem `eventos`
+  nem `memoria licao historico` (voltam na 1.7.11, restritos ao projeto), e nenhum caso pelo serviço (abrir por caso é
+  decisão do titular). `git-enviar`, `executar` e `rodar`: 1.7.11.
+- Recusa do porteiro: código 2, com `E_PORTEIRO` e o motivo. "não rodou; repita": o pedido esperou mais de 15 s na
+  fila e na vez do banco e não rodou; repetir é seguro. "pode ter rodado: confira o efeito antes de repetir": o cliente
+  desistiu depois de o porteiro tirar o pedido da fila; repetir às cegas pode fazer em dobro. Cada pedido tem até 100 s
+  no kit.
+- Um porteiro por projeto; o servidor MCP do kit não inicia na sessão travada. O titular e o coordenador seguem usando
+  `eventos` pelo Windows.
+- Para o titular conferir, sem conteúdo: `~/.fundacao/porteiro/<p>/registro.jsonl` (id, operação, código e duração) e
+  `~/.fundacao/porteiro/<p>/saida.log` (os avisos `W_PORTEIRO_*`). `W_PORTEIRO_TRABALHO_MANTIDO` traz o pid de um kit
+  de uma sessão anterior ainda de pé: encerrá-lo libera a pasta na próxima abertura. Antes de abrir, o lançador roda o
+  `conferir` do porteiro (`porteiro.py conferir --config <área>/porteiro.json`): 0 abre, 2 não abre.
+
+**Caminho de uma abertura** (a ficha é fechada por padrão; regras e tetos: `references/seguranca-isolamento.md` §8.3):
+1. A sessão faz o rascunho e preenche `motivo`, com as palavras do titular, e `consequencias`. O levantamento só lê;
+   o rascunho só abre rede (nunca WebFetch nem WebSearch) e só propõe plugin de `plugins-candidatos/`:
+   ```
+   python3 -I -B <skill>/scripts/levantar_aberturas.py --pasta <pasta> --projeto <p> --rascunho <arquivo>
+   ```
+2. A sessão prepara a ficha: valida pelos tetos fixos, numera, grava `outputs/aberturas/ficha-v<N>.json` e mostra, em
+   `para_o_titular`, a forma fixa da ferramenta do titular, só com raiz, projeto e versão:
+   ```
+   python3 -m fundacao abertura preparar --projeto <p> --rascunho <arquivo>
+   ```
+3. O titular assina fora do Claude, pela caixa Executar (Win+R), com o texto de `executar_windows` ou de
+   `executar_ubuntu`. A ferramenta mostra o que a ficha abre (o que vem com `|` na frente foi escrito pela sessão),
+   pede o nome do projeto e a senha da chave e grava a ficha e o `.sig` na caixa de entrada
+   `<raiz>/.claude/projetos/<p>/ficha/`. As formas `powershell` e `bash` e o `preparar-projeto.ps1 -AssinarFicha` são
+   o último recurso: o perfil do shell, que uma sessão pode ter gravado, carrega antes (também num terminal novo). A
+   forma cuja cópia protegida falta vem como pendente (`<forma>_pendente`), com o passo do preparo que a instala.
+4. O preparo do Ubuntu instala: o `preparar-wsl.sh` do projeto (fluxo A §Host, passo 5) confere a assinatura e copia a
+   ficha para a área do titular, de dono root; não instala versão menor que a maior já instalada e só a aplica com o
+   canário aprovado.
+5. O lançador abre a sessão com o perfil novo e recusa a ficha vencida. O `vigente` diz o que vale, sem abrir o banco;
+   o `verificar` confere a ficha preparada e a assinatura dela:
+   ```
+   python3 -m fundacao abertura vigente --projeto <p> --json
+   python3 -m fundacao abertura verificar --projeto <p>
+   ```
+- Fechar um item é uma ficha nova, sem ele, pelo mesmo caminho. Ficha vencida, recusada ou ausente fecha tudo, sem
+  voltar à anterior, que pode ser mais aberta. A caixa de entrada não é autoritativa: no Ubuntu, vale a área do
+  titular.
+
+**Trava do banco** (`state/banco.trava`; o banco nunca é aberto pelo Windows e pelo Ubuntu ao mesmo tempo): o porteiro
+grava o marcador (lado `ubuntu`) do começo ao fim da sessão do projeto, renova-o a cada 30 s e o tira ao sair. O kit do
+Windows recusa abrir o banco com o marcador do outro lado, vivo, velho ou ilegível (`E_BANCO_TRAVADO`, código 2):
+feche as sessões do Ubuntu antes de operar a fundação pelo Windows. `python -m fundacao banco situacao` mostra o
+marcador sem abrir o banco. Marcador velho (sem renovação há mais de 120 s, como o de um Ubuntu desligado à força) não
+sai sozinho: o titular, com as sessões do Ubuntu fechadas, roda `python -m fundacao banco destravar --confirmar`, que
+recusa o marcador ainda vivo. Limite: os comandos curtos do Windows não gravam marcador (a trava de manutenção cobre a
+cópia e a atualização), e quem grava `state/` forja ou apaga o marcador: é guarda-corpo contra o engano, não barreira.

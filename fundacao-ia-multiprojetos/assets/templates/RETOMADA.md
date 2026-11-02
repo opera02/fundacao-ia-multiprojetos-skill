@@ -9,6 +9,9 @@
 > Índice enxuto (até ~12 KB e 150 linhas): estado atual e uma linha por efeito já realizado. O histórico
 > vai para `evidence/retomada/` com `python scripts/retomada.py arquivar --arquivo RETOMADA.md --historico
 > evidence/retomada`, que confere a cópia e deixa aqui a linha `Histórico arquivado: <caminho> (sha256 ...)`.
+> Com `--consolidar-efeitos`, os efeitos já realizados vão também para um livro conferido pelo hash
+> (`Efeitos arquivados: <caminho> (sha256 ...)`); cite esse livro em "Arquivos mínimos para leitura" (o validar avisa
+> se faltar).
 > O caminho é relativo a esta pasta: histórico fora dela, por ligação ou acima de 5 MB não é lido.
 
 project_id: (preencher)

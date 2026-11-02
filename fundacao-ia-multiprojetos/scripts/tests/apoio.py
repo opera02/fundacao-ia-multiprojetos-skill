@@ -13,6 +13,7 @@ SKILL = SCRIPTS.parent
 KIT = SKILL / "assets" / "fundacao-kit"
 ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1"}
 ENV.pop("FUNDACAO_PRINCIPAL", None)
+ENV.pop("FUNDACAO_RAIZ", None)  # testes com raiz de fundação temporária: não herdar a raiz da fundação viva
 
 
 def rodar_script(nome: str, *args, cwd: Path | None = None, timeout: int = 180) -> subprocess.CompletedProcess:

@@ -13,10 +13,16 @@ leitura ou a escrita. Agora a operação fica presa aos objetos do sistema de ar
 Limites: na mesma conta do sistema, quem troca e destroca uma pasta exatamente durante a listagem dela, ou um ancestral
 do destino durante a escrita, ainda redireciona a operação — no Windows o Python não abre sem seguir ligação nem
 trabalha por pasta aberta; a reconferência antes da promoção recusa o resultado, mas o que já foi escrito do outro lado
-da ligação fica lá. No Windows, a pasta de preparo — e o destino, depois da promoção — herda as permissões da pasta de
-cima do destino (no Linux, 0o700): é essa pasta que só o titular deve alterar. Destino vazio criado antes é trocado
-pela pasta preparada, e as permissões próprias dele não ficam: quem chama avisa (revisão de segurança da 1.7.7,
-R177-KIT-05).
+da ligação fica lá. Permissões (texto corrigido na 1.7.10, conferido com icacls em 31/10/2026): a pasta de preparo nasce
+com 0o700 — no Linux, só para a conta; no Windows, com o Python que trata esse modo (correção do CVE-2024-4030, como o
+3.12.4 em diante), com ACL explícita e protegida (SISTEMA, Administradores e o dono), não herdada, que o destino mantém
+depois da promoção; num Python sem a correção, herda as permissões da pasta de cima do destino. Destino vazio criado
+antes é trocado pela pasta preparada, e as permissões próprias dele não ficam: quem chama avisa (revisão de segurança
+da 1.7.7, R177-KIT-05).
+Nova tentativa (1.7.10; falha real de 31/10/2026, WinError 5 na renomeação final): `promover` e `renomear` repetem só a
+recusa passageira do Windows (5, 32 e 33: antivírus, indexador ou Explorador com a pasta ou um arquivo dela aberto), com
+as esperas de ESPERAS_PROMOCAO e nova conferência a cada vez; esgotadas, PromocaoRecusada (E_PROMOCAO), com as
+tentativas e os atributos do preparo, sem conteúdo.
 """
 
 from __future__ import annotations
@@ -26,10 +32,11 @@ import hashlib
 import os
 import secrets
 import stat
+import time
 from pathlib import Path
 
 from .canon import sha256_file
-from .contracts import ValidationError
+from .contracts import FundacaoError, ValidationError
 
 # Windows: etiqueta de ponto de nova análise "substituta de nome" (bit 29) — junção, link simbólico e afins, que
 # redirecionam para outro caminho; arquivo de nuvem (OneDrive) e deduplicação não a têm.
@@ -37,9 +44,21 @@ _SUBSTITUTA_DE_NOME = 0x20000000
 # Sem seguir ligação (onde existe) e sem esperar por pipe trocado no lugar do arquivo.
 _LEITURA = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
 _BLOCO = 1 << 20
-AVISO_DESTINO_EXISTENTE = ("o destino já existia (pasta vazia) e foi trocado pela pasta preparada: as permissões que ele "
-                           "tinha não ficam — no Windows, a pasta nova herda as da pasta de cima. Para restringir o "
-                           "acesso, proteja a pasta de cima do destino (que só o titular altera), não o destino.")
+AVISO_DESTINO_EXISTENTE = ("o destino já existia (pasta vazia) e foi trocado pela pasta preparada: as permissões que "
+                           "ele tinha não ficam — no Windows, a pasta nova vem com ACL própria (SISTEMA, "
+                           "Administradores e o dono; num Python sem a correção do CVE-2024-4030, herda as da pasta de "
+                           "cima). Para restringir o acesso, proteja a pasta de cima do destino (que só o titular "
+                           "altera), não o destino.")
+ESPERAS_PROMOCAO = (1, 2, 4, 8, 15, 30)  # segundos entre as tentativas: cerca de 1 minuto no total
+_PASSAGEIROS = frozenset({5, 32, 33})  # acesso negado, violação de compartilhamento e de trava (WinError)
+_renomear = os.rename  # injetáveis nos testes: trava passageira simulada em qualquer sistema
+_esperar = time.sleep
+
+
+class PromocaoRecusada(FundacaoError):
+    """O Windows recusou a renomeação em todas as tentativas: nada foi promovido."""
+
+    code = "E_PROMOCAO"
 
 
 def _e_ligacao_st(st: os.stat_result) -> bool:
@@ -70,11 +89,12 @@ def ligacao_no_caminho(caminho: Path) -> str | None:
     return None
 
 
-def percorrer(base: Path, ignorar=frozenset()) -> list[tuple[Path, bool, os.stat_result]]:
+def percorrer(base: Path, ignorar=frozenset(), podar=None) -> list[tuple[Path, bool, os.stat_result]]:
     """Itens sob `base` (pastas também), ordenados, sem atravessar ligação: (caminho, é ligação, `lstat` da listagem).
     Pasta com nome em `ignorar` fica fora. A ligação vem marcada e o que há do outro lado não é listado nem lido; cada
     pasta é conferida depois de listada — trocada por ligação ou por outra pasta no meio, ValidationError. Item ou
-    pasta que some durante a listagem fica fora, como no `os.walk` (que sozinho entraria na junção do Windows)."""
+    pasta que some durante a listagem fica fora, como no `os.walk` (que sozinho entraria na junção do Windows). Pasta
+    para a qual `podar(caminho)` (função opcional) é verdade fica listada, mas não é percorrida (BAIXO #5)."""
     itens = []
     pilha = [(Path(base), _identidade(os.lstat(base)))]
     while pilha:
@@ -96,7 +116,7 @@ def percorrer(base: Path, ignorar=frozenset()) -> list[tuple[Path, bool, os.stat
                 continue
             ligacao = _e_ligacao_st(st)
             itens.append((caminho, ligacao, st))
-            if stat.S_ISDIR(st.st_mode) and not ligacao:
+            if stat.S_ISDIR(st.st_mode) and not ligacao and not (podar and podar(caminho)):
                 pilha.append((caminho, _identidade(st)))
     return sorted(itens, key=lambda item: item[0])
 
@@ -119,9 +139,10 @@ def _abrir(origem: Path, listado: os.stat_result) -> tuple[int, os.stat_result]:
     return fd, st
 
 
-def ler(caminho: Path) -> bytes:
-    """Bytes de um arquivo comum (ex.: o manifesto), lido sem seguir ligação, uma vez."""
-    fd, _ = _abrir(Path(caminho), os.lstat(caminho))
+def ler(caminho: Path, listado: os.stat_result | None = None) -> bytes:
+    """Bytes de um arquivo comum (ex.: o manifesto), lido sem seguir ligação, uma vez; com `listado`, preso a esse
+    objeto da listagem (o .git/config, conferido em memória antes de entrar na cópia: 1.7.10)."""
+    fd, _ = _abrir(Path(caminho), listado or os.lstat(caminho))
     try:
         partes = []
         while bloco := os.read(fd, _BLOCO):
@@ -165,6 +186,14 @@ def copiar(origem: Path, destino: Path, listado: os.stat_result) -> tuple[str, i
     finally:
         os.close(fd)
     return resumo.hexdigest(), tamanho
+
+
+def gravar(destino: Path, dados: bytes, listado: os.stat_result) -> tuple[str, int]:
+    """Como `copiar`, para bytes já lidos de `listado` e conferidos: arquivo NOVO, data de modificação do listado."""
+    with open(destino, "xb") as saida:
+        saida.write(dados)
+    os.utime(destino, ns=(listado.st_atime_ns, listado.st_mtime_ns))
+    return hashlib.sha256(dados).hexdigest(), len(dados)
 
 
 def criar_pasta(pasta: Path, criadas: set) -> None:
@@ -243,19 +272,69 @@ def criar_preparo(alvo: Path) -> Path:
     return pasta
 
 
+def atributos(caminho: Path) -> dict | None:
+    """Atributos de `caminho`, sem conteúdo nem nomes de dentro, para o diagnóstico da recusa: modo, se é ligação e, no
+    Windows, os do sistema de arquivos (somente leitura, oculto...). None se não existe."""
+    try:
+        st = os.lstat(caminho)
+    except OSError:
+        return None
+    marcas = getattr(st, "st_file_attributes", None)  # só no Windows
+    nomes = sorted(n[len("FILE_ATTRIBUTE_"):].lower() for n in dir(stat)
+                   if n.startswith("FILE_ATTRIBUTE_") and marcas and marcas & getattr(stat, n))
+    return {"modo": oct(stat.S_IMODE(st.st_mode)), "ligacao": _e_ligacao_st(st),
+            **({} if marcas is None else {"windows": nomes})}
+
+
+def _com_nova_tentativa(acao, origem: Path, alvo: Path) -> int:
+    """Executa `acao` (que confere de novo o que precisa) e devolve as tentativas; repete só a recusa passageira do
+    Windows (PermissionError com WinError 5, 32 ou 33), com as esperas de ESPERAS_PROMOCAO. Esgotadas, PromocaoRecusada
+    com as tentativas, a espera total, o código e os atributos da origem, do destino e da pasta de cima."""
+    for tentativa, espera in enumerate((*ESPERAS_PROMOCAO, None), start=1):
+        try:
+            acao()
+            return tentativa
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) not in _PASSAGEIROS:
+                raise
+            if espera is None:
+                raise PromocaoRecusada(
+                    f"o Windows recusou a renomeação {tentativa} vezes em cerca de {sum(ESPERAS_PROMOCAO)} s (WinError "
+                    f"{exc.winerror}): algum programa segurava a pasta ou um arquivo dela (antivírus, Explorador, "
+                    "indexador); nada foi promovido. Feche o que estiver aberto nessa pasta e repita",
+                    tentativas=tentativa, espera_total_s=sum(ESPERAS_PROMOCAO), winerror=exc.winerror,
+                    atributos_preparo=atributos(origem), atributos_destino=atributos(alvo),
+                    atributos_pasta_de_cima=atributos(Path(alvo).parent)) from exc
+            _esperar(espera)
+    raise AssertionError("inalcançável")  # o laço sempre devolve ou levanta
+
+
+def renomear(origem: Path, destino: Path) -> int:
+    """`os.rename` com a nova tentativa da recusa passageira do Windows (renomeações dentro do preparo)."""
+    return _com_nova_tentativa(lambda: _renomear(origem, destino), Path(origem), Path(destino))
+
+
 def promover(pasta: Path, alvo: Path) -> bool:
     """Põe a `pasta` preparada no lugar de `alvo` por renomeação atômica no mesmo volume e confere que o destino é o
     objeto preparado. Destino vazio (pasta real) sai antes; destino que é ligação, que não está vazio ou que reaparece
     no intervalo faz a renomeação falhar — nada é gravado através dele. Devolve se o destino já existia: as permissões
-    próprias dele não ficam, e quem chama avisa com AVISO_DESTINO_EXISTENTE (R177-KIT-05)."""
+    próprias dele não ficam, e quem chama avisa com AVISO_DESTINO_EXISTENTE (R177-KIT-05). A recusa passageira do
+    Windows se repete (`_com_nova_tentativa`); a cada tentativa, a identidade do preparo e o destino são conferidos de
+    novo (ligação, não pasta ou não vazio: sem repetir), e o "existia" é o da primeira conferência (1.7.10)."""
     alvo = Path(os.path.abspath(alvo))
     esperada = _identidade(os.lstat(pasta))
     existia = os.path.lexists(alvo)
-    if existia:
-        if e_ligacao(alvo) or not alvo.is_dir() or any(alvo.iterdir()):
-            raise FileExistsError("destino ocupado ou trocado por ligação: nada foi gravado nele")
-        os.rmdir(alvo)
-    os.rename(pasta, alvo)  # Windows: falha se o destino existir; Linux: se não for pasta vazia
+
+    def tentar() -> None:
+        atual = os.lstat(pasta)
+        if _e_ligacao_st(atual) or _identidade(atual) != esperada:
+            raise ValidationError("pasta de preparo trocada antes da promoção: nada foi promovido", pasta=str(pasta))
+        if os.path.lexists(alvo):
+            if e_ligacao(alvo) or not alvo.is_dir() or any(alvo.iterdir()):
+                raise FileExistsError("destino ocupado ou trocado por ligação: nada foi gravado nele")
+            os.rmdir(alvo)
+        _renomear(pasta, alvo)  # Windows: falha se o destino existir; Linux: se não for pasta vazia
+    _com_nova_tentativa(tentar, Path(pasta), alvo)
     st = os.lstat(alvo)
     if _e_ligacao_st(st) or _identidade(st) != esperada:
         raise ValidationError("destino trocado durante a promoção: confira-o antes de usar", destino=str(alvo))

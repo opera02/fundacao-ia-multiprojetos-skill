@@ -177,6 +177,10 @@ def licenca(pasta: Path) -> tuple[str | None, bool]:
 
 
 def skills(perfil: Path, raiz: Path | None) -> list[dict]:
+    """Skills do perfil e da raiz. A skill ligada (a junção do instalador: `~/.claude/skills/<nome>` ->
+    `~/.agents/skills/<nome>`) é lida pelo caminho real do alvo final — o que o pre-flight do host conferiu
+    (`verificar_fundacao.ligacao_do_instalador`) —, e não pela ligação: o SKILL.md, a licença e o `sha_pasta` saem do
+    alvo resolvido uma vez só (1.7.10; pendência do LIBERACAO, item 4)."""
     locais = [("perfil", perfil, ".claude/skills"), ("perfil", perfil, ".agents/skills"),
               ("perfil", perfil, ".codex/skills")] + ([("raiz", raiz, ".claude/skills")] if raiz else [])
     out = []
@@ -185,15 +189,16 @@ def skills(perfil: Path, raiz: Path | None) -> list[dict]:
         if not pasta.is_dir():
             continue
         for item in sorted(pasta.iterdir()):
-            if not (item / "SKILL.md").is_file():
-                continue
-            fm = frontmatter((item / "SKILL.md").read_text(encoding="utf-8", errors="replace"))
-            primeira, restritiva = licenca(item)
             eh_ligacao = ligacao(item)
+            real = Path(os.path.realpath(item)) if eh_ligacao else item
+            if not (real / "SKILL.md").is_file():
+                continue
+            fm = frontmatter((real / "SKILL.md").read_text(encoding="utf-8", errors="replace"))
+            primeira, restritiva = licenca(real)
             out.append({"local": f"{origem}:{rel}/{item.name}", "nome": fm.get("name") or item.name,
                         "versao": fm.get("version"), "ligacao": eh_ligacao,
-                        "alvo": str(item.resolve()) if eh_ligacao else None, "_real": str(item.resolve()),
-                        "sha256": sha_pasta(item), "licenca": primeira, "licenca_restritiva_declarada": restritiva})
+                        "alvo": str(real) if eh_ligacao else None, "_real": str(real.resolve()),
+                        "sha256": sha_pasta(real), "licenca": primeira, "licenca_restritiva_declarada": restritiva})
     return out
 
 

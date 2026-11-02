@@ -9,7 +9,8 @@ Cada achado precisa de local (com linha, registro ou "metadado"), evidência, ce
 confiança, na mesma linha do campo e sem o texto do modelo. Afirmação de alcance ("nenhum", "nada", "só",
 "todos", "qualquer", "não há", "é seguro") precisa declarar a cobertura ("não localizado nas fontes X", "busca
 sem corte", "condicional", "não medido", "não conferido"). Onde: valor dos campos e texto dos achados, coluna de
-afirmação do quadro, título e texto antes da primeira seção (fora de citação) e seções fora do modelo. Não são
+afirmação do quadro e item de lista do quadro (com as linhas que o continuam), título e texto antes da primeira seção
+(fora de citação) e seções fora do modelo. Não são
 conferidas as regras de escrita, Escopo, Cobertura e Comandos executados (lá "só" e "nenhum" descrevem o
 próprio método) e a conferência (o título de cada seção, sim). Nas pendências, a conferência é outra: só "só",
 "somente", "apenas" e "único" são recusados, mesmo com cobertura e com "li apenas" (pendência diz o que não foi
@@ -23,6 +24,18 @@ se houver, o fim; intervalo do git (`git ... A...B` na mesma linha e na mesma c�
 7 ou mais dígitos) não é abreviação.
 Até 50 erros por resposta [Decisão; calibração da 1.7.9 em 25/10/2026: as falhas de precisão vieram dessas
 formas]. É filtro de forma: lista de palavras, não decide se a cobertura declarada é real.
+Desde a 1.7.10 (F4 da revisão de segurança da 1.7.9), a lista para de crescer em MAX_ERROS + 1 mensagens, em todas as
+conferências, e o resto só é contado ("mais N erros"); antes, a regra de alcance acumulava um erro por linha sem teto.
+Também desde a 1.7.10 (limites registrados no R179-26 e no R179-28): no quadro, o item de lista é conferido, com as
+linhas que o continuam (antes, só a coluna da tabela: a afirmação do quadro em lista escapava); o subitem de lista
+recuado com 4 ou mais espaços passa pelas regras de alcance e de hash, e sai só o bloco de código recuado, o que vem
+depois de linha vazia e fora de lista (nos campos dos achados e do recibo, a linha recuada continua fora: subitem não é
+o campo); e as bordas do hash abreviado recusam só dígito hexadecimal antes e depois ("xa1b2c3…" e "a1b2c3…fim" passam
+a ser conferidos). Na revisão do pacote (1.7.10): nos achados, a linha recuada que continua o campo Correção (com
+recuo: um ou mais espaços, ou tab) fica fora com ele, salvo quando é ela mesma outro campo ou título de achado; e o fim
+do hash abreviado é a sequência hexadecimal colada às reticências, salvo a só de letras a-f que continua numa palavra
+("a1b2c3…fim", "a1b2c3…do", "a1b2c3…fé": confere-se só o começo). Limite: a palavra colada só de letras a-f e
+terminada ali ("a1b2c3…de", "…cada") entra como fim.
 """
 from __future__ import annotations
 
@@ -71,11 +84,58 @@ MODELO = re.compile(r'arquivo:linha e revisao|ids do quadro de afirmacoes, coman
                     r'|arquivo:linha \(para modo de arquivo|do comando, trecho literal redigido e ids do quadro')
 LOCAL_OK = re.compile(r'[^\s:]:\d|\blinhas? \d|\bregistros? \S|\beventos? \d|\bmetadado')
 # Hash inteiro (32 ou mais dígitos hexadecimais) e hash abreviado com reticências: o começo tem ao menos 6 dígitos,
-# com letra e algarismo (palavra só de letras a-f e data só de algarismos não são hash). Texto em minúsculas.
+# com letra e algarismo (palavra só de letras a-f e data só de algarismos não são hash). Texto em minúsculas. As bordas
+# recusam só dígito hexadecimal antes e depois, como no hash inteiro (1.7.10; R179-28, limite): antes recusavam também
+# letra, e a abreviação colada a uma palavra ("xa1b2c3…", "a1b2c3…fim") escapava da conferência. O fim (opcional) é a
+# sequência hexadecimal colada às reticências, inteira; a só de letras a-f que continua numa palavra ("…fim", "…do") é a
+# palavra, não o fim: confere-se só o começo (revisão do AJUSTES-179, 1.7.10: antes, o "f" de "fim" virava o fim, e a
+# abreviação certa, com o hash inteiro no relatório, não conferia). A sequência com algarismo continua fim mesmo colada
+# a uma letra ("…d4e5x": confere "d4e5"), para não deixar de conferir um fim que tem cara de hash.
 HEX_INTEIRO = re.compile(r'(?<![0-9a-f])[0-9a-f]{32,}(?![0-9a-f])')
-HEX_ABREVIADO = re.compile(r'(?<![0-9a-z])(?=[0-9]*[a-f])(?=[a-f]*[0-9])([0-9a-f]{6,})(\.{3,}|…)([0-9a-f]*)'
-                           r'(?![0-9a-z])')
+HEX_ABREVIADO = re.compile(r'(?<![0-9a-f])(?=[0-9]*[a-f])(?=[a-f]*[0-9])([0-9a-f]{6,})(\.{3,}|…)'
+                           r'((?=[0-9a-f]*[0-9])[0-9a-f]+|[0-9a-f]+(?!\w))?')  # \w do str: também "…fé", "…café"
+# Item de lista (marcador -, * ou +, ou número com . ou ), seguido de espaço ou fim de linha), desde a 1.7.10: no
+# quadro, a afirmação escrita em lista (R179-26, limite 1); no _limpo, o que separa o subitem recuado do bloco de código
+# (R179-26, limite 2; R179-28, limite 1).
+ITEM_DE_LISTA = re.compile(r'[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)')
+# Instrução do modelo completo entre os itens do quadro ("atribua o mecanismo somente com reprodução ou evidência"): não
+# é afirmação. Isenta só ali, onde o item de lista do quadro passou a ser conferido (1.7.10).
+REGRA_DO_QUADRO = re.compile(r'atribua o mecanismo[ \t]+somente[ \t]+com\b')
+# Rótulos dos campos do achado no modelo completo e no enxuto (sem acento, por prefixo). Nos achados, a linha recuada
+# continua o campo de cima, salvo quando é ela mesma um desses campos (revisão do AJUSTES-179, 1.7.10): a continuação
+# da Correção fica fora com ela, mas um "  - Impacto: ..." recuado debaixo dela continua conferido.
+CAMPOS_DO_ACHADO = re.compile(r'(?:severidade|confianca|situacao|alcance|impacto|origem|local|evidencia|quem consegue'
+                              r'|cenario|contraevidencia|correcao)')
+TITULO_RECUADO = re.compile(r'[ \t]*#{1,6}(?:[ \t]|$)')  # o validar() conta o "###" recuado (^\s*###) como achado
 MAX_ERROS = 50
+
+
+class _Erros(list):
+    """Lista de erros que guarda até MAX_ERROS + 1 mensagens e conta o resto em `ocultos` (F4, 1.7.10): relatório
+    feito para gerar um erro por linha não faz a lista crescer sem teto."""
+
+    def __init__(self, itens=()):
+        super().__init__()
+        self.ocultos = 0
+        self.extend(itens)
+
+    @property
+    def cheia(self) -> bool:
+        return len(self) > MAX_ERROS
+
+    def append(self, mensagem) -> None:
+        if self.cheia:
+            self.ocultos += 1
+        else:
+            super().append(mensagem)
+
+    def extend(self, mensagens) -> None:
+        for mensagem in mensagens:
+            self.append(mensagem)
+
+    def __iadd__(self, mensagens):
+        self.extend(mensagens)
+        return self
 
 
 def _json(texto: str):
@@ -104,10 +164,18 @@ def _normal(texto: str) -> str:
                    if not unicodedata.combining(c))
 
 
-def _limpo(texto: str) -> str:
-    """Exemplos cercados e comentários não preenchem declarações do relatório."""
+def _limpo(texto: str, subitens: bool = False) -> str:
+    """Exemplos cercados e comentários não preenchem declarações do relatório.
+
+    Linha recuada com 4 ou mais espaços: nos campos dos achados e do recibo (`subitens` falso), sai sempre, porque
+    subitem não é o campo do achado. Para as regras de alcance e de hash (`subitens`, desde a 1.7.10; R179-26, limite
+    2, e R179-28, limite 1), sai só o bloco de código recuado: o que começa depois de linha vazia e fora de lista, até
+    a primeira linha não vazia com menos recuo. O subitem de lista recuado e a continuação de um parágrafo ou de um
+    item ficam e são conferidos; antes, todo recuo de 4 espaços saía, e a afirmação ou o hash abreviado num subitem
+    escapavam das duas regras. A lista acaba no título e no parágrafo na margem depois de linha vazia. Linear."""
     texto = re.sub(r'<!--[\s\S]*?(?:-->|$)', '', texto)
     saida, cerca = [], None
+    vazia = em_lista = codigo = False  # linha anterior vazia; dentro de lista; dentro de bloco de código recuado
     for linha in texto.splitlines():
         m = re.match(r'^\s*(`{3,}|~{3,})(.*)$', linha)
         if m:
@@ -116,9 +184,26 @@ def _limpo(texto: str) -> str:
                 cerca = marca
             elif marca[0] == cerca[0] and len(marca) >= len(cerca) and not m[2].strip():
                 cerca = None
+            vazia = codigo = False
             continue
-        if cerca is None and not linha.expandtabs(4).startswith('    '):
-            saida.append(linha.replace('**', '').replace('__', ''))
+        if cerca is not None:
+            continue
+        recuada = linha.expandtabs(4).startswith('    ')
+        if not linha.strip():
+            vazia = True
+        else:
+            if not recuada:
+                codigo = False
+                if ITEM_DE_LISTA.match(linha):
+                    em_lista = True
+                elif not linha[0].isspace() and (vazia or linha.startswith('#')):
+                    em_lista = False  # título, ou parágrafo na margem depois de linha vazia: a lista acabou
+            elif vazia and not em_lista:
+                codigo = True  # bloco de código recuado: depois de linha vazia e fora de lista
+            vazia = False
+        if recuada and (codigo or not subitens):
+            continue
+        saida.append(linha.replace('**', '').replace('__', ''))
     return '\n'.join(saida)
 
 
@@ -127,12 +212,16 @@ def _formal(texto: str) -> str:
 
 
 def _com_acento(texto: str) -> str:
-    """Mesma limpeza, minúsculo e com acento (NFC), para a regra de alcance."""
-    return unicodedata.normalize('NFC', _limpo(texto).casefold())
+    """Mesma limpeza, com os subitens recuados (1.7.10), minúsculo e com acento (NFC), para a regra de alcance."""
+    return unicodedata.normalize('NFC', _limpo(texto, subitens=True).casefold())
 
 
 def _titulo(linha: str):
-    """Título de seção (`## ...`), ou None. Regex linear: sem preguiçoso antes de espaço final."""
+    """Título de seção (`## ...`), ou None. Regex linear: sem preguiçoso antes de espaço final. Com 4 ou mais espaços
+    de recuo não é título (1.7.10): o subitem recuado passou a chegar à regra de alcance, e um "## Escopo" recuado
+    dentro de uma lista não pode desligá-la nas linhas seguintes."""
+    if linha.expandtabs(4).startswith('    '):
+        return None
     m = re.match(r'^[ \t]*##[ \t]+(\S.*)$', linha)
     return m[1].strip() if m else None
 
@@ -156,17 +245,24 @@ def _celulas(linha: str) -> list:
     return [c.strip() for c in linha.strip().strip('|').split('|')]
 
 
-def _alcance(texto: str) -> list:
+def _alcance(texto: str, erros: _Erros | None = None) -> _Erros:
     """Afirmação de alcance sem cobertura declarada, onde o relatório põe afirmações; seção fora do modelo, toda.
 
     Recebe o texto de _com_acento. Antes da primeira seção, confere o título e o texto fora de citação (o aviso
-    do modelo é citação).
+    do modelo é citação). No quadro, a coluna da afirmação, na tabela, e o item de lista com as linhas que o
+    continuam (recuadas, ou coladas a ele sem linha vazia); o parágrafo entre as linhas do quadro é texto do modelo.
+    Nos achados, o campo Correção é recomendação e fica fora, com as linhas recuadas que o continuam (um ou mais
+    espaços, ou tab), salvo a que é ela mesma outro campo do achado (CAMPOS_DO_ACHADO) ou título de achado
+    (TITULO_RECUADO); a linha na margem encerra o campo.
+    Acrescenta a `erros` (com teto: o resto só é contado, F4).
     """
-    erros, modo, rotulo_pendencia = [], 'preambulo', ''
+    erros = _Erros() if erros is None else erros
+    modo, rotulo_pendencia, rotulo_achado, no_item, vazia = 'preambulo', '', '', False, False
     for linha in texto.splitlines():
+        anterior_vazia, vazia = vazia, not linha.strip()
         titulo = _titulo(linha)
         if titulo is not None:
-            rotulo_pendencia = ''
+            rotulo_pendencia, rotulo_achado, no_item = '', '', False
             sem_acento = _normal(titulo)
             if POSITIVA.search(sem_acento):
                 erros.append(f'seção de avaliação positiva ("{titulo[:60]}"): retire-a ou leve cada item ao quadro '
@@ -178,7 +274,7 @@ def _alcance(texto: str) -> list:
                 erros.append(f'afirmação de alcance ("{achado[0]}") sem cobertura declarada no título "{titulo[:80]}": '
                              'retire-a do título ou declare a cobertura')
             continue
-        if modo is None or not linha.strip():
+        if modo is None or vazia:
             continue
         tabela = linha.lstrip().startswith('|')
         if tabela and re.match(r'^[ \t]*\|[ \t]*(?:id[ \t]*\||:?-{3})', linha):
@@ -189,8 +285,15 @@ def _alcance(texto: str) -> list:
                 continue  # aviso citado do modelo
             alvo = ESCOPO_NO_TITULO.sub(' ', linha) if linha.lstrip().startswith('#') else linha
         elif modo == 'quadro':
-            celulas = _celulas(linha) if tabela else []
-            alvo = celulas[1] if len(celulas) > 1 else ''  # só a coluna da afirmação
+            if tabela:
+                celulas = _celulas(linha)
+                alvo, no_item = (celulas[1] if len(celulas) > 1 else ''), False  # só a coluna da afirmação
+            elif ITEM_DE_LISTA.match(linha) or (no_item and (linha[0].isspace() or not anterior_vazia)):
+                # Afirmação do quadro em lista, e a linha que a continua: conferidas desde a 1.7.10 (R179-26, limite
+                # 1); antes, só a tabela era, e o quadro escrito em lista escapava da regra.
+                alvo, no_item = REGRA_DO_QUADRO.sub(' ', linha), True
+            else:
+                alvo, no_item = '', False  # parágrafo do modelo entre as linhas do quadro
         elif modo == 'pendencias':
             if not linha.startswith((' ', '\t')):  # linha recuada continua o campo de cima; as outras, não
                 rotulo_pendencia = _normal(campo[0]).strip() if campo is not None else ''
@@ -202,8 +305,17 @@ def _alcance(texto: str) -> list:
                              'não foi verificado e por quê; o que foi feito está na tabela de comandos')
             continue
         elif modo == 'achados':
-            if campo is not None and _normal(campo[0]).strip().startswith('correcao'):
-                continue  # recomendação, não afirmação de fato
+            rotulo = _normal(campo[0]).strip() if campo is not None else ''
+            if (not linha.startswith((' ', '\t')) or CAMPOS_DO_ACHADO.match(rotulo)
+                    or TITULO_RECUADO.match(linha)):
+                # a linha na margem, o campo do achado e o título de achado, mesmo recuados, têm o próprio rótulo
+                # (reconferência do AJUSTES-179: " ### F2 — ..." logo depois da Correção herdava o rótulo dela)
+                rotulo_achado = rotulo
+            if rotulo_achado.startswith('correcao'):
+                # Recomendação, não afirmação de fato, com as linhas recuadas que a continuam: desde a 1.7.10 a linha
+                # com 4 ou mais espaços chega aqui (subitem), e a continuação da Correção virava falso positivo
+                # (revisão do AJUSTES-179); a de 2 espaços já virava antes.
+                continue
             alvo = campo[1] if campo is not None else linha
         else:
             alvo = linha
@@ -216,20 +328,23 @@ def _alcance(texto: str) -> list:
     return erros
 
 
-def _hashes_abreviados(texto: str):
+def _hashes_abreviados(texto: str, erros: _Erros | None = None):
     """Hash abreviado, fora de bloco de código, sem hash inteiro do relatório com o mesmo começo e o mesmo fim.
 
-    O hash inteiro vale também dentro de bloco de código, não em comentário. Índice pelos 6 primeiros dígitos,
-    memória por abreviação e teto de comparações: tempo limitado mesmo com entrada feita para ser lenta. Devolve
-    até MAX_ERROS + 1 mensagens e quantas abreviações sem par ficaram sem mensagem, para a contagem final."""
+    O subitem de lista recuado não é bloco de código (1.7.10): a abreviação nele é conferida. O hash inteiro vale
+    também dentro de bloco de código, não em comentário. Índice pelos 6 primeiros dígitos,
+    memória por abreviação e teto de comparações: tempo limitado mesmo com entrada feita para ser lenta. Acrescenta
+    a `erros` até MAX_ERROS + 1 mensagens no total e devolve (erros, quantas abreviações sem par ficaram sem
+    mensagem), para a contagem final."""
     sem_comentario = re.sub(r'<!--[\s\S]*?(?:-->|$)', '', texto)
     por_inicio = {}
     for h in set(HEX_INTEIRO.findall(sem_comentario.casefold())):
         por_inicio.setdefault(h[:6], []).append(h)
-    limpo = _limpo(texto).casefold()
-    erros, vistos, orcamento, ocultos = [], {}, 2_000_000, 0
+    limpo = _limpo(texto, subitens=True).casefold()
+    erros = _Erros() if erros is None else erros
+    vistos, orcamento, ocultos = {}, 2_000_000, 0
     for m in HEX_ABREVIADO.finditer(limpo):
-        inicio, reticencias, fim = m[1], m[2], m[3]
+        inicio, reticencias, fim = m[1], m[2], m[3] or ''  # sem fim: confere só o começo
         antes = limpo[max(0, m.start() - 400):m.start()]  # janela limitada: tempo linear
         corte = max([antes.rfind('\n')] + [b.start() for b in re.finditer(r'(?<!\\)\|', antes)])
         if (reticencias == '...' and len(inicio) >= 7 and len(fim) >= 7
@@ -253,6 +368,8 @@ def _hashes_abreviados(texto: str):
 
 
 def _resultado(erros, achados=0, recibo=None, ocultos=0):
+    ocultos += getattr(erros, 'ocultos', 0)  # os que a lista com teto só contou (F4)
+    erros = list(erros)
     if len(erros) + ocultos > MAX_ERROS:
         erros = erros[:MAX_ERROS] + [f'mais {len(erros) + ocultos - MAX_ERROS} erros: corrija estes e confira de novo']
     return {'preenchimento_ok': not erros, 'merito_verificado': False,
@@ -261,7 +378,7 @@ def _resultado(erros, achados=0, recibo=None, ocultos=0):
 
 
 def validar(dados) -> dict:
-    erros = []
+    erros = _Erros()
     if not isinstance(dados, dict) or set(dados) - {'relatorio', 'recibo_texto'}:
         return _resultado(['entrada deve conter somente relatorio e recibo_texto opcional'])
     texto = dados.get('relatorio')
@@ -303,9 +420,8 @@ def validar(dados) -> dict:
         local = _valor(corpo, 'local')
         if local and not LOCAL_OK.search(local):
             erros.append(f'achado {i}: o local precisa de arquivo:linha, registro ou "metadado"')
-    erros += _alcance(_com_acento(texto))
-    abreviados, ocultos = _hashes_abreviados(texto)
-    erros += abreviados
+    _alcance(_com_acento(texto), erros)
+    _, ocultos = _hashes_abreviados(texto, erros)
     hashes = [h.strip(' \t') for h in re.findall(r'^[ \t]*-[ \t]+recibo sha-256:(.*)$', formal, re.MULTILINE)]
     quantidades = [q.strip(' \t') for q in re.findall(r'^[ \t]*-[ \t]+operacoes no recibo:(.*)$', formal,
                                                       re.MULTILINE)]

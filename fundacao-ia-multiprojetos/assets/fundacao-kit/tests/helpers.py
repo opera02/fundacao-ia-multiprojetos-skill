@@ -17,7 +17,7 @@ from pathlib import Path
 KIT = Path(__file__).resolve().parents[1]
 # Mesmos artefatos operacionais de scripts/codigo_conferido.py: não são configuração de teste.
 FORA_DO_REGISTRY = frozenset({"kit_backup", "kit_preparo", "kit_install.json", "atualizacoes.jsonl",
-                              "inventario-host.json"})
+                              "inventario-host.json", "ultima-copia.json"})
 if str(KIT) not in sys.path:
     sys.path.insert(0, str(KIT))
 

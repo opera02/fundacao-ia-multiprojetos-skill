@@ -3,7 +3,8 @@
 Decisões (livro A06/A09/A14 e proposta 3.0): foreign_keys ligado em cada
 conexão, busy_timeout limitado, transações curtas com BEGIN IMMEDIATE e
 migrações numeradas por `PRAGMA user_version`. Nunca abra o mesmo banco
-simultaneamente pelo Windows e pelo WSL (/mnt/c).
+simultaneamente pelo Windows e pelo WSL (/mnt/c): desde a 1.7.10, abrir o banco
+confere o marcador `state/banco.trava` do outro lado (core/trava_banco.py).
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
+
+from . import trava_banco
 
 
 def _migrar_licoes(con: sqlite3.Connection) -> None:
@@ -209,6 +212,7 @@ def uri_somente_leitura(caminho: Path, *, imutavel: bool = False) -> str:
 def connect(path: Path, *, wal: bool = True) -> sqlite3.Connection:
     """Abre o banco com as PRAGMAs da fundação e aplica migrações pendentes."""
     path = Path(path)
+    trava_banco.conferir(path.parent)  # marcador vivo ou velho do outro lado: não abre (1.7.10)
     path.parent.mkdir(parents=True, exist_ok=True)
     # check_same_thread=False: etapas paralelas do coordenador debitam orçamento sob trava;
     # nenhuma outra operação compartilha a conexão entre threads.
@@ -230,6 +234,7 @@ def connect(path: Path, *, wal: bool = True) -> sqlite3.Connection:
 
 def conectar_somente_leitura(path: Path) -> sqlite3.Connection:
     """Conexão só de leitura ao banco de uma raiz (não migra nem cria arquivo), com linhas por nome."""
+    trava_banco.conferir(Path(path).parent)  # a leitura do banco vivo também respeita o outro lado (1.7.10)
     con = sqlite3.connect(uri_somente_leitura(Path(path)), uri=True, timeout=5.0)
     con.row_factory = sqlite3.Row
     return con

@@ -27,7 +27,7 @@ import sqlite3
 import tempfile
 from pathlib import Path, PureWindowsPath
 
-from . import preparo, publicacao
+from . import limpeza, preparo, publicacao
 from .auth import Policy, principal_from_env
 from .canon import canonical_json, sha256_bytes
 from .contracts import AccessDenied, ValidationError
@@ -207,14 +207,16 @@ def autorizar(raiz: Path, origem: Path, *, sha256_manifesto: str | None = None, 
                            "informe --sha256-manifesto (o código devolvido pelo `backup criar`, guardado fora da cópia) "
                            "ou use o livro de cópias da fundação, fora da cópia (ao verificar, o de <raiz>/state; ao "
                            "restaurar, o que fica ao lado de --retiradas)", action="admin", resource="foundation")
-    with tempfile.TemporaryDirectory(prefix="fundacao-autorizacao-", ignore_cleanup_errors=True) as pasta:
-        banco, origem_db = Path(pasta) / "state.sqlite", origem / "state" / "state.sqlite"
+    pasta = Path(tempfile.mkdtemp(prefix="fundacao-autorizacao-"))
+    with limpeza.contada(pasta, pasta.parent) as sobra:  # a cópia privada do banco não fica em silêncio (1.7.10)
+        banco, origem_db = pasta / "state.sqlite", origem / "state" / "state.sqlite"
         if (preparo.ligacao_no_caminho(origem_db) or not origem_db.is_file()
                 or preparo.copiar(origem_db, banco, os.lstat(origem_db))[0] != manifest["db_sha256"]):
             raise AccessDenied("o banco da cópia falta, passa por ligação ou não confere com o manifesto ancorado: a "
                                "cópia não autoriza ninguém", action="admin", resource="foundation")
-        return {**_administra(conectar_copia(banco), "cópia autenticada pela âncora"), "raiz": real,
-                "sem_fundacao_viva": sem_viva}
+        resultado = {**_administra(conectar_copia(banco), "cópia autenticada pela âncora"), "raiz": real,
+                     "sem_fundacao_viva": sem_viva}
+    return {**resultado, **limpeza.no_resultado(sobra)}
 
 
 def _fundacao_viva(raiz: Path, origem: Path) -> tuple[dict | None, str]:

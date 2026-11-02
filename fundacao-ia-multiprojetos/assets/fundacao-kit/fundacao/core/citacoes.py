@@ -47,6 +47,10 @@ def verificar_citacao(con, policy, principal, source, chunk_id):
         row = None  # trecho alheio responde igual a inexistente
     if row is None:
         return {"chunk_id": chunk_id, "valid": False, "reason": "trecho inexistente ou sem acesso"}
+    projeto = con.execute("SELECT p.status FROM project p JOIN chunk c ON c.project_id = p.project_id"
+                          " WHERE c.chunk_id = ?", (chunk_id,)).fetchone()
+    if projeto is None or projeto["status"] != "active":  # depois da permissão, como a busca (1.7.10; R179-37 item 4)
+        return {"chunk_id": chunk_id, "valid": False, "reason": "projeto inexistente ou inativo"}
     src = source(row["source_id"], row["version"])
     if src["status"] != "approved" or not src["is_current"]:
         return {"chunk_id": chunk_id, "valid": False, "reason": f"fonte {src['status']}"}

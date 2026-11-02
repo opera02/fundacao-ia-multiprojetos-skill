@@ -27,10 +27,14 @@ jobs:
         os: [windows-latest, ubuntu-latest]
         rodada: [1, 2, 3, 4, 5]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # 1.7.10: o Windows já levava até 33 min de 45 e a versão acrescenta suítes; o liberar.py espera 75 min (ESPERA_CI).
+    timeout-minutes: 75
     env:
       PYTHONUTF8: "1"
       PYTHONDONTWRITEBYTECODE: "1"
+      # Só no Ubuntu: a sentinela (scripts/tests/test_sentinela_ci.py) exige bubblewrap e socat e uma caixa que abre,
+      # para os testes da caixa não passarem pulados em silêncio (crítica do desenho da 1.7.10).
+      FUNDACAO_CI_EXIGE_BWRAP: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -39,6 +43,15 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12.10"  # release com certificado comprovado em assets/host/windows/pins-python.json
+      - name: bubblewrap e socat (Ubuntu)
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q bubblewrap socat
+          # Ubuntu 24.04: o AppArmor restringe o namespace de usuário sem privilégio, de que o bubblewrap precisa.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          bwrap --ro-bind / / --dev /dev --proc /proc true
       - name: suíte do kit
         working-directory: fundacao-ia-multiprojetos/assets/fundacao-kit
         run: python -B -m unittest discover -s tests

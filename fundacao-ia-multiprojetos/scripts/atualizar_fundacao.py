@@ -50,6 +50,26 @@ pasta, rodam como estão; caminho que não pode ir entre aspas com segurança n�
 
 Identidade: FUNDACAO_PRINCIPAL vem do lançador (administração da fundação); este script não a define.
 Saída em JSON; códigos: 0 ok · 1 recusado ou falhou (com `etapa` e `motivo`) · 2 uso incorreto.
+
+Aplicar na fundação viva com dados reais (1.7.10; a raiz passou a ter cerca de 130 mil arquivos e 6,2 GB):
+- antes de começar e antes da restauração do ensaio, nenhuma distribuição do WSL pode estar rodando (o banco não é
+  aberto pelos dois lados); raiz de ensaio na pasta temporária do sistema (os testes) só registra;
+- durante o `aplicar`, a trava de manutenção `state/manutencao.json` ({"motivo", "pid", "host", "desde"}, o formato do
+  `core/manutencao.py` do kit novo, gravado direto porque o kit da raiz pode ser o anterior) faz o lançador do Ubuntu
+  não abrir; ela sai no fim, também na falha; trava que já existe recusa;
+- o ensaio nasce numa pasta nova dentro de `--pasta-ensaio` (padrão: a pasta das cópias, `--backups`), no disco das
+  cópias, e não na pasta temporária do C:; dentro da raiz, recusa — e a pasta das cópias também, com ou sem
+  `--pasta-ensaio` (revisão de segurança da 1.7.10, KIT-F7); a política de backup que o kit novo recusaria (KIT-F2)
+  recusa no `checar`, antes de qualquer cópia;
+- a limpeza do ensaio e do código conferido é contada (arquivos, pastas, ligações e bytes que sobraram, com os erros) e
+  vai para o registro; no Windows, a marca somente leitura sai só dentro da pasta criada pelo próprio atualizador; a
+  ligação sai como ligação, sem tocar o destino; antes, `shutil.rmtree(..., ignore_errors=True)` escondia a sobra;
+- se a cópia ANTES falha na promoção (código 2 com E_ARQUIVO ou E_PROMOCAO, ou WinError 5 — o kit da raiz pode não
+  tentar de novo), a sobra do preparo é contada (sem apagar: ela tem os dados da fundação), o destino é conferido
+  ausente e a cópia é tentada de novo UMA vez, com rótulo novo; as duas tentativas vão para o registro;
+- o tempo é estimado pelo número de arquivos do que a cópia leva (medido em 31/10/2026: cerca de 17 min para criar e
+  12 para verificar uma cópia de 130 mil arquivos, 27 para restaurar) e mostrado no início (stderr); `--prazo` (por
+  subprocesso longo) tem padrão derivado da estimativa.
 """
 from __future__ import annotations
 
@@ -59,6 +79,8 @@ import json
 import os
 import re
 import shutil
+import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -88,6 +110,20 @@ NAO_LIBERADA = Path("state") / "restauracao-nao-liberada.json"  # marca do kit (
 # Dentro de aspas duplas, o PowerShell interpreta `$`, a crase e as aspas (também as tipográficas); o bash, `$`, a
 # crase, as aspas, `!` (histórico) e a barra invertida antes delas ou dobrada (terceira passada).
 NAO_CITAVEIS = frozenset('"$`!' + chr(0x201C) + chr(0x201D) + chr(0x201E))  # aspas, $, crase, ! e as tipográficas
+TRAVA = Path("state") / "manutencao.json"  # trava de manutenção (contrato da 1.7.10; references/atualizacao-1.7.10.md)
+# Medido em 31/10/2026 na raiz com os projetos migrados (cerca de 130 mil arquivos): 17,5 min para criar a cópia, 12
+# para verificar e 27 para restaurar. As suítes do ensaio não foram medidas.
+MEDIDO = {"arquivos": 130_000, "criar": 17.5 * 60, "verificar": 12 * 60, "restaurar": 27 * 60}
+# O que a cópia do kit leva e deixa fora (fundacao/core/backup.py: FILE_DIRS e as exclusões;
+# fundacao/core/regras_da_copia.py: REGISTROS_PADRAO).
+NA_COPIA = ("fundacao", "registry", "templates", "projects", "AGENTS.md", "CLAUDE.md")
+REGISTROS_NA_COPIA = ("docs", "evidence", "ferramentas", "tests", "RETOMADA.md")
+FORA_DA_COPIA = {"__pycache__", ".venv", "node_modules", ".git", ".cache"}  # igual ao EXCLUDE_PARTS do kit (há teste)
+# Áreas da 1.7.10 que a política de backup da raiz passa a levar (crítica do desenho, §5.1): `em-uso/`, de onde rodam as
+# tarefas fora da sessão, e `.claude/projetos/`, a área do titular por projeto; depois do corte, são a única cópia.
+POLITICA_1710 = ("em-uso", ".claude/projetos")
+FALHA_DE_PROMOCAO = ("E_ARQUIVO", "E_PROMOCAO")  # código 2 do `backup criar` que vale uma nova tentativa
+MAX_ERROS_DA_LIMPEZA = 20
 
 
 def citar(caminho) -> str:
@@ -183,13 +219,334 @@ def rodar(cmd: list, cwd: Path, timeout: int = TEMPO) -> tuple:
     return r.returncode, dados, (r.stderr or "")[-2000:]
 
 
-def fundacao(codigo: Path, raiz: Path, *args: str) -> tuple:
+def fundacao(codigo: Path, raiz: Path, *args: str, prazo: int = TEMPO) -> tuple:
     """CLI do kit sobre a `raiz`, rodando o código de `codigo`: o kit da skill ou uma cópia conferida do código da
     raiz, nunca a árvore viva dela (auditoria Codex Security da 1.7.6, #8)."""
-    return rodar(conferido.python_isolado(codigo, conferido.CLI, "--raiz", raiz, *args), cwd=raiz)
+    return rodar(conferido.python_isolado(codigo, conferido.CLI, "--raiz", raiz, *args), cwd=raiz, timeout=prazo)
 
 
-def suite(origem: Path, arquivos: dict, padrao: str, copia: Path) -> dict:
+# --------------------------------------------------------------------- fundação viva com dados reais (1.7.10)
+def wsl_em_uso(nome_sistema: str = os.name) -> list:
+    """Distribuições do WSL em execução (fora o docker-desktop), como no liberar.py: o banco da fundação não pode ser
+    aberto pelo Windows e pelo WSL ao mesmo tempo (RETOMADA da fundação). Só no Windows: dentro do Ubuntu, o wsl.exe
+    do Windows aparece pela interop e listaria a própria distribuição, derrubando a sessão (1.7.10)."""
+    if nome_sistema != "nt" or shutil.which("wsl.exe") is None:
+        return []
+    try:
+        r = subprocess.run(["wsl.exe", "-l", "--running", "-q"], capture_output=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return ["(não foi possível consultar o WSL)"]
+    texto = r.stdout.decode("utf-16-le", "replace") if b"\x00" in r.stdout else r.stdout.decode("utf-8", "replace")
+    return [n.strip() for n in texto.replace("\x00", "").splitlines() if n.strip() and "docker" not in n.lower()]
+
+
+def em_pasta_temporaria(caminho: Path) -> bool:
+    """Raiz de ensaio na pasta temporária do sistema (a dos testes): nenhuma sessão do Ubuntu abre o banco dela."""
+    try:
+        return Path(os.path.realpath(caminho)).is_relative_to(Path(os.path.realpath(tempfile.gettempdir())))
+    except (OSError, ValueError):
+        return False
+
+
+def sem_wsl(etapa: str, raiz: Path) -> dict:
+    em_uso = wsl_em_uso()
+    if em_uso and not em_pasta_temporaria(raiz):
+        raise Parada(etapa, "WSL em execução (" + ", ".join(em_uso) + "): feche-o (wsl --shutdown) e repita; o banco "
+                     "da fundação não pode ser aberto pelos dois lados, e nada foi alterado nesta etapa",
+                     wsl_em_uso=em_uso)
+    return {"em_uso": em_uso, "conferido_em": agora(), **({"so_registrado": "raiz de ensaio na pasta temporária"}
+                                                           if em_uso else {})}
+
+
+def travar(raiz: Path, motivo: str) -> dict:
+    """Grava a trava de manutenção (arquivo novo, sem seguir ligação). Trava que já existe recusa: outra manutenção em
+    andamento ou uma trava esquecida, que o titular confere e apaga."""
+    dados = {"motivo": motivo, "pid": os.getpid(), "host": socket.gethostname(), "desde": agora()}
+    bruto = (json.dumps(dados, ensure_ascii=False, indent=1) + "\n").encode("utf-8")
+    if gravacao.com_ligacao(raiz, TRAVA.as_posix()):
+        raise Parada("trava", "state/ ou a trava de manutenção é ligação (link simbólico ou junção): nada foi alterado")
+    try:
+        gravacao.criar(raiz / TRAVA, bruto)
+    except FileExistsError:
+        raise Parada("trava", "já há uma trava de manutenção em " + TRAVA.as_posix() + " (outra manutenção em andamento "
+                     "ou uma trava esquecida): confira o pid e o host dela e, se não houver manutenção, apague-a e "
+                     "repita; nada foi alterado") from None
+    except OSError as exc:
+        raise Parada("trava", "a trava de manutenção não foi gravada (" + type(exc).__name__ + "): nada foi alterado")
+    return {"arquivo": TRAVA.as_posix(), "sha256": hashlib.sha256(bruto).hexdigest(), **dados}
+
+
+def destravar(raiz: Path, trava: dict) -> dict:
+    """Tira a trava que este `aplicar` gravou — a mesma, pelo hash, sem seguir ligação —, também na falha. A trava
+    trocada no meio do caminho fica, com o motivo."""
+    alvo = raiz / TRAVA
+    try:
+        st = os.lstat(alvo)
+        if gravacao.e_ligacao(st) or not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+            return {"removida": False, "motivo": "a trava virou ligação, pasta ou vínculo físico: confira"}
+        if hashlib.sha256(alvo.read_bytes()).hexdigest() != trava["sha256"]:
+            return {"removida": False, "motivo": "a trava foi trocada durante o aplicar: confira antes de apagar"}
+        os.unlink(alvo)
+    except FileNotFoundError:
+        return {"removida": False, "motivo": "a trava já não existia"}
+    except OSError as exc:
+        return {"removida": False, "motivo": "a trava não saiu (" + type(exc).__name__ + "): apague " + str(alvo)}
+    return {"removida": True}
+
+
+def _rel_incluida_segura(rel, raiz: Path | None = None) -> bool:
+    """O mesmo filtro do kit (core/regras_da_copia.py, motivo_da_politica; revisão de segurança da 1.7.10, KIT-F2):
+    caminho relativo não vazio, sem unidade, raiz, `:` nem `..`, que não é a própria raiz (`.`); a primeira parte, sem
+    caixa e sem ponto ou espaço no fim (`State`, `state.`, `state `), não é `state` nem `.git`; com `raiz`, o caminho
+    resolvido fica dentro dela e fora de `<raiz>/state` e `<raiz>/.git` (a ligação do fim a cópia não segue: passa).
+    Há teste de igualdade com o kit."""
+    if not isinstance(rel, str) or not rel.strip() or ":" in rel or "\0" in rel:
+        return False
+    p, partes = Path(rel), [x for x in rel.replace("\\", "/").split("/") if x not in ("", ".")]
+    if (p.is_absolute() or p.drive or p.root or not partes or any(not x.rstrip(". ") for x in partes)
+            or partes[0].rstrip(". ").casefold() in ("state", ".git")):
+        return False
+    if raiz is None:
+        return True
+    try:
+        if gravacao.e_ligacao(os.lstat(raiz / rel)):
+            return True  # a cópia do kit não segue a ligação do fim: nada de lá entra (e contar_arquivos a pula)
+    except OSError:
+        pass
+    real, alvo = Path(os.path.realpath(raiz)), Path(os.path.realpath(raiz / rel))
+    protegidas = [Path(os.path.realpath(raiz / nome)) for nome in ("state", ".git")]
+    return alvo != real and alvo.is_relative_to(real) and not any(alvo == x or alvo.is_relative_to(x)
+                                                                   for x in protegidas)
+
+
+def _incluidos(raiz: Path) -> list:
+    """O que a cópia do kit leva além do kit e do banco: a lista `incluir` de registry/backup_policy.json (com o mesmo
+    filtro do kit: `_rel_incluida_segura`) ou o padrão."""
+    try:
+        incluir = json.loads((raiz / "registry" / "backup_policy.json").read_text(encoding="utf-8")).get("incluir")
+    except (OSError, ValueError, AttributeError):
+        incluir = None
+    return ([x for x in incluir if _rel_incluida_segura(x, raiz)] if isinstance(incluir, list)
+            else list(REGISTROS_NA_COPIA))
+
+
+def _politica_recusada(raiz: Path) -> str | None:
+    """O que o kit novo recusaria em registry/backup_policy.json — já com as áreas que `politica_de_backup` acrescenta
+    antes da cópia DEPOIS —, como o `registros_incluidos` dele: ilegível, fora do formato ou com caminho que
+    `_rel_incluida_segura` recusa. Revisão de segurança da 1.7.10 (KIT-F2, correções da revisão 1): a cópia ANTES e o
+    ensaio rodam com o kit da raiz, que pode aceitar `state ` ou `.GIT`; a recusa só viria na cópia DEPOIS, com a raiz
+    já promovida. O `checar` a mostra antes de qualquer cópia; None se não há o que recusar."""
+    arq = raiz / "registry" / "backup_policy.json"
+    try:
+        dados = json.loads(arq.read_text(encoding="utf-8")) if arq.is_file() else {"incluir": list(REGISTROS_NA_COPIA)}
+    except (OSError, ValueError) as exc:
+        return "registry/backup_policy.json ilegível (" + type(exc).__name__ + "): corrija o JSON"
+    incluir = dados.get("incluir") if isinstance(dados, dict) else None
+    if not isinstance(incluir, list) or not all(isinstance(x, str) and x.strip() for x in incluir):
+        return "registry/backup_policy.json fora do formato {\"incluir\": [caminhos relativos]}: corrija a lista"
+    ruins = [x for x in dict.fromkeys([*incluir, *POLITICA_1710]) if not _rel_incluida_segura(x, raiz)]
+    if not ruins:
+        return None
+    return ("a política de backup (registry/backup_policy.json) tem caminho que a cópia do kit novo recusa ("
+            + ", ".join(repr(x)[:80] for x in ruins[:5]) + "): só caminhos relativos dentro da raiz, fora de state/ e "
+            ".git em qualquer grafia (caixa, ponto ou espaço no fim) e sem ligação no meio que leve a eles ou para fora; "
+            "tire ou corrija a entrada e repita")
+
+
+def politica_de_backup(raiz: Path) -> dict:
+    """Acrescenta POLITICA_1710 à lista `incluir` de registry/backup_policy.json (a política é da raiz, não vem do kit);
+    sem o arquivo, ele nasce com a lista padrão do kit mais essas. Só acrescenta, e o `desfazer` não a volta: a lista
+    maior também vale para o kit anterior. Política ilegível, fora do formato ou com ligação no caminho fica como está,
+    com o motivo (o resumo avisa)."""
+    rel = "registry/backup_policy.json"
+    arq = raiz / rel
+    try:
+        if gravacao.com_ligacao(raiz, rel):
+            return {"mudou": False, "erro": "registry/ ou a política é ligação: nada foi gravado"}
+        atual = json.loads(arq.read_text(encoding="utf-8")) if arq.exists() else None
+    except (OSError, ValueError) as exc:
+        return {"mudou": False, "erro": "política ilegível (" + type(exc).__name__ + ")"}
+    if atual is not None and not (isinstance(atual, dict) and isinstance(atual.get("incluir"), list)):
+        return {"mudou": False, "erro": "política fora do formato {\"incluir\": [...]}"}
+    dados = atual or {"schema_version": "fundacao.backup_policy/1", "incluir": list(REGISTROS_NA_COPIA)}
+    faltam = [x for x in POLITICA_1710 if x not in dados["incluir"]]
+    if not faltam:
+        return {"mudou": False}
+    texto = (json.dumps({**dados, "incluir": [*dados["incluir"], *faltam]}, ensure_ascii=False, indent=2)
+             + "\n").encode("utf-8")
+    try:
+        gravacao.publicar(arq, texto)
+    except OSError as exc:
+        return {"mudou": False, "erro": "a política não foi gravada: " + str(exc)[:200]}
+    return {"mudou": True, "criada": atual is None, "acrescentados": faltam,
+            "sha256": hashlib.sha256(texto).hexdigest()}
+
+
+def _resumo_politica(politica: dict) -> list:
+    if politica.get("mudou"):
+        return ["A cópia de segurança passa a levar também " + ", ".join(politica["acrescentados"])
+                + " (registry/backup_policy.json" + (", criado" if politica.get("criada") else "") + ")."]
+    if politica.get("erro"):
+        return ["Atenção: a política de backup não foi ampliada (" + politica["erro"] + "); acrescente à mão em "
+                "registry/backup_policy.json, na lista incluir: " + ", ".join(POLITICA_1710) + "."]
+    return []
+
+
+def contar_arquivos(raiz: Path) -> int:
+    """Arquivos que a cópia levaria (as pastas do kit e os registros incluídos, sem as pastas e os nomes que ela deixa
+    fora), contados sem seguir ligação e sem ler conteúdo."""
+    total, pilha = 0, [raiz / rel for rel in (*NA_COPIA, *_incluidos(raiz))]
+    while pilha:
+        atual = pilha.pop()
+        try:
+            st = os.lstat(atual)
+        except OSError:
+            continue
+        if gravacao.e_ligacao(st):
+            continue
+        if stat.S_ISREG(st.st_mode):
+            total += atual.name not in (".env", "state.sqlite", "state.sqlite-wal", "state.sqlite-shm")
+        elif stat.S_ISDIR(st.st_mode) and atual.name not in FORA_DA_COPIA:
+            try:
+                pilha += [Path(e.path) for e in os.scandir(atual)]
+            except OSError:
+                continue
+    return total
+
+
+def estimar(raiz: Path) -> dict:
+    """Tempo das duas cópias e da restauração do ensaio pela proporção do número de arquivos com a medida de 31/10."""
+    n = contar_arquivos(raiz)
+    escala = n / MEDIDO["arquivos"]
+    copia = (MEDIDO["criar"] + MEDIDO["verificar"]) * escala
+    segundos = {"copia_antes": round(copia), "restauracao_do_ensaio": round(MEDIDO["restaurar"] * escala),
+                "copia_depois": round(copia)}
+    return {"arquivos": n, "segundos": segundos, "minutos": max(1, round(sum(segundos.values()) / 60)),
+            "base": "medido em 31/10/2026: cerca de 17 min para criar e 12 para verificar uma cópia de 130 mil "
+                    "arquivos e 27 para restaurar", "fora_da_estimativa": "as suítes de testes do ensaio (não medidas) "
+                    "e a nova tentativa da cópia ANTES, se a promoção falhar"}
+
+
+def _rotulo_do_erro(caminho: str, pasta: Path) -> str:
+    """Caminho do item que sobrou na pasta do atualizador, sem expor nome de caso: as 3 primeiras partes e, se houver
+    mais, um hash curto do resto. A cópia de ensaio tem a fundação inteira, inclusive projects/<p>/data/<documento>:
+    `raiz/projects/<p>` localiza a área sem levar o nome do caso para as saídas."""
+    try:
+        rel = Path(os.path.relpath(caminho, pasta))
+    except ValueError:
+        return os.path.basename(caminho)[:200]
+    partes = rel.parts
+    if len(partes) <= 3:
+        return rel.as_posix()[:200]
+    resto = hashlib.sha256("/".join(partes[3:]).encode("utf-8", "replace")).hexdigest()[:8]
+    return (Path(*partes[:3]).as_posix() + "/<" + resto + ">")[:200]
+
+
+def limpar(pasta: Path) -> dict:
+    """Apaga a pasta que o próprio atualizador criou (o ensaio ou o código conferido), de baixo para cima e sem seguir
+    ligação: a ligação sai como ligação, e o destino dela não é tocado. No Windows, o item somente leitura dentro dela
+    perde a marca e é tentado de novo — só dentro desta pasta. Conta o que saiu e o que sobrou (arquivos, pastas,
+    ligações e bytes), com os primeiros erros; nada é escondido."""
+    res = {"pasta": str(pasta), "apagados": 0, "erros": []}
+    if not os.path.lexists(pasta):
+        return {**res, "limpa": True, "sobra": {"arquivos": 0, "pastas": 0, "ligacoes": 0, "bytes": 0}}
+
+    def remover(caminho: str, st: os.stat_result) -> None:
+        eh_pasta = stat.S_ISDIR(st.st_mode) or bool(getattr(st, "st_file_attributes", 0) & 0x10)
+        apagar = os.rmdir if eh_pasta and (os.name == "nt" or not stat.S_ISLNK(st.st_mode)) else os.unlink
+        for tentativa in (1, 2):
+            try:
+                apagar(caminho)
+                res["apagados"] += 1
+                return
+            except FileNotFoundError:
+                return
+            except PermissionError as exc:
+                erro = exc
+                if tentativa == 1 and os.name == "nt" and not gravacao.e_ligacao(st):
+                    try:
+                        os.chmod(caminho, stat.S_IWRITE | stat.S_IREAD)  # só a marca somente leitura do Windows
+                        continue
+                    except OSError:
+                        pass
+                break
+            except OSError as exc:
+                erro = exc
+                break
+        if len(res["erros"]) < MAX_ERROS_DA_LIMPEZA:
+            res["erros"].append(type(erro).__name__ + ": " + _rotulo_do_erro(caminho, pasta))
+
+    pastas, pilha = [], [str(pasta)]
+    while pilha:
+        atual = pilha.pop()
+        try:
+            st = os.lstat(atual)
+        except OSError:
+            continue
+        if stat.S_ISDIR(st.st_mode) and not gravacao.e_ligacao(st):
+            pastas.append((atual, st))
+            try:
+                pilha += [e.path for e in os.scandir(atual)]
+            except OSError as exc:
+                if len(res["erros"]) < MAX_ERROS_DA_LIMPEZA:
+                    res["erros"].append(type(exc).__name__ + ": " + _rotulo_do_erro(atual, pasta))
+        else:
+            remover(atual, st)
+    for atual, st in reversed(pastas):  # as de baixo antes das de cima
+        remover(atual, st)
+    res["sobra"] = sobra(Path(pasta))
+    res["limpa"] = not os.path.lexists(pasta)
+    return res
+
+
+def sobra(pasta: Path) -> dict:
+    """O que existe na pasta (arquivos, pastas, ligações e bytes), contado sem seguir ligação e sem ler conteúdo."""
+    conta, pilha = {"arquivos": 0, "pastas": 0, "ligacoes": 0, "bytes": 0}, [str(pasta)]
+    while pilha:
+        atual = pilha.pop()
+        try:
+            st = os.lstat(atual)
+        except OSError:
+            continue
+        if gravacao.e_ligacao(st):
+            conta["ligacoes"] += 1
+        elif stat.S_ISDIR(st.st_mode):
+            conta["pastas"] += 1
+            try:
+                pilha += [e.path for e in os.scandir(atual)]
+            except OSError:
+                continue
+        else:
+            conta["arquivos"] += 1
+            conta["bytes"] += st.st_size
+    return conta
+
+
+def sobra_do_preparo(destino: Path) -> dict:
+    """O que sobrou das pastas de preparo do kit ao lado do destino (`.<rótulo>.preparo-<hex>`) depois de uma promoção
+    que falhou: contado, não apagado — tem os dados da fundação; apagar é do titular, pela Lixeira."""
+    pastas = sorted(destino.parent.glob("." + destino.name + ".preparo-*")) if destino.parent.is_dir() else []
+    total = {"pastas_de_preparo": [p.name for p in pastas], "arquivos": 0, "pastas": 0, "ligacoes": 0, "bytes": 0}
+    for p in pastas:
+        for chave, valor in sobra(p).items():
+            total[chave] += valor
+    return total
+
+
+def falha_de_promocao(codigo: int | None, erro: str) -> bool:
+    """`backup criar` que falhou na promoção da cópia: código 2 com E_ARQUIVO ou E_PROMOCAO, ou o WinError 5."""
+    if codigo != 2:
+        return False
+    try:
+        dados = json.loads(erro.strip().splitlines()[-1]) if erro.strip() else {}
+    except ValueError:
+        dados = {}
+    info = dados.get("error") if isinstance(dados, dict) else None  # `error` pode vir como texto ou lista
+    tipo = info.get("code") if isinstance(info, dict) else None
+    return tipo in FALHA_DE_PROMOCAO or "WinError 5" in erro
+
+
+def suite(origem: Path, arquivos: dict, padrao: str, copia: Path, prazo: int = TEMPO) -> dict:
     """Suíte de conformidade numa cópia conferida de `origem` (só os `arquivos`, caminho -> sha256, e registry/, que
     os testes do kit copiam, sem as cópias do código guardadas pela promoção; R177-ATU-01), com os módulos enumerados
     da lista: total, ids das falhas e pulados."""
@@ -199,7 +556,8 @@ def suite(origem: Path, arquivos: dict, padrao: str, copia: Path) -> dict:
         raise Parada("ensaio", "a cópia dos testes não conferiu com a lista (" + str(exc)[:300] + "): algo mudou nas "
                      "áreas de código depois do `checar`; a raiz NÃO foi alterada")
     modulos = conferido.modulos_de_teste(arquivos, padrao)
-    _code, dados, erro = rodar(conferido.python_isolado(copia, conferido.RUNNER, json.dumps(modulos)), cwd=copia)
+    _code, dados, erro = rodar(conferido.python_isolado(copia, conferido.RUNNER, json.dumps(modulos)), cwd=copia,
+                               timeout=prazo)
     if not isinstance(dados, dict):
         return {"total": 0, "falhas": ["suite-nao-rodou: " + erro[-300:]], "pulados": 0}
     return dados
@@ -310,6 +668,9 @@ def _inspecionar(raiz: Path) -> tuple:
     if (raiz / NAO_LIBERADA).exists():
         res["motivos"].append("raiz de restauração não liberada (" + NAO_LIBERADA.as_posix() + "): não use; refaça a "
                               "restauração numa pasta nova (fluxo C9)")
+    politica = _politica_recusada(raiz)  # KIT-F2: a cópia DEPOIS, com a raiz já promovida, a recusaria
+    if politica:
+        res["motivos"].append(politica)
     res["identidade"] = os.environ.get(VARIAVEL_IDENTIDADE) or None
     if not res["identidade"]:
         res["motivos"].append("identidade ausente: " + VARIAVEL_IDENTIDADE + " vem do lançador (administração da fundação)")
@@ -339,19 +700,39 @@ def _codigo_conferido(raiz: Path, conferidos: dict, destino: Path) -> Path:
     return destino
 
 
-def _backup(codigo: Path, raiz: Path, destino: Path, rotulo: str) -> dict:
+def _backup(codigo: Path, raiz: Path, destino: Path, rotulo: str, prazo: int = TEMPO,
+            tentar_de_novo: bool = False) -> dict:
     """`backup criar` + `backup verificar` com o código de `codigo` (cópia conferida do código da raiz ANTES; o kit da
-    skill DEPOIS); a âncora vem do kit ou é calculada aqui."""
-    code, dados, erro = fundacao(codigo, raiz, "backup", "criar", "--destino", str(destino), "--rotulo", rotulo)
-    if code != 0 or not isinstance(dados, dict):
-        raise Parada("backup", "`backup criar` falhou (" + rotulo + ")", erro=erro, saida=dados)
+    skill DEPOIS); a âncora vem do kit ou é calculada aqui. Com `tentar_de_novo` (a cópia ANTES, feita pelo código da
+    raiz, que pode não repetir a renomeação final), a falha na promoção conta a sobra do preparo, confere que o destino
+    não existe e tenta UMA vez mais, com rótulo novo; as tentativas vão para o registro (1.7.10)."""
+    tentativas = []
+    while True:
+        code, dados, erro = fundacao(codigo, raiz, "backup", "criar", "--destino", str(destino), "--rotulo", rotulo,
+                                     prazo=prazo)
+        tentativas.append({"rotulo": rotulo, "destino": str(destino), "codigo": code})
+        if code == 0 and isinstance(dados, dict):
+            break
+        tentativas[-1]["erro"] = (erro or "")[-600:]
+        if not (tentar_de_novo and len(tentativas) == 1 and falha_de_promocao(code, erro or "")):
+            raise Parada("backup", "`backup criar` falhou (" + rotulo + ")", erro=erro, saida=dados,
+                         tentativas=tentativas)
+        tentativas[-1]["sobra_do_preparo"] = sobra_do_preparo(destino)
+        if os.path.lexists(destino):
+            raise Parada("backup", "a promoção da cópia " + rotulo + " falhou e o destino existe: confira-o à mão antes "
+                         "de repetir (nada foi alterado na raiz)", tentativas=tentativas)
+        rotulo = rotulo + "-tentativa-2"
+        destino = destino.with_name(rotulo)
     ancora = dados.get("sha256_manifesto") or sha(destino / "manifest.json")
     extra = ["--sha256-manifesto", ancora] if dados.get("sha256_manifesto") else []
-    code, ver, erro = fundacao(codigo, raiz, "backup", "verificar", "--origem", str(destino), *extra)
+    code, ver, erro = fundacao(codigo, raiz, "backup", "verificar", "--origem", str(destino), *extra, prazo=prazo)
     if code != 0 or not (isinstance(ver, dict) and ver.get("ok")):
-        raise Parada("backup", "a cópia " + rotulo + " não conferiu", erro=erro, verificacao=ver)
-    return {"pasta": str(destino), "rotulo": rotulo, "sha256_manifesto": ancora,
-            "ancora_pelo_kit": bool(dados.get("sha256_manifesto")), "arquivos": len(dados.get("files", []))}
+        raise Parada("backup", "a cópia " + rotulo + " não conferiu", erro=erro, verificacao=ver, tentativas=tentativas)
+    # O kit 1.7.9 devolve a lista `files`; o 1.7.10 só o resumo, com `arquivos` (a lista fica no manifest.json da cópia).
+    arquivos = dados["arquivos"] if isinstance(dados.get("arquivos"), int) else len(dados.get("files", []))
+    res = {"pasta": str(destino), "rotulo": rotulo, "sha256_manifesto": ancora,
+           "ancora_pelo_kit": bool(dados.get("sha256_manifesto")), "arquivos": arquivos}
+    return {**res, "tentativas": tentativas} if len(tentativas) > 1 else res
 
 
 def _conferir_antes_da_promocao(raiz: Path) -> None:
@@ -424,38 +805,83 @@ def _init_e_cadeia(raiz: Path, etapa: str) -> dict:
     return {"init": init, "cadeia_de_eventos": cadeia}
 
 
-def _ensaio(raiz: Path, codigo: Path, conferidos: dict, antes: dict, padrao: str, manter: bool = False) -> dict:
-    """Restaura a cópia ANTES numa pasta temporária e aplica nela o kit novo, com `init`, cadeia e suíte.
-    Regressão = teste que falha na cópia atualizada e não falhava antes, ou que passava e na cópia
-    sumiu ou passou a ser pulado sem a retirada declarada pelo kit novo (catraca, proposta 5). A suíte de antes roda
-    de uma cópia conferida do código da raiz e a de depois, de uma cópia conferida da cópia atualizada (#8). As
-    cópias têm os dados da fundação: são apagadas no fim, também na falha (o registro guarda o motivo de cada
-    teste), salvo com `manter`."""
-    tmp = Path(tempfile.mkdtemp(prefix="ensaio-atualizacao-"))
+def _dentro_da_raiz(caminho: Path, raiz: Path) -> bool:
+    """`caminho` é a raiz ou fica dentro dela, pelo caminho resolvido (ligação, caixa) e, onde o sistema dá identidade
+    de arquivo, pelo objeto do disco de cada ancestral (nome curto do Windows), como o kit faz com o destino da cópia
+    (core/ancora_copia.py, dentro_da_copia; revisão de segurança da 1.7.10, KIT-F7)."""
+    alvo, real = Path(os.path.realpath(caminho)), Path(os.path.realpath(raiz))
+    if alvo == real or alvo.is_relative_to(real):
+        return True
     try:
-        base = suite(raiz, conferidos, padrao, tmp / "testes-antes")
-        return _ensaio_na_copia(raiz, codigo, antes, padrao, base, tmp)
+        st = os.stat(real)
+    except OSError:
+        return False
+    for ancestral in (alvo, *alvo.parents) if st.st_ino else ():
+        try:
+            atual = os.stat(ancestral)
+        except OSError:
+            continue
+        if (atual.st_dev, atual.st_ino) == (st.st_dev, st.st_ino):
+            return True
+    return False
+
+
+def _base_do_ensaio(raiz: Path, backups: Path, pasta: Path | None) -> Path:
+    """Onde a cópia de ensaio nasce (uma pasta nova dentro dela): `--pasta-ensaio` ou, por padrão, a pasta das cópias
+    (`--backups`), no disco das cópias. Dentro da raiz, recusa: a cópia da fundação cairia nela mesma. A pasta das
+    cópias também, com ou sem --pasta-ensaio (revisão de segurança da 1.7.10, KIT-F7, correções da revisão 1): a cópia
+    ANTES, feita pelo kit da raiz (o anterior aceita destino dentro dela), nasceria ao alcance das sessões dos projetos,
+    e a cópia DEPOIS, pelo kit novo, seria recusada só depois da promoção."""
+    if _dentro_da_raiz(backups, raiz):
+        raise Parada("checar", "a pasta das cópias (--backups: " + str(backups) + ") fica dentro da raiz da fundação: "
+                     "use uma pasta fora dela, que só o titular altera (de preferência em outro disco); nada foi "
+                     "alterado")
+    base = Path(os.path.abspath(pasta if pasta is not None else backups))
+    if _dentro_da_raiz(base, raiz):
+        raise Parada("checar", "a pasta do ensaio (" + str(base) + ") fica dentro da raiz da fundação: use a pasta das "
+                     "cópias (--backups) ou outra fora dela; nada foi alterado")
+    return base
+
+
+def _ensaio(raiz: Path, codigo: Path, conferidos: dict, antes: dict, padrao: str, manter: bool = False,
+            pasta_base: Path | None = None, prazo: int = TEMPO, limpeza: dict | None = None) -> dict:
+    """Restaura a cópia ANTES numa pasta nova dentro de `pasta_base` (padrão: a temporária do sistema) e aplica nela o
+    kit novo, com `init`, cadeia e suíte. Regressão = teste que falha na cópia atualizada e não falhava antes, ou que
+    passava e na cópia sumiu ou passou a ser pulado sem a retirada declarada pelo kit novo (catraca, proposta 5). A
+    suíte de antes roda de uma cópia conferida do código da raiz e a de depois, de uma cópia conferida da cópia
+    atualizada (#8). As cópias têm os dados da fundação: são apagadas no fim, também na falha (o registro guarda o
+    motivo de cada teste), salvo com `manter`; a limpeza é contada em `limpeza["ensaio"]` (1.7.10)."""
+    limpeza = {} if limpeza is None else limpeza
+    if pasta_base is not None:
+        pasta_base.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix="ensaio-atualizacao-", dir=str(pasta_base) if pasta_base else None))
+    limpeza["pasta_do_ensaio"] = str(tmp)
+    try:
+        base = suite(raiz, conferidos, padrao, tmp / "testes-antes", prazo)
+        return _ensaio_na_copia(raiz, codigo, antes, padrao, base, tmp, prazo)
     except Parada as p:
         if not manter:
             p.detalhes["copia_de_ensaio"] = None
             p.detalhes["copia_apagada"] = "use --manter-ensaio para examiná-la"
         raise
     finally:
-        if not manter:
-            shutil.rmtree(tmp, ignore_errors=True)
+        limpeza["ensaio"] = {"mantida": str(tmp)} if manter else limpar(tmp)
 
 
-def _ensaio_na_copia(raiz: Path, codigo: Path, antes: dict, padrao: str, base: dict, tmp: Path) -> dict:
+def _ensaio_na_copia(raiz: Path, codigo: Path, antes: dict, padrao: str, base: dict, tmp: Path,
+                     prazo: int = TEMPO) -> dict:
     copia = tmp / "raiz"
     extra = ["--sha256-manifesto", antes["sha256_manifesto"]] if antes["ancora_pelo_kit"] else []
+    sem_wsl("ensaio", raiz)  # a cópia ANTES levou dezenas de minutos: o Ubuntu pode ter sido aberto nesse meio-tempo
     code, rest, erro = fundacao(codigo, raiz, "backup", "restaurar", "--origem", antes["pasta"], "--destino",
-                                str(copia), "--retiradas", str(raiz / "state" / "retiradas.jsonl"), *extra)
+                                str(copia), "--retiradas", str(raiz / "state" / "retiradas.jsonl"), *extra,
+                                prazo=prazo)
     if code != 0 or not (isinstance(rest, dict) and rest.get("released")):
         raise Parada("ensaio", "a cópia ANTES não restaurou numa pasta de ensaio", erro=erro, saida=rest,
                      copia_de_ensaio=str(copia))
     kit = _instalar_kit(copia)
     conferencia = _init_e_cadeia(copia, "ensaio")
-    depois = suite(copia, arquivos_do_kit(), padrao, tmp / "testes-depois")
+    depois = suite(copia, arquivos_do_kit(), padrao, tmp / "testes-depois", prazo)
     regressoes = sorted(set(depois["falhas"]) - set(base["falhas"]))
     declaradas = retiradas_declaradas()
     passavam = set(base.get("ids", [])) - set(base["falhas"]) - set(base.get("pulados_ids", {}))
@@ -589,32 +1015,65 @@ def _so_instrucoes(raiz: Path, pre: dict, carimbo: str) -> dict:
     return {"ok": True, "nada_a_fazer": False, "so_instrucoes": True, "registro": str(arq), "resumo": resumo}
 
 
-def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False) -> dict:
+def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False, pasta_ensaio: Path | None = None,
+            prazo: int | None = None) -> dict:
     raiz, backups = Path(raiz).resolve(), Path(backups).resolve()
+    wsl = sem_wsl("checar", raiz)  # antes de começar: o `checar` já abre o banco (somente leitura)
     carimbo = agora()
     pre, conferidos = _inspecionar(raiz)
     if not pre["pode_aplicar"]:
         raise Parada("checar", "; ".join(pre["motivos"]), checar=pre)
-    if pre["nada_a_fazer"]:
-        return _so_instrucoes(raiz, pre, carimbo)
+    base_do_ensaio = _base_do_ensaio(raiz, backups, pasta_ensaio)
+    estimativa = None if pre["nada_a_fazer"] else estimar(raiz)
+    if estimativa:
+        prazo = prazo or max(TEMPO, 3 * max(estimativa["segundos"].values()))
+        sys.stderr.write("Estimativa: cerca de " + str(estimativa["minutos"]) + " min para " + str(estimativa["arquivos"])
+                         + " arquivos (duas cópias e a restauração do ensaio; sem as suítes). Não abra o Ubuntu até o "
+                         "fim: a trava de manutenção fica em " + TRAVA.as_posix() + ".\n")
+    trava = travar(raiz, "atualização do kit " + str(pre["kit_na_raiz"]) + " para " + str(pre["kit_da_skill"]))
+    try:
+        if pre["nada_a_fazer"]:
+            res = _so_instrucoes(raiz, pre, carimbo)
+        else:
+            extras = {"wsl": wsl, "trava": trava, "estimativa": estimativa, "prazo_por_etapa": prazo}
+            res = _aplicar(raiz, backups, padrao, manter_ensaio, base_do_ensaio, prazo, pre, conferidos, carimbo,
+                           extras)
+    except Parada as p:
+        p.detalhes["trava"] = destravar(raiz, trava)
+        raise
+    except BaseException:
+        destravar(raiz, trava)
+        raise
+    res["trava"] = destravar(raiz, trava)
+    if not res["trava"]["removida"]:
+        res.setdefault("resumo", []).append("Atenção: a trava de manutenção não saiu (" + res["trava"]["motivo"] + ").")
+    return res
+
+
+def _aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool, base_do_ensaio: Path, prazo: int,
+             pre: dict, conferidos: dict, carimbo: str, extras: dict) -> dict:
     nova, antiga = pre["kit_da_skill"], pre["kit_na_raiz"]
     registro = {"schema_version": "fundacao.atualizacao/1", "raiz": str(raiz), "iniciado_em": carimbo,
                 "kit_antes": antiga, "kit_da_skill": nova, "identidade": pre["identidade"],
-                "mudancas": pre["mudancas"], "user_version_antes": pre["user_version"]}
+                "mudancas": pre["mudancas"], "user_version_antes": pre["user_version"], **extras}
+    limpeza = registro["limpeza"] = {}
     codigo = Path(tempfile.mkdtemp(prefix="codigo-conferido-"))
     try:
         antes = _codigo_conferido(raiz, conferidos, codigo / "antes")  # o código ANTES roda só desta cópia
         rotulo = "antes-kit-" + nova + "-" + carimbo
-        registro["antes"] = _backup(antes, raiz, backups / rotulo, rotulo)
-        registro["ensaio"] = _ensaio(raiz, antes, conferidos, registro["antes"], padrao, manter_ensaio)
+        registro["antes"] = _backup(antes, raiz, backups / rotulo, rotulo, prazo, tentar_de_novo=True)
+        registro["ensaio"] = _ensaio(raiz, antes, conferidos, registro["antes"], padrao, manter_ensaio,
+                                     base_do_ensaio, prazo, limpeza)
         _conferir_antes_da_promocao(raiz)
         promo = _promover(raiz, registro)  # instalador e `__pycache__` (R177-ATU-02); interrompida: R177C-B-04
         promo.update(_init_e_cadeia(raiz, "promocao"))
         registro["user_version_depois"] = user_version(raiz)
         registro["instrucoes_raiz"] = _instrucoes_raiz(raiz, carimbo)  # antes da cópia DEPOIS, que as leva
+        registro["politica_de_backup"] = politica_de_backup(raiz)  # idem: a cópia DEPOIS já leva as áreas novas
         rotulo = "depois-kit-" + nova + "-" + carimbo
-        registro["depois"] = _backup(KIT, raiz, backups / rotulo, rotulo)
+        registro["depois"] = _backup(KIT, raiz, backups / rotulo, rotulo, prazo)
     except Parada as p:
+        limpeza["codigo"] = limpar(codigo)  # antes do registro: a contagem vai junto
         registro["falha"] = {"etapa": p.etapa, "motivo": p.motivo, **p.detalhes}
         nome = "falha-atualizacao-kit-" + nova + "-" + carimbo + ".json"
         try:  # falha depois da promoção deixa a raiz no kit novo: o `desfazer` precisa poder usar este registro
@@ -625,9 +1084,11 @@ def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False)
             if "promocao" in registro:  # registro ancorado: o comando pronto para voltar o código (R177C-B-04)
                 p.detalhes["para_voltar"] = comando(Path(__file__), "desfazer", "--registro",
                                                     Path(p.detalhes["registro"]))
+        p.detalhes["limpeza"] = limpeza
         raise
     finally:
-        shutil.rmtree(codigo, ignore_errors=True)
+        if "codigo" not in limpeza:
+            limpeza["codigo"] = limpar(codigo)
     registro["kit_depois"] = versao_do_kit(raiz)
     registro["concluido_em"] = agora()
     try:  # registro e âncora ANTES do inventário do host: travar ou falhar nele não perde a atualização (R177-VAL-04)
@@ -651,9 +1112,33 @@ def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False)
     if registro["promocao"]["bytecode_nao_apagado"]:
         resumo.append("Atenção: o bytecode destas pastas não foi apagado; apague-as antes de usar a fundação (o Python "
                       "as refaz da fonte): " + "; ".join(registro["promocao"]["bytecode_nao_apagado"][:3]))
-    resumo += _resumo_instrucoes(raiz, registro["instrucoes_raiz"]) + _resumo_host(raiz, host)
+    if len(registro["antes"].get("tentativas", [])) > 1:
+        resumo.append("A cópia ANTES falhou na promoção e foi refeita com o rótulo " + registro["antes"]["rotulo"]
+                      + "; a sobra do preparo da primeira tentativa (contada no registro) tem os dados da fundação: "
+                      "apague-a pela Lixeira, com o OK do titular.")
+    resumo += _resumo_limpeza(registro["limpeza"])
+    resumo += _resumo_instrucoes(raiz, registro["instrucoes_raiz"]) + _resumo_politica(registro["politica_de_backup"])
+    resumo += _resumo_host(raiz, host)
     resumo.append("Para voltar o código: " + comando(Path(__file__), "desfazer", "--registro", arq))
-    return {"ok": True, "registro": str(arq), "inventario_host": host, "resumo": resumo}
+    return {"ok": True, "registro": str(arq), "inventario_host": host, "estimativa": registro["estimativa"],
+            "limpeza": registro["limpeza"], "resumo": resumo}
+
+
+def _resumo_limpeza(limpeza: dict) -> list:
+    """Sobra do ensaio ou do código conferido, que antes passava em silêncio: tem os dados da fundação."""
+    linhas = []
+    for nome, rotulo in (("ensaio", "da cópia de ensaio"), ("codigo", "da cópia conferida do código")):
+        res = limpeza.get(nome) or {}
+        if res.get("mantida"):
+            linhas.append("A cópia de ensaio ficou em " + res["mantida"] + " (--manter-ensaio): ela tem os dados da "
+                          "fundação; apague-a depois de examinar.")
+        elif res and not res.get("limpa"):
+            s = res.get("sobra") or {}
+            linhas.append("Atenção: sobrou parte " + rotulo + " em " + str(res.get("pasta")) + " ("
+                          + str(s.get("arquivos")) + " arquivos, " + str(s.get("pastas")) + " pastas, "
+                          + str(s.get("bytes")) + " bytes; erros no registro): apague-a pela Lixeira, com o OK do "
+                          "titular.")
+    return linhas
 
 
 def main(argv: list | None = None) -> int:
@@ -664,10 +1149,16 @@ def main(argv: list | None = None) -> int:
     a = sub.add_parser("aplicar")
     a.add_argument("--raiz", type=Path, required=True)
     a.add_argument("--backups", type=Path, required=True,
-                   help="pasta das cópias ANTES e DEPOIS (de preferência em outro disco)")
+                   help="pasta das cópias ANTES e DEPOIS (de preferência em outro disco; nunca dentro da raiz)")
     a.add_argument("--padrao-testes", default="test*.py", help="padrão da suíte de conformidade no ensaio")
     a.add_argument("--manter-ensaio", action="store_true",
                    help="não apaga a cópia de ensaio (ela tem os dados da fundação; apague-a depois de examinar)")
+    a.add_argument("--pasta-ensaio", type=Path, default=None,
+                   help="onde nasce a pasta nova do ensaio (padrão: a de --backups, no disco das cópias; nunca dentro "
+                        "da raiz)")
+    a.add_argument("--prazo", type=int, default=None,
+                   help="segundos por subprocesso longo (cópia, verificação, restauração e suíte); padrão: o maior "
+                        "entre 3600 e três vezes a maior etapa estimada")
     d = sub.add_parser("desfazer")
     d.add_argument("--registro", type=Path, required=True)
     d.add_argument("--aceitar-banco-migrado", action="store_true",
@@ -679,7 +1170,10 @@ def main(argv: list | None = None) -> int:
             print(json.dumps(res, ensure_ascii=False, indent=1))
             return 0 if res["pode_aplicar"] else 1
         if args.cmd == "aplicar":
-            res = aplicar(args.raiz, args.backups, args.padrao_testes, args.manter_ensaio)
+            if args.prazo is not None and args.prazo < 60:
+                ap.error("--prazo deve ter pelo menos 60 segundos")
+            res = aplicar(args.raiz, args.backups, args.padrao_testes, args.manter_ensaio, args.pasta_ensaio,
+                          args.prazo)
         else:
             res = desfazer(args.registro, args.aceitar_banco_migrado)
     except Parada as p:

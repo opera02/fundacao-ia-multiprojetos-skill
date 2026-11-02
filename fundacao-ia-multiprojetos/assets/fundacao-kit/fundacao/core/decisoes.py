@@ -32,14 +32,13 @@ import time
 import uuid
 from pathlib import Path
 
-from . import events
+from . import decisoes_disco as disco, events
 from .auth import Policy, Principal, resource_project
 from .canon import sha256_bytes
-from .contracts import AccessDenied, AlreadyExists, NotFound, ValidationError
+from .contracts import AccessDenied, NotFound, PathEscape, ValidationError
 from .db import transaction
 from .paths import contained
 from .projects import project_root, projects_dir
-from .publicacao import anexar, conferir_para_anexar
 from .tasks import Budget, Coordinator, PermanentError, StepDef
 from .comando_titular import (  # noqa: F401 — reexportados: __main__, ferramentas da fundação e testes
     SHELLS, caminho_windows, caminho_wsl, comando_para_o_titular, em_wsl, no_windows, shell_padrao)
@@ -166,7 +165,7 @@ def ler_assinatura(sig) -> dict:
     """Campos da assinatura SSHSIG (PROTOCOL.sshsig do OpenSSH), sem conferir a criptografia: namespace e impressão
     digital da chave que assinou. Servem para dizer POR QUE uma assinatura não vale; quem decide se ela confere com o
     conteúdo é o `ssh-keygen -Y verify`."""
-    return _campos_da_assinatura(Path(sig).read_bytes())
+    return _campos_da_assinatura(disco.ler_arquivo(sig, disco.TETO_ASSINATURA))
 
 
 def ssh_keygen_do_sistema() -> str | None:
@@ -189,19 +188,20 @@ def ssh_keygen() -> str:
     return exe
 
 
-def verificar_assinatura(arquivo, ancora, identidade: str, dados: bytes | None = None, *, namespace: str = NAMESPACE) -> dict:
+def verificar_assinatura(arquivo, ancora, identidade: str, dados: bytes | None = None, *, namespace: str = NAMESPACE,
+                         assinatura=None) -> dict:
     """Assinatura `<arquivo>.sig` conferida contra a âncora, na identidade e no namespace da barreira. `dados`: os bytes
     da decisão que quem chama já leu e conferiu; o `ssh-keygen` confere esses bytes, e a assinatura é lida uma vez só
-    (cópia numa pasta temporária): trocar os arquivos no meio não muda o que é conferido (revisão independente da 1.6.0)."""
+    (cópia numa pasta temporária): trocar os arquivos no meio não muda o que é conferido (revisão independente da 1.6.0).
+    `assinatura`: os bytes do .sig já lidos pela pasta conferida (ou disco.RECUSADA); sem eles, o .sig é lido aqui sem
+    seguir ligação nem travar num FIFO, até o teto (revisão de segurança da 1.7.10, POR-02)."""
     arquivo = Path(arquivo)
-    sig = Path(str(arquivo) + ".sig")
-    try:
-        bruto_sig = sig.read_bytes() if sig.is_file() else None
-    except OSError:
-        bruto_sig = None
-    if bruto_sig is None:
-        return {"ok": False, "motivo": "assinatura ausente"}
-    dados = arquivo.read_bytes() if dados is None else dados
+    if assinatura is None:
+        assinatura = disco.ler_ou_recusar(Path(str(arquivo) + ".sig"), disco.TETO_ASSINATURA)
+    if assinatura is None or assinatura is disco.RECUSADA:  # recusada: nem o SHA-256 dela volta (POR-02)
+        return {"ok": False, "motivo": "assinatura ausente" if assinatura is None else disco.ASSINATURA_RECUSADA}
+    bruto_sig = assinatura
+    dados = disco.ler_arquivo(arquivo, disco.TETO_DECISAO) if dados is None else dados
     res = {"ok": False, "sha256_assinatura": sha256_bytes(bruto_sig)}
     try:
         campos = _campos_da_assinatura(bruto_sig)
@@ -228,25 +228,20 @@ def verificar_assinatura(arquivo, ancora, identidade: str, dados: bytes | None =
     return {**res, "ok": True, "motivo": "assinatura válida"}
 
 
-def _dentro(caminho: Path, base: Path) -> bool:
-    try:
-        caminho.relative_to(base)
-        return True
-    except ValueError:
-        return False
-
-
 def verificar_decisao(arquivo, pasta_projeto, ancora, politica: dict | None = None) -> dict:
     """Confere esquema, forma canônica, projeto, entrega inalterada e assinatura. Não altera nada. Tipo que a
     `politica` (de `carregar_politica`) dispensa vale sem assinatura — `forca: sem-assinatura`, lógica da política;
-    sem `politica`, todo tipo exige. Assinatura presente é sempre conferida: inválida nunca é ignorada."""
+    sem `politica`, todo tipo exige. Assinatura presente é sempre conferida: inválida nunca é ignorada. A decisão, o
+    .sig e a entrega são lidos pela pasta do projeto conferida, sem seguir ligação nem travar num FIFO (POR-02/03)."""
     arquivo, pasta = Path(arquivo).resolve(), Path(pasta_projeto).resolve()
     res = {"arquivo": str(arquivo), "valida": False}
-    if not _dentro(arquivo, pasta / "decisoes"):
+    if not disco.dentro(arquivo, pasta / "decisoes"):
         return {**res, "motivo": "decisão fora de decisoes/ do projeto"}
     try:
-        bruto = arquivo.read_bytes()
-    except OSError:
+        bruto, sig = disco.decisao_e_assinatura(pasta, arquivo)
+    except (OSError, PathEscape):
+        bruto = None
+    if bruto is None:
         return {**res, "motivo": "decisão ausente ou ilegível"}
     res["sha256_decisao"] = sha256_bytes(bruto)
     try:
@@ -273,19 +268,19 @@ def verificar_decisao(arquivo, pasta_projeto, ancora, politica: dict | None = No
     if d["project_id"] != pasta.name:
         return {**res, "motivo": "decisão de outro projeto"}
     alvo = (pasta / entrega["caminho"]).resolve()
-    if not _dentro(alvo, pasta / "outputs"):
+    if not disco.dentro(alvo, pasta / "outputs"):
         return {**res, "motivo": "entrega fora de outputs/ do projeto"}
-    if not alvo.is_file() or sha256_arquivo(alvo) != entrega["sha256"]:
+    if disco.sha256_no_projeto(pasta, alvo, recusar=False) != entrega["sha256"]:
         return {**res, "motivo": "entrega ausente ou alterada depois da decisão"}
     res["exige_assinatura"] = exige_assinatura(politica, d["tipo"])
-    if not Path(str(arquivo) + ".sig").is_file():
+    if sig is None:
         if res["exige_assinatura"]:
             return {**res, "motivo": "assinatura ausente"}
         return {**res, "valida": True, "forca": "sem-assinatura",
                 "motivo": "a política não exige assinatura neste tipo: vale a identidade de quem registra"}
     if ancora is None or not Path(ancora).is_file():
         return {**res, "motivo": "âncora ausente"}
-    res["assinatura"] = verificar_assinatura(arquivo, ancora, d["assinante"], dados=bruto)
+    res["assinatura"] = verificar_assinatura(arquivo, ancora, d["assinante"], dados=bruto, assinatura=sig)
     if not res["assinatura"]["ok"]:
         return {**res, "motivo": res["assinatura"]["motivo"]}
     return {**res, "valida": True, "forca": "assinatura", "motivo": "decisão assinada pelo titular e entrega inalterada"}
@@ -508,32 +503,32 @@ def preparar_decisao(raiz, con, principal: Principal, *, projeto: str, tarefa: s
                      shell: str | None = None) -> dict:
     """Grava `decisoes/<id>.json` (JSON canônico com o SHA-256 da entrega exata, assinante = identidade do lançador)
     e devolve o comando do titular. Exige escrita no projeto; a tarefa precisa ser DESTE projeto (alheia responde
-    como inexistente) e a entrega estar em `outputs/`. Não sobrescreve decisão existente."""
+    como inexistente) e a entrega estar em `outputs/`. Não sobrescreve decisão existente. A entrega é lida e a decisão
+    criada pela pasta conferida: uma ligação trocada no meio não leva nada para fora do projeto (POR-01)."""
     pasta = project_root(raiz, con, principal, projeto, action="write")
     Coordinator(raiz, con, principal, projeto).get_task(tarefa)
     alvo = contained(pasta / "outputs", pasta / entrega, within=pasta)
-    if not alvo.is_file():
+    sha_entrega = disco.sha256_no_projeto(pasta, alvo)  # ligação, FIFO ou vínculo físico: PathEscape
+    if sha_entrega is None:
         raise NotFound("entrega inexistente em outputs/ do projeto", entrega=str(entrega))
-    if decisao_id is None:  # o padrão tem resolução de segundo: outra decisão no mesmo segundo ganha sufixo
-        base = f"dec-{tipo}-{time.strftime('%Y%m%dT%H%M%S')}"
-        decisao_id, n = base, 1
-        while (pasta / "decisoes" / f"{decisao_id}.json").exists():
-            n += 1
-            decisao_id = f"{base}-{n}"
-    anterior, anterior_evento = vigente_na_trilha(con, projeto, tarefa)
-    d = montar_decisao(projeto=projeto, tarefa=tarefa, entrega_rel=alvo.relative_to(pasta).as_posix(),
-                       entrega_sha256=sha256_arquivo(alvo), tipo=tipo, motivo=motivo, assinante=principal.principal_id,
-                       decisao_id=decisao_id, agora=time.strftime("%Y-%m-%dT%H:%M:%S%z"), anterior=anterior,
-                       anterior_evento=anterior_evento)
-    destino = contained(pasta / "decisoes", pasta / "decisoes" / f"{decisao_id}.json", within=pasta)
-    if destino.exists():
-        raise AlreadyExists("decisão já existe; nada foi alterado (não sobrescrevo)", decisao_id=decisao_id)
-    titular = comando_para_o_titular(destino, assinante=principal.principal_id, shell=shell,
-                                     ancora=ancora or ANCORAS_PADRAO[0])
-    bruto = canonico(d)
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    with open(destino, "xb") as arq:  # "x": recusa se outra execução criou o arquivo no intervalo
-        arq.write(bruto)
+    with disco.Pasta(pasta, ("decisoes",)) as dec:  # aberta uma vez; a que falta nasce ao gravar
+        if decisao_id is None:  # o padrão tem resolução de segundo: outra decisão no mesmo segundo ganha sufixo
+            base = f"dec-{tipo}-{time.strftime('%Y%m%dT%H%M%S')}"
+            decisao_id, n = base, 1
+            while dec.lstat(f"{decisao_id}.json") is not None:
+                n += 1
+                decisao_id = f"{base}-{n}"
+        anterior, anterior_evento = vigente_na_trilha(con, projeto, tarefa)
+        d = montar_decisao(projeto=projeto, tarefa=tarefa, entrega_rel=alvo.relative_to(pasta).as_posix(),
+                           entrega_sha256=sha_entrega, tipo=tipo, motivo=motivo, assinante=principal.principal_id,
+                           decisao_id=decisao_id, agora=time.strftime("%Y-%m-%dT%H:%M:%S%z"), anterior=anterior,
+                           anterior_evento=anterior_evento)
+        destino = dec.caminho / f"{decisao_id}.json"
+        titular = comando_para_o_titular(destino, assinante=principal.principal_id, shell=shell,
+                                         ancora=ancora or ANCORAS_PADRAO[0])
+        bruto = canonico(d)
+        dec.criar_novo(destino.name, bruto, "decisão já existe; nada foi alterado (não sobrescrevo)",
+                       decisao_id=decisao_id)  # O_EXCL: também a criada por outra execução no intervalo
     events.emit(con, "decisao_preparada", project_id=projeto, subject=principal.principal_id, task_id=tarefa,
                 payload={"decisao_id": decisao_id, "tipo": tipo, "sha256_decisao": sha256_bytes(bruto),
                          "sha256_entrega": d["entrega"]["sha256"]})
@@ -553,9 +548,10 @@ def preparar_decisao(raiz, con, principal: Principal, *, projeto: str, tarefa: s
 
 
 def ler_decisao(arquivo) -> dict:
-    """Decisão como objeto JSON; outra coisa (ilegível, lista, número) é DecisaoInvalida, pelo contrato da CLI."""
+    """Decisão como objeto JSON, lida pela pasta do projeto conferida, sem seguir ligação nem travar num FIFO (POR-03);
+    outra coisa (ilegível, lista, número) é DecisaoInvalida, pelo contrato da CLI."""
     try:
-        d = json.loads(Path(arquivo).read_text(encoding="utf-8"))
+        d = json.loads(disco.ler_na_pasta(arquivo, disco.TETO_DECISAO).decode("utf-8"))
     except ValueError:
         d = None
     if not isinstance(d, dict):
@@ -563,17 +559,19 @@ def ler_decisao(arquivo) -> dict:
     return d
 
 
-def ler_registro(registro) -> list[dict]:
-    """Linhas de `registro.jsonl`. Linha que não é objeto JSON: DecisaoInvalida (não se pula: sumiria com uma decisão)."""
+def ler_registro(registro, bruto: bytes | None = None) -> list[dict]:
+    """Linhas de `registro.jsonl`: os `bruto` já lidos por quem chama, ou lido aqui pela pasta do projeto conferida,
+    sem seguir ligação nem travar num FIFO e até o teto (revisão de segurança da 1.7.10, POR-02). Linha que não é
+    objeto JSON em UTF-8: DecisaoInvalida (não se pula: sumiria com uma decisão). Acima do teto de linhas, recusa
+    antes de analisar qualquer uma: o kit analisa com a vez do banco do porteiro na mão (POR-03, revisão 1)."""
     reg = Path(registro)
-    if not reg.is_file():
-        return []
+    bruto = disco.ler_na_pasta(reg, disco.TETO_REGISTRO, ausente=b"") if bruto is None else bruto
     linhas = []
-    for numero, bruta in enumerate(reg.read_text(encoding="utf-8").splitlines(), 1):
+    for numero, bruta in enumerate(disco.linhas_do_registro(bruto, reg), 1):
         if not bruta.strip():
             continue
         try:
-            linha = json.loads(bruta)
+            linha = json.loads(bruta.decode("utf-8"))
         except ValueError:
             linha = None
         if not isinstance(linha, dict):
@@ -631,7 +629,8 @@ def registrar_decisao(con, principal: Principal, pasta_projeto, verificacao: dic
     duas cópias, "já registrada"; faltando uma (queda no meio), completa só a que falta. Entrar na trilha exige que a
     decisão citada em `anterior_sha256` ainda seja a vigente (`fora_de_ordem`), conferido e gravado na mesma
     transação. Tipo que a política dispensa de assinatura vale só registrado por quem pode aprovar no projeto e é o
-    próprio assinante."""
+    próprio assinante. O registro é lido e acrescido pela pasta decisoes/ conferida, aberta uma vez: ligação, vínculo
+    físico ou FIFO no registro recusa antes da trilha (#11), e a linha não vai para fora do projeto (POR-01)."""
     if not verificacao.get("valida"):
         raise DecisaoInvalida("decisão inválida não se registra: " + str(verificacao.get("motivo")))
     pasta = Path(pasta_projeto)
@@ -645,34 +644,33 @@ def registrar_decisao(con, principal: Principal, pasta_projeto, verificacao: dic
             raise AccessDenied("decisão sem assinatura vale só registrada pelo próprio assinante",
                                action="approve", resource=resource_project(projeto))
     sha = verificacao["sha256_decisao"]
-    reg = conferir_para_anexar(contained(pasta, pasta / "decisoes") / REGISTRO)  # ligação: recusa antes da trilha (#11)
-    no_registro = any(linha.get("sha256_decisao") == sha for linha in ler_registro(reg))
-    na_trilha = any(p.get("sha256_decisao") == sha for p in registros_na_trilha(con, projeto))
-    if no_registro and na_trilha:
-        return {"registro": "já registrada", "registro_arquivo": str(reg)}
-    assinatura = verificacao.get("assinatura") or {}
-    linha = {k: verificacao[k] for k in ("decisao_id", "tipo", "task_id", "sha256_decisao", "entrega")}
-    linha.update(impressao_digital=assinatura.get("impressao_digital"),
-                 sha256_assinatura=assinatura.get("sha256_assinatura"),
-                 registrado_em=agora or time.strftime("%Y-%m-%dT%H:%M:%S%z"), registrado_por=principal.principal_id)
-    linha.update({k: verificacao[k] for k in ("preparado_em", "anterior_sha256", "anterior_evento")
-                  if verificacao.get(k) is not None})
-    if sem_assinatura:
-        linha["forca"] = "sem-assinatura"
-    if not na_trilha:
-        with transaction(con):  # conferir e gravar juntos: outra decisão não entra no meio (E11R-05)
-            motivo = fora_de_ordem(con, projeto, verificacao)
-            if motivo:
-                raise DecisaoInvalida(motivo, decisao_id=verificacao.get("decisao_id"))
-            events.emit(con, EVENTO_SEM_ASSINATURA if sem_assinatura else EVENTO_ASSINADA, project_id=projeto,
-                        subject=principal.principal_id, task_id=verificacao["task_id"],
-                        payload={k: linha[k] for k in ("decisao_id", "tipo", "sha256_decisao", "sha256_assinatura",
-                                                       "impressao_digital", "preparado_em", "anterior_sha256",
-                                                       "anterior_evento")
-                                 if k in linha})
-    if not no_registro:
-        reg.parent.mkdir(parents=True, exist_ok=True)
-        anexar(reg, (json.dumps(linha, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
+    with disco.Pasta(pasta, ("decisoes",)) as dec:
+        reg, bruto = dec.caminho / REGISTRO, dec.ler(REGISTRO, disco.TETO_REGISTRO) or b""
+        no_registro = any(li.get("sha256_decisao") == sha for li in ler_registro(reg, bruto))
+        na_trilha = any(p.get("sha256_decisao") == sha for p in registros_na_trilha(con, projeto))
+        if no_registro and na_trilha:
+            return {"registro": "já registrada", "registro_arquivo": str(reg)}
+        assinatura = verificacao.get("assinatura") or {}
+        linha = {k: verificacao[k] for k in ("decisao_id", "tipo", "task_id", "sha256_decisao", "entrega")}
+        linha.update(impressao_digital=assinatura.get("impressao_digital"),
+                     sha256_assinatura=assinatura.get("sha256_assinatura"), registrado_por=principal.principal_id,
+                     registrado_em=agora or time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+        linha.update({k: verificacao[k] for k in ("preparado_em", "anterior_sha256", "anterior_evento")
+                      if verificacao.get(k) is not None})
+        if sem_assinatura:
+            linha["forca"] = "sem-assinatura"
+        if not na_trilha:
+            with transaction(con):  # conferir e gravar juntos: outra decisão não entra no meio (E11R-05)
+                motivo = fora_de_ordem(con, projeto, verificacao)
+                if motivo:
+                    raise DecisaoInvalida(motivo, decisao_id=verificacao.get("decisao_id"))
+                events.emit(con, EVENTO_SEM_ASSINATURA if sem_assinatura else EVENTO_ASSINADA, project_id=projeto,
+                            subject=principal.principal_id, task_id=verificacao["task_id"],
+                            payload={k: linha[k] for k in ("decisao_id", "tipo", "sha256_decisao", "sha256_assinatura",
+                                                           "impressao_digital", "preparado_em", "anterior_sha256",
+                                                           "anterior_evento") if k in linha})
+        if not no_registro:
+            dec.anexar(REGISTRO, (json.dumps(linha, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
     return {"registro": "registrada agora", "registro_arquivo": str(reg), "linha": linha}
 
 
@@ -711,6 +709,8 @@ def concluir_tarefa(raiz, con, principal: Principal, arquivo, *, ancora, politic
     pasta = project_root(raiz, con, principal, do_arquivo, action="write")
 
     def recusa(v: dict) -> str | None:
+        if not v.get("valida") or v.get("tipo") != "aceite":  # o registro só é lido para um aceite válido (POR-02)
+            return apto_a_concluir(v, None)
         trilha = registros_na_trilha(con, do_arquivo, v.get("task_id"))
         return apto_a_concluir(v, decisao_vigente(pasta / "decisoes" / REGISTRO, v.get("task_id")),
                                trilha[-1].get("sha256_decisao") if trilha else None)
@@ -719,7 +719,7 @@ def concluir_tarefa(raiz, con, principal: Principal, arquivo, *, ancora, politic
     motivo = recusa(r)
     if motivo:
         return {"concluida": False, "motivo": motivo, "decisao_id": r.get("decisao_id"), "task_id": r.get("task_id")}
-    coord = Coordinator(raiz, con, principal, do_arquivo)
+    coord = disco.CoordenadorDoAceite(raiz, con, principal, do_arquivo)  # a saída da etapa pela pasta conferida
     coord.get_task(r["task_id"])  # tarefa deste projeto (alheia responde como inexistente)
 
     def conferir_aceite(ctx):

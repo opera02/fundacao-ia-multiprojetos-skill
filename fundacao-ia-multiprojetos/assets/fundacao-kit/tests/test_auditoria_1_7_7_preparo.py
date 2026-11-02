@@ -216,8 +216,8 @@ class TestN12PreparoPrivado(FoundationTestCase):
         fora = self.fora_com_canario("fora-backup", "segredo-alvo.md")
         real, trocado = backup._files, []
 
-        def envolver(root, ligacoes=None, extras=()):
-            for item in real(root, ligacoes, extras):
+        def envolver(root, ligacoes=None, extras=(), podar=None):
+            for item in real(root, ligacoes, extras, podar):
                 caminho = item[0] if isinstance(item, tuple) else item
                 if not trocado and caminho.name == alvo.name:
                     trocar_pasta_por_ligacao(caminho.parent, fora)

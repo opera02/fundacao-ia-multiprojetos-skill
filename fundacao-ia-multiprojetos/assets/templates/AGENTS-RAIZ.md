@@ -1,7 +1,7 @@
 # Fundação de IA — instruções para agentes (Claude Code, Codex e outros)
 
 Esta pasta (`{{RAIZ}}`) é a raiz de uma fundação de IA multiprojetos.
-Gerado pela skill `fundacao-ia-multiprojetos` {{VERSAO}}. Os hooks e as permissões do host garantem os limites;
+Gerado pela skill `fundacao-ia-multiprojetos` {{VERSAO}}. Os limites vêm dos hooks e das permissões do host;
 este arquivo orienta.
 
 ## Antes de agir

@@ -79,7 +79,8 @@ commit 1cfe254, Apache-2.0); texto próprio.] Lição é o que uma tarefa ensino
 O serviço filtra projeto, autorização, estado e revisão vigente antes de entregar uma busca por gatilho.
 As operações `memoria licao propor|consultar` da CLI passam pela mesma identidade do lançador; uma proposta
 não se aprova automaticamente. A mudança do CHECK e o índice FTS5 exigem a migração 5; antes de atualizar ou
-retornar uma fundação em uso, leia [compatibilidade e retorno](../atualizacao-1.7.9.md).
+retornar uma fundação em uso, leia [compatibilidade e retorno](../atualizacao-1.7.9.md). A 1.7.10 não muda o esquema
+do banco: [atualização para a 1.7.10](../atualizacao-1.7.10.md).
 
 ## Memória automática do host
 [Decisão; everything-claude-code, proposta 3 — ideia adaptada; texto próprio.] O Claude Code guarda notas que ele
