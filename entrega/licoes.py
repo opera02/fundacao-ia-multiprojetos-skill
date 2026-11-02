@@ -36,7 +36,8 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[1]
 PASTA = ("entrega", "licoes")
 INDICE = "LICOES.md"
-NOME = re.compile(r"^MUDANCAS-(\d+\.\d+\.\d+)\.md$")
+VERSAO = r"\d+\.\d+\.\d+(?:\.\d+)?"  # x.y.z ou, numa correção de uma versão liberada, x.y.z.w (1.7.10.1)
+NOME = re.compile(rf"^MUDANCAS-({VERSAO})\.md$")
 COLUNAS = ("#", "Componente", "O que mudou", "Motivo observado (onde)", "Efeito observado (onde)", "Veredito")
 VEREDITOS = ("ajudou", "piorou", "sem efeito observado", "confundido")
 CAMPOS = ("Gatilho", "Lição", "Evidência", "Confiança")
@@ -228,7 +229,7 @@ def ler_mudancas(raiz: Path, arquivo: Path, problemas: list[str]) -> dict | None
         for m in rx.finditer(texto):
             problemas.append(f"{nome}: {motivo} ({m.group(0)[:30]}): a pasta vai para a cópia pública")
     partes = secoes(texto)
-    m = re.search(r"(?m)^Versão:\s*(\d+\.\d+\.\d+)\b", partes[""])
+    m = re.search(rf"(?m)^Versão:\s*({VERSAO})\b", partes[""])
     if not m or m.group(1) != versao:
         problemas.append(f"{nome}: a linha 'Versão: {versao}' precisa vir antes da tabela, igual ao nome do arquivo")
     if "Mudanças" not in partes or "Lições" not in partes:

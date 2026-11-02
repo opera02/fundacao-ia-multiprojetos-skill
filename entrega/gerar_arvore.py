@@ -29,6 +29,7 @@ FINALIDADE = {
     "assets/hooks/sinais_sessao.py": "Lembrete de compactação e linha de status com metadados da sessão, sem ler conteúdo do projeto.",
     "evals/juiz_codex.py": "P7 local: prepara pacote cego com limites, valida notas e gera recibo de concordância; sem execução de modelo.",
     "references/atualizacao-1.7.9.md": "Compatibilidade da migração 5, retorno por cópia anterior e adoção explícita do livro assinado.",
+    "references/atualizacao-1.7.10.1.md": "Correção 1.7.10.1 (kit 1.7.10 igual): o relatório reprovado do canário como revogação e o aceite de risco assinado pelo titular por projeto e por relatório, o que muda, a ordem, o retorno e os limites.",
     "references/atualizacao-1.7.10.md": "Atualização para a 1.7.10 sem migração: compatibilidade, ordem com o preparo do host e o canário, o que o desfazer devolve e o que não volta, limites e o que fica para a 1.7.11.",
     "scripts/verificar_fundacao.py": "Conferências de rotina com preflight de leitura (só a ligação do instalador aceita; nome de plugin com secret vira aviso, sem leitura; marcadores do sandbox na raiz), estados explícitos e saída nova sem sobrescrita.",
     "SKILL.md": "Ponto de entrada: finalidade, acionamento, seleção do fluxo (A/B/C), regras comuns, autonomia, retomada, critérios de conclusão e mapa de referências.",

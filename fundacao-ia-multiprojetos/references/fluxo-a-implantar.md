@@ -420,8 +420,10 @@ novo; os passos 4 e 5, e o canário com o perfil novo, depois de cada atualizaç
    com o mesmo Claude Code fixado (versão e SHA-256). Só com `conclusao.confina_comandos: true` (código 0), o titular o
    instala rodando de novo o passo 5 com `--canario <relatório>` (só o relatório que o ensaio da skill instalada gravou
    na casa dele, nunca um arquivo de `projects/`): o relatório vai para a área do titular, e só então a
-   ficha de aberturas de um projeto é aplicada. Com `false` ou `null`, não instale: as aberturas ficam fechadas, o
-   isolamento continua lógico, e o resultado vai para o checklist e para a RETOMADA do projeto. O canário vem antes de
+   ficha de aberturas de um projeto é aplicada. Com `false` ou `null` (1.7.10.1), o mesmo passo instala o relatório
+   como revogação: as aberturas ficam fechadas, salvo no projeto em que o titular assinar o aceite de risco desse
+   relatório ([correção 1.7.10.1](atualizacao-1.7.10.1.md)); o isolamento continua lógico, e o resultado vai para o
+   checklist e para a RETOMADA do projeto. O canário vem antes de
    qualquer dado real: se os comandos não ficarem confinados, a sessão de um projeto também pode gravar na pasta do
    Windows do titular, por `/mnt/c` (um atalho na pasta Inicializar, por exemplo), com efeito no próximo logon (risco
    deduzido das sondas, não medido).

@@ -288,11 +288,12 @@ class PortaoNoPreparo(unittest.TestCase):
                 self.assertFalse(rel["canario"]["aprovado"], rel["canario"])
                 self.assertEqual(self.ler("settings.wsl.json")["sandbox"]["network"]["allowedDomains"], [])
 
-    def test_instalar_canario_recusa_o_que_nao_prova_e_nao_grava(self):
+    def test_instalar_canario_recusa_o_que_nao_e_relatorio_real_e_nao_grava(self):
+        """Só o que não é relatório real do ensaio é recusado. Desde a 1.7.10.1 (pedido do titular de 02/11/2026,
+        DECISAO-007), o relatório real que não prova o confinamento vai como revogação: ver o teste abaixo."""
         casos = {"simulação": {"simulado": True},
-                 "comandos não confinados": {"conclusao": {"forma": "ext4", "confina_comandos": False,
-                                                           "motivo": "leitura_outro_projeto falhou"}},
-                 "outro esquema": {"schema_version": "fundacao.ensaio_isolamento_simulado/1"}}
+                 "outro esquema": {"schema_version": "fundacao.ensaio_isolamento_simulado/1"},
+                 "sem a conclusão": {"conclusao": {"forma": None}}}
         for nome, mudancas in casos.items():
             with self.subTest(nome):
                 r = instalar_canario(self.skill, self.base, relatorio_de_canario(self.m, self.raiz, self.claude,
@@ -300,6 +301,33 @@ class PortaoNoPreparo(unittest.TestCase):
                 self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
                 self.assertIn("recusado", r.stdout)
                 self.assertFalse(self.canario.exists())
+
+    def test_relatorio_real_reprovado_vai_como_revogacao_e_fecha_a_ficha_aprovada(self):
+        """1.7.10.1 (a direção do CAN-2 do lote B): o relatório real com false ou null substitui o aprovado da mesma
+        versão do Claude Code; o lançador recusa abrir até o preparo, que fecha as aberturas (sem aceite de risco)."""
+        r = instalar_canario(self.skill, self.base, relatorio_de_canario(self.m, self.raiz, self.claude))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(self.instalar()["canario"]["aprovado"])
+        for confina in (False, None):
+            with self.subTest(confina=confina):
+                forma = relatorio_de_canario(self.m, self.raiz, self.claude)["forma"]
+                ruim = relatorio_de_canario(self.m, self.raiz, self.claude, conclusao={
+                    "forma": forma, "confina_comandos": confina, "motivo": "leitura_outro_projeto falhou"},
+                    data=f"2026-11-02T00:00:0{int(confina is None)}Z")
+                r = instalar_canario(self.skill, self.base, ruim)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                saida = json.loads(r.stdout)
+                self.assertEqual((saida["aprovado"], saida["acao"]), (False, "atualizar"), saida)
+                self.assertIn("revogação", saida["proximo_passo"])
+                self.assertEqual(sha(self.canario), sha(self.base / "relatorio-canario.json"))
+                if confina is False:  # o lançador da área preparada com o aprovado recusa abrir
+                    res = self.m.conferir_abertura(self.raiz, "caso-real", self.area)
+                    self.assertFalse(res["ok"])
+                rel = self.instalar()
+                self.assertFalse(rel["canario"]["aprovado"], rel["canario"])
+                self.assertTrue(rel["canario"]["reprovado"]["sha256"], rel["canario"])
+                self.assertEqual(self.ler("settings.wsl.json")["sandbox"]["network"]["allowedDomains"], [])
+                self.assertTrue(self.m.conferir_abertura(self.raiz, "caso-real", self.area)["ok"])
 
     @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "processo root: a recusa sem root não se aplica")
     def test_sem_root_e_sem_ensaio_recusa(self):

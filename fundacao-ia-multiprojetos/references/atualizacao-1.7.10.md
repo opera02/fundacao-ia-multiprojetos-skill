@@ -106,7 +106,8 @@ simulação como execução real.
    antes de qualquer ficha e de dado real numa sessão do Ubuntu: se a escrita fora do projeto vazar em `/mnt/e` (o
    canário mede), um comando da sessão poderia gravar também no perfil do Windows, por `/mnt/c`, algo que rode no
    próximo logon (risco deduzido das sondas, não medido). Com `false` ou `null`, tudo fica fechado, e o isolamento,
-   lógico.
+   lógico. Desde a 1.7.10.1, esse relatório também se instala, como revogação, e a ficha de um projeto só vale com o
+   aceite de risco do titular ([correção 1.7.10.1](atualizacao-1.7.10.1.md)).
 7. **Só então, as fichas.** A sessão prepara a ficha:
 
    ```

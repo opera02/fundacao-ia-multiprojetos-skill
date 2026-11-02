@@ -10,7 +10,9 @@
 #     de / e sem rodar os scripts do pacote; documentação oficial conferida em 31/10/2026), só com --seccomp-versao;
 #     sem ele, o relatório diz "sockets sem filtro";
 #  1d. com --canario <relatório>, o relatório do ensaio real do canário (scripts/ensaio_isolamento_wsl.py) vai para a
-#     área do titular (sudo; preparo_host.py instalar-canario): sem ele, nenhuma ficha de aberturas é aplicada;
+#     área do titular (sudo; preparo_host.py instalar-canario): sem ele, nenhuma ficha de aberturas é aplicada; o real
+#     que não aprova (false ou null) vai como revogação da mesma versão do Claude Code, o preparo dos projetos segue e
+#     só o projeto com o aceite de risco do titular para esse relatório (fundacao_titular.py aceitar-risco) abre;
 #  2. /etc/wsl.conf com um só bloco [interop] desligado (enabled=false, appendWindowsPath=false), sem repetir blocos
 #     (sudo; cópia do anterior ao lado); vale depois de reiniciar o Ubuntu (wsl --terminate, no Windows);
 #  3. Claude Code fixado: cópia da versão em ~/.local/share/fundacao-ia/claude/<versão>/claude, que a limpeza
@@ -67,7 +69,8 @@ Uso: bash preparar-wsl.sh --raiz "/mnt/d/IA/fundacao" --projeto <id> [--projeto 
        [--lancador <lançador antigo>]
 --titular é a sua identidade, a mesma do -Titular do preparar-maquina.ps1: ela assina as decisões que o porteiro
 registra. --canario instala o relatório do ensaio real (ensaio_isolamento_wsl.py rodar): sem ele, nenhuma abertura da
-ficha vale. --simular só mostra o plano (nada é alterado). Sem --claude-versao, vale a versão para a qual
+ficha vale; reprovado, ele revoga e só vale no projeto com o seu aceite de risco assinado
+(fundacao_titular.py aceitar-risco). --simular só mostra o plano (nada é alterado). Sem --claude-versao, vale a versão para a qual
 ~/.local/bin/claude aponta. O hash oficial de cada versão está em platforms.linux-x64.checksum do manifesto
 https://downloads.claude.ai/claude-code-releases/<versão>/manifest.json, assinado (manifest.json.sig) pela chave de
 lançamento da Anthropic, impressão digital 31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE.
@@ -343,7 +346,10 @@ if [ -f "$LANCADOR" ] && ! grep -qF "$AVISO_ANTIGO" "$LANCADOR" 2>/dev/null; the
   fi
 fi
 
-# 1d. Relatório do canário (contratos do lote 2, §0): sem ele aprovado, a ficha de nenhum projeto é aplicada
+# 1d. Relatório do canário (contratos do lote 2, §0): sem ele aprovado, a ficha de nenhum projeto é aplicada. Desde a
+# 1.7.10.1, o relatório real que não aprova (false ou null) vai como revogação e substitui o aprovado da mesma versão;
+# o preparo dos projetos abaixo segue e fecha as aberturas, salvo no projeto com o aceite de risco do titular para
+# esse relatório. Só o arquivo que não é relatório real do ensaio é recusado (código 1, sem os projetos).
 if [ -n "$CANARIO" ]; then
   args_canario=(instalar-canario --relatorio "$CANARIO")
   if [ "$ENSAIO" = 1 ]; then args_canario+=(--area-raiz "$AREA_RAIZ"); fi
@@ -354,12 +360,14 @@ if [ -n "$CANARIO" ]; then
     echo "Instalando o relatório do canário na área do titular (dono root): o sudo vai pedir a sua senha do Linux."
     saida=$(sudo "$PY" -I -B "$AJUDANTE" "${args_canario[@]}"); r=$?
   fi
-  if [ "$r" = 0 ] && printf '%s' "$saida" | grep -q '"acao": "igual"'; then
+  if [ "$r" != 0 ]; then
+    relata erro canario "o relatório do canário foi recusado (não é o relatório real do ensaio): $saida"
+  elif printf '%s' "$saida" | grep -q '"aprovado": false'; then
+    relata revogar canario "o relatório real não aprova (false ou null): vai como revogação; o preparo dos projetos abaixo fecha as aberturas, salvo onde houver o seu aceite de risco deste relatório: $saida"
+  elif printf '%s' "$saida" | grep -q '"acao": "igual"'; then
     relata igual canario "relatório do canário já na área do titular: $saida"
-  elif [ "$r" = 0 ]; then
-    relata criar canario "relatório do canário conferido e gravado na área do titular: $saida"
   else
-    relata erro canario "o relatório do canário foi recusado (só o ensaio real com os comandos confinados vale): $saida"
+    relata criar canario "relatório do canário conferido e gravado na área do titular: $saida"
   fi
 else
   relata aviso canario 'sem --canario: nenhuma abertura da ficha vale até o titular rodar o ensaio (scripts/ensaio_isolamento_wsl.py) e instalar o relatório'

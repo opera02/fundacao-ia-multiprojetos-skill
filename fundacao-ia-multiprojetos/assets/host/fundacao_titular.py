@@ -6,6 +6,8 @@ desenho: "toda cerimônia do titular passa por um utilitário fixo que mostra o 
       [--versao N] [--chave ARQ]
   <python fixado> -I -B -S <cópia protegida>/assets/host/fundacao_titular.py verificar-ficha --raiz R --projeto P
       [--versao N]
+  <python fixado> -I -B -S <cópia protegida>/assets/host/fundacao_titular.py aceitar-risco --raiz R --projeto P
+      --canario RELATORIO [--vigencia-ate AAAA-MM-DD] [--chave ARQ]
 
 (-S: nenhum .pth de site-packages roda antes da ferramenta, que só usa a biblioteca padrão; -I não implica -S. Item I13
 da integração e revisão da integração, defeito 8.)
@@ -57,6 +59,14 @@ para a cópia protegida.
    e o `.sig` na caixa de entrada `<raiz>/.claude/projetos/<p>/ficha/`, sem seguir ligação e sem sobrescrever outra
    versão. No Ubuntu, o preparo do projeto (sudo) a instala depois na área do titular, de dono root.
 `verificar-ficha`: a ficha em vigor na caixa de entrada e, no Linux, na área do titular (ou a da `--versao`), em JSON.
+`aceitar-risco` (1.7.10.1; DECISAO-007 da fundação): com o canário reprovado (false ou null), o titular aceita que a
+ficha deste projeto valha mesmo assim. A ferramenta lê o relatório real do ensaio que ele indica (o mesmo que ele passa
+ao `preparar-wsl.sh --canario`), monta o aceite só com código fixo (o SHA-256 do relatório, o Claude Code, a forma de
+caminho, os itens que falharam ou não mediram e a lista fixa de riscos; nada da sessão), mostra tudo, exige o nome do
+projeto digitado, assina no namespace da ficha (`fundacao-abertura`; o esquema `fundacao.aceite_risco_canario/1` não
+serve de ficha nem a ficha de aceite) e grava em `<raiz>/.claude/projetos/<p>/risco/`. O preparo do Ubuntu o instala na
+área do titular e só o usa com o mesmo relatório instalado, no mesmo projeto, até a vigência (até 180 dias; proposta, 90).
+O aceite não abre nada sozinho: abre só o que a ficha assinada lista, e o isolamento continua lógico.
 
 Códigos: 0 assinada (ou já assinada, igual), ou vale a ficha que conta neste sistema (no Linux, a instalada na área do
 titular; no Windows, a da caixa de entrada); 1 o titular não confirmou (nada gravado); 2 recusada (nada gravado); 3 a
@@ -71,14 +81,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import ntpath
 import os
+import posixpath
+import re
 import stat
 import subprocess
 import sys
 import tempfile
 import traceback
 import unicodedata
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -115,6 +128,30 @@ AMBIENTE_DO_KEYGEN = {"nt": ("SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "USERPROFILE
                              "USERDOMAIN", "TEMP", "TMP", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA", "COMPUTERNAME"),
                       "posix": ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR")}
 ESPERA_FINAL = "Tecle Enter para terminar (a janela aberta só para a ferramenta fecha em seguida). "
+# Aceite de risco do canário (1.7.10.1): os nomes do preparo do host (assets/host/preparo_host.py), com teste de
+# igualdade; a forma de caminho do relatório é a mesma conta do preparo (_forma_do_relatorio).
+ESQUEMA_ACEITE = "fundacao.aceite_risco_canario/1"
+ACEITE_NOME = "aceite-risco-canario.json"
+PASTA_DO_ACEITE = "risco"
+PRAZO_DO_ACEITE, PRAZO_PROPOSTO = 180, 90  # dias desde o aceite: o teto e a proposta
+# A versão do aceite: 1 + a maior vista na caixa de entrada e, no Linux, na área do titular (o preparo não instala um
+# aceite de versão menor que a instalada: um aceite trocado ou mais curto não é desfeito por uma cópia antiga).
+AREA_DO_ACEITE = "/etc/fundacao-ia/projetos/{projeto}/risco"
+VERSAO_MAXIMA_ACEITE = 999999
+ESQUEMA_CANARIO = "fundacao.ensaio_isolamento/1"
+TETO_RELATORIO = 2 * 1024 * 1024
+FS_DRVFS = ("9p", "drvfs", "v9fs")
+ITEM_DO_CANARIO = re.compile(r"[a-z0-9_]{1,64}")
+RISCOS = (
+    "O isolamento entre projetos fica só lógico (regras, hooks e porteiro): um comando da sessão deste projeto pode "
+    "ler os outros projetos, a pasta state/ e o que a sua conta do Ubuntu lê no disco do Windows (/mnt/c, /mnt/d e "
+    "/mnt/e).",
+    "Com a internet aberta para os sites da ficha, o que a sessão ler pode sair para esses sites.",
+    "Um comando da sessão pode gravar fora do projeto, inclusive na sua pasta do Windows por /mnt/c: um atalho na pasta "
+    "Inicializar rodaria no seu próximo logon, e um .wslconfig com kernel= trocaria o kernel do WSL. Isso alcançaria "
+    "todos os projetos.",
+    "Um texto malicioso num documento basta para pedir isso à sessão.",
+)
 
 
 class Recusa(Exception):
@@ -396,7 +433,10 @@ def _mostrar_ficha(escrever, projeto: str, versao: int, ficha: dict, avisos: lis
         escrever(f"  Aviso ({aviso.get('dominio') or aviso['campo']}): {aviso['motivo']}")
     if aviso_da_copia:
         escrever("Atenção: " + aviso_da_copia)
-    escrever("Importante: " + k.aberturas.HONESTIDADE)
+    escrever("Importante: " + k.aberturas.HONESTIDADE + " Exceção desde a 1.7.10.1: com o canário reprovado, esta ficha "
+             "também vale se houver o seu aceite de risco vigente deste projeto para o relatório instalado "
+             "(aceitar-risco; quem confere é o preparo, e o relatório dele diz se ela vale sob o aceite); sem ele, nada "
+             "abre.")
 
 
 def _ficha_preparada(raiz: Path, projeto: str, versao, hoje: date, k: SimpleNamespace) -> tuple:
@@ -536,16 +576,257 @@ def verificar_ficha(raiz, projeto: str, *, versao: int | None = None, saida=None
     return 0 if conta["valida"] else 3
 
 
+# ------------------------------------------------------------------ aceite de risco do canário (1.7.10.1)
+def forma_do_relatorio(relatorio: dict) -> str | None:
+    """A forma de caminho que o relatório prova ('ext4' ou 'drvfs:/mnt/<x>'), pela mesma conta do preparo do host
+    (preparo_host._forma_do_relatorio, com teste de igualdade); outra: None."""
+    forma, fs = relatorio.get("forma"), relatorio.get("sistema_de_arquivos")
+    if not isinstance(forma, str) or not isinstance(fs, str):
+        return None
+    if forma == "ext4":
+        return "ext4" if fs == "ext4" else None
+    m = re.match(r"^drvfs:(/mnt/[a-z]/[^\n\r\0]*)$", forma)
+    n = re.match(r"^/mnt/([a-z])(?:/|$)", posixpath.normpath(m.group(1))) if m and fs in FS_DRVFS else None
+    return f"drvfs:/mnt/{n.group(1)}" if n else None
+
+
+def resumo_do_relatorio(relatorio, bruto: bytes) -> dict:
+    """O `canario` do aceite: do relatório real do ensaio (`fundacao.ensaio_isolamento/1`, não simulado), do Claude
+    Code com versão e SHA-256, numa forma de caminho que o canário prova (a mesma no topo e na conclusão) e que NÃO
+    aprova (conclusão false ou null: aprovado, o aceite não é preciso). Dos itens, só os ids na forma [a-z0-9_], por
+    veredito, e os itens em que o canário apareceu (vazamento medido). Fora disso: Recusa."""
+    if not isinstance(relatorio, dict) or relatorio.get("schema_version") != ESQUEMA_CANARIO:
+        raise Recusa(f"o arquivo não é um relatório do canário ({ESQUEMA_CANARIO})")
+    if relatorio.get("simulado") is not False:
+        raise Recusa("relatório de simulação: só o ensaio real conta")
+    claude = relatorio.get("claude") if isinstance(relatorio.get("claude"), dict) else {}
+    versao, sha = claude.get("versao"), claude.get("sha256")
+    if not (isinstance(versao, str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", versao) and isinstance(sha, str)
+            and re.fullmatch(r"[0-9a-f]{64}", sha)):
+        raise Recusa("relatório sem a versão e o SHA-256 do Claude Code que o canário rodou")
+    conclusao = relatorio.get("conclusao") if isinstance(relatorio.get("conclusao"), dict) else {}
+    confina = conclusao.get("confina_comandos", 0)
+    if confina is True:
+        raise Recusa("o canário aprovou (confina_comandos: true): o aceite de risco não é preciso; instale o relatório "
+                     "com o preparar-wsl.sh --canario")
+    if confina is not False and confina is not None:
+        raise Recusa("relatório sem a conclusão do ensaio (conclusao.confina_comandos: false ou null)")
+    forma = forma_do_relatorio(relatorio)
+    if forma is None or conclusao.get("forma", relatorio.get("forma")) != relatorio.get("forma"):
+        raise Recusa("relatório com uma forma de caminho que o canário não prova (só ext4 e drvfs:/mnt/<x>)")
+    itens = [i for i in (relatorio.get("itens") if isinstance(relatorio.get("itens"), list) else [])
+             if isinstance(i, dict) and isinstance(i.get("id"), str) and ITEM_DO_CANARIO.fullmatch(i["id"])]
+
+    def ids(condicao) -> list[str]:
+        return sorted({i["id"] for i in itens if condicao(i)})[:50]
+    return {"relatorio_sha256": hashlib.sha256(bruto).hexdigest(), "claude_versao": versao, "claude_sha256": sha,
+            "forma": forma, "confina_comandos": confina, "data": str(relatorio.get("data") or "")[:40],
+            "falhou": ids(lambda i: i.get("veredito") == "falhou"),
+            "nao_medido": ids(lambda i: i.get("veredito") == "nao_medido"),
+            "vazou": ids(lambda i: isinstance(i.get("canario"), dict) and (i["canario"].get("apareceu") is True or
+                                                                           i["canario"].get("na_transcricao") is True))}
+
+
+def _vigencia_do_aceite(hoje: date, pedida: str | None) -> date:
+    """A vigência: a pedida (AAAA-MM-DD, de hoje até PRAZO_DO_ACEITE dias) ou, sem pedido, hoje + PRAZO_PROPOSTO."""
+    if pedida is None:
+        return hoje + timedelta(days=PRAZO_PROPOSTO)
+    try:
+        data = date.fromisoformat(pedida) if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", str(pedida)) else None
+    except ValueError:
+        data = None
+    if data is None or data < hoje or (data - hoje).days > PRAZO_DO_ACEITE:
+        raise Recusa(f"--vigencia-ate fora do prazo: uma data AAAA-MM-DD de hoje até {PRAZO_DO_ACEITE} dias depois")
+    return data
+
+
+def onde_a_sessao_grava(real: str, raiz_real: str, posix: bool) -> bool:
+    """O relatório (caminho resolvido) fica onde as sessões gravam: dentro da raiz da fundação ou, no Ubuntu, num disco
+    do Windows (/mnt/...), onde o sandbox não confina os comandos. A comparação ignora maiúsculas e minúsculas, como o
+    DrvFs e o Windows."""
+    modulo, separador = (posixpath, "/") if posix else (ntpath, "\\")
+    caminho, raiz = (modulo.normpath(c).casefold() for c in (real, raiz_real))
+    dentro = caminho == raiz or caminho.startswith(raiz.rstrip(separador) + separador)
+    return dentro or (posix and (caminho == "/mnt" or caminho.startswith("/mnt/")))
+
+
+def _so_versao(valor) -> int:
+    return valor if isinstance(valor, int) and not isinstance(valor, bool) and 0 <= valor <= VERSAO_MAXIMA_ACEITE else 0
+
+
+def _versao_do_aceite(arquivo: Path, k: SimpleNamespace, ancora) -> int:
+    """A versão de um aceite com a assinatura do titular conferida contra a âncora, ou 0: um aceite plantado pela
+    sessão, sem a assinatura, não conta (revisão de segurança da 1.7.10.1, R17101-ACE-4)."""
+    try:
+        bruto = k.disco.ler_arquivo(arquivo, 256 * 1024)
+        sig = k.disco.ler_arquivo(Path(str(arquivo) + ".sig"), 16 * 1024)
+        if not k.aberturas.conferir_assinatura(bruto, sig, ancora)["ok"]:
+            return 0
+        aceite = k.regras.carregar(bruto)
+    except (OSError, ValueError):
+        return 0
+    return _so_versao(aceite.get("versao")) if isinstance(aceite, dict) else 0
+
+
+def _maior_da_area(pasta: Path, k: SimpleNamespace) -> int:
+    """O `maior-versao` da área do titular no Ubuntu (de dono root), ou 0."""
+    try:
+        texto = k.disco.ler_arquivo(pasta / "maior-versao", 64).decode("ascii").strip()
+    except (OSError, ValueError):
+        return 0
+    return int(texto) if re.fullmatch(r"[0-9]{1,6}", texto) else 0
+
+
+def _versao_do_espelho(arquivo: Path, k: SimpleNamespace) -> int:
+    """A versão do aceite aplicado que o espelho da área (`<raiz>/.claude/projetos/<p>/hashes.json`, gravado pelo
+    preparo) mostra, ou 0. Só na forma do Windows, que não lê a área do titular do Ubuntu; a sessão grava o espelho,
+    então ele só serve de pista."""
+    try:
+        dados = json.loads(k.disco.ler_arquivo(arquivo, 4 * 1024 * 1024).decode("utf-8"))
+        return _so_versao((dados.get("aceite_risco") or {}).get("versao"))
+    except (OSError, ValueError, AttributeError, RecursionError):
+        return 0
+
+
+def _mostrar_aceite(escrever, projeto: str, aceite: dict, k: SimpleNamespace, aviso_da_copia: str | None) -> None:
+    """A tela antes da pergunta: tudo texto fixo desta ferramenta, com os dados do relatório (os ids já na forma
+    [a-z0-9_]; a data, escapada)."""
+    c, m = aceite["canario"], k.regras.mostrar
+
+    def lista(itens) -> str:
+        return ", ".join(itens) or "nenhum"
+    escrever(f"Aceite de risco do canário do projeto {projeto}, versão {aceite['versao']} (texto fixo desta ferramenta, "
+             "com os dados do relatório; uma versão nova substitui a anterior, e a anterior não volta).")
+    escrever("O canário desta máquina não aprovou o isolamento entre projetos:")
+    escrever(f"  Claude Code {c['claude_versao']} (SHA-256 {c['claude_sha256'][:12]}...), forma {c['forma']}, relatório "
+             f"de {m(c['data'])}")
+    escrever("  conclusão: confina_comandos = " + ("false (algum item falhou)" if c["confina_comandos"] is False
+                                                   else "null (o ensaio não provou)"))
+    escrever(f"  itens que falharam: {lista(c['falhou'])}")
+    escrever(f"  itens não medidos: {lista(c['nao_medido'])}")
+    escrever(f"  itens em que o canário apareceu (vazamento medido): {lista(c['vazou'])}")
+    escrever(f"  SHA-256 do relatório: {c['relatorio_sha256']}")
+    escrever(f"Com este aceite, a ficha de aberturas assinada de {projeto} passa a valer mesmo assim, só neste projeto. "
+             "O aceite não abre nada sozinho: abre só o que a ficha assinada lista.")
+    escrever("Riscos que você aceita:")
+    for i, risco in enumerate(aceite["riscos"], 1):
+        escrever(f"  {i}. {risco}")
+    escrever(f"Vale até {aceite['vigencia_ate']} (no próprio dia ainda vale). Antes disso, fecha sozinho com outro "
+             "relatório do canário instalado, outro Claude Code fixado ou outra forma de caminho da raiz. Os outros "
+             "projetos continuam fechados.")
+    if aviso_da_copia:
+        escrever("Atenção: " + aviso_da_copia)
+
+
+def _aceitar_risco(k, raiz: Path, projeto: str, canario: Path, vigencia_ate, chave, confirmar, escrever, ancora,
+                   hoje: date, copia: dict) -> int:
+    conferir_kit_da_raiz(raiz, k)
+    with k.disco.Pasta(raiz, ("projects", projeto)) as pasta_do_projeto:
+        if not pasta_do_projeto.existe:
+            raise Recusa(f"o projeto {projeto} não tem pasta nesta raiz")
+    if onde_a_sessao_grava(os.path.realpath(canario), os.path.realpath(raiz), os.name != "nt"):
+        raise Recusa("o relatório fica dentro da raiz da fundação ou num disco do Windows (/mnt/...), onde as sessões "
+                     "gravam: passe o que o ensaio do canário gravou na sua casa do Ubuntu (~/canario-drvfs.json)")
+    try:
+        bruto = k.disco.ler_arquivo(canario, TETO_RELATORIO)
+    except FileNotFoundError:
+        raise Recusa(f"relatório do canário ausente: {canario}") from None
+    except OSError as exc:
+        raise Recusa(f"relatório do canário recusado ({exc})") from None
+
+    def sem_repetir(pares):
+        saida = {}
+        for chave_json, valor in pares:
+            if chave_json in saida:
+                raise ValueError("chave repetida no relatório")
+            saida[chave_json] = valor
+        return saida
+    try:
+        relatorio = json.loads(bruto.decode("utf-8"), object_pairs_hook=sem_repetir)
+    except (ValueError, RecursionError) as exc:
+        raise Recusa(f"relatório do canário ilegível ({exc.__class__.__name__})") from None
+    partes = (".claude", "projetos", projeto, PASTA_DO_ACEITE)
+    vistas = [_versao_do_aceite(raiz.joinpath(*partes) / ACEITE_NOME, k, ancora)]
+    if os.name != "nt":  # no Ubuntu, a área do titular, de dono root, que guarda a maior versão instalada
+        area = Path(AREA_DO_ACEITE.format(projeto=projeto))
+        vistas += [_maior_da_area(area, k), _versao_do_aceite(area / ACEITE_NOME, k, ancora)]
+    else:
+        vistas.append(_versao_do_espelho(raiz.joinpath(*partes[:-1]) / "hashes.json", k))
+    versao = 1 + max(vistas)
+    if versao > VERSAO_MAXIMA_ACEITE:
+        raise Recusa("a versão do aceite chegou ao teto" + (
+            ": no Windows ela vem também do espelho da área na raiz, que a sessão grava; assine pela forma do Ubuntu, "
+            "que lê a área do titular" if os.name == "nt" else ": confira a área do titular"))
+    aceite = {"schema_version": ESQUEMA_ACEITE, "project_id": projeto, "versao": versao,
+              "aceito_em": hoje.isoformat(), "vigencia_ate": _vigencia_do_aceite(hoje, vigencia_ate).isoformat(),
+              "canario": resumo_do_relatorio(relatorio, bruto), "riscos": list(RISCOS)}
+    conteudo = k.regras.canonico(aceite)
+    chave = Path(chave).expanduser() if chave else Path.home() / ".ssh" / k.decisoes.CHAVE_DO_TITULAR
+    conferir_ancora_antes(chave, ancora, k, exigir_protegida=copia["protegida"])
+    exe = k.decisoes.ssh_keygen_do_sistema()
+    if not exe:
+        raise Recusa("OpenSSH do sistema ausente: a ferramenta só assina com o ssh-keygen do sistema")
+    _mostrar_aceite(escrever, projeto, aceite, k, copia.get("aviso"))
+    try:
+        resposta = confirmar(f"Para aceitar estes riscos em {projeto}, digite o nome do projeto ({projeto}) e Enter; "
+                             "qualquer outra coisa cancela: ")
+    except (EOFError, KeyboardInterrupt):
+        resposta = None
+    if (resposta or "").strip() != projeto:
+        escrever("Cancelado: nada foi assinado nem gravado.")
+        return 1
+    sig = assinar(exe, chave, conteudo, k.aberturas.NAMESPACE)
+    conferida = k.aberturas.conferir_assinatura(conteudo, sig, ancora)
+    if not conferida["ok"]:
+        raise Recusa(f"a assinatura feita não confere ({conferida['motivo']}): nada foi gravado")
+    with k.disco.Pasta(raiz, partes, criar=True) as pasta:
+        pasta.trocar(ACEITE_NOME, conteudo)
+        pasta.trocar(ACEITE_NOME + ".sig", sig)
+    escrever(f"Aceite assinado pela chave de {conferida['assinante']} ({conferida['impressao_digital']}) e gravado em "
+             f"{raiz.joinpath(*partes) / ACEITE_NOME}.")
+    escrever("Próximo passo: no Ubuntu, rode o preparo do projeto (preparar-wsl.sh) com --canario apontando para este "
+             "mesmo relatório (ou sem --canario, se ele já está instalado): o preparo instala o aceite na área do "
+             "titular e aplica a ficha assinada. Abra depois uma sessão nova do projeto.")
+    return 0
+
+
+def aceitar_risco(raiz, projeto: str, canario, *, vigencia_ate: str | None = None, chave=None, confirmar=None,
+                  saida=None, ancora=None, hoje: date | None = None) -> int:
+    """`aceitar-risco` (ver o módulo). `confirmar(texto) -> resposta`: injetado nos testes; sem ele, exige terminal
+    interativo e usa input(). `ancora` e `hoje`: para ensaio (a âncora padrão desta máquina, se existir, vence)."""
+    copia = conferir_copia()  # antes de importar o kit
+    k = kit()
+    saida = saida or sys.stdout
+    if not isinstance(projeto, str) or not k.regras.ID_PROJETO.fullmatch(projeto) or "--" in projeto:
+        raise Recusa("identificador de projeto inválido")
+    if confirmar is None:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            raise Recusa("sem terminal interativo: rode fora do Claude, num terminal (a ferramenta pede que você digite "
+                         "o nome do projeto)")
+        confirmar = input
+    try:
+        return _aceitar_risco(k, Path(os.path.abspath(raiz)), projeto, Path(os.path.expanduser(str(canario))),
+                              vigencia_ate, chave, confirmar, lambda texto="": saida.write(texto + "\n"), ancora,
+                              hoje or date.today(), copia)
+    except k.contracts.FundacaoError as exc:
+        raise Recusa(str(exc)) from None
+
+
 def construir_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fundacao_titular.py", allow_abbrev=False,
-                                description="Ferramenta fixa do titular: assina e confere a ficha de aberturas.")
+                                description="Ferramenta fixa do titular: assina e confere a ficha de aberturas e "
+                                            "assina o aceite de risco do canário.")
     sub = p.add_subparsers(dest="acao", required=True)
-    for nome in ("assinar-ficha", "verificar-ficha"):
+    for nome in ("assinar-ficha", "verificar-ficha", "aceitar-risco"):
         a = sub.add_parser(nome, allow_abbrev=False)
         a.add_argument("--raiz", required=True, help="raiz da fundação")
         a.add_argument("--projeto", required=True)
-        a.add_argument("--versao", type=int, help="padrão: a maior preparada (assinar) ou a em vigor (verificar)")
-        if nome == "assinar-ficha":
+        if nome == "aceitar-risco":
+            a.add_argument("--canario", required=True, help="o relatório real do ensaio (ex.: ~/canario-drvfs.json)")
+            a.add_argument("--vigencia-ate", help=f"AAAA-MM-DD, até {PRAZO_DO_ACEITE} dias (padrão: {PRAZO_PROPOSTO})")
+        else:
+            a.add_argument("--versao", type=int, help="padrão: a maior preparada (assinar) ou a em vigor (verificar)")
+        if nome != "verificar-ficha":
             a.add_argument("--chave", help="chave privada do titular (padrão: ~/.ssh/fundacao_titular)")
     return p
 
@@ -584,6 +865,9 @@ def _rodar(args) -> int:
     try:
         if args.acao == "assinar-ficha":
             return assinar_ficha(args.raiz, args.projeto, versao=args.versao, chave=args.chave)
+        if args.acao == "aceitar-risco":
+            return aceitar_risco(args.raiz, args.projeto, args.canario, vigencia_ate=args.vigencia_ate,
+                                 chave=args.chave)
         return verificar_ficha(args.raiz, args.projeto, versao=args.versao)
     except Recusa as exc:
         sys.stderr.write(f"Recusado: {exc}\n")

@@ -77,6 +77,12 @@ def sha(texto: str) -> str:
 
 class _Importacao(unittest.TestCase):
     def setUp(self):
+        # Alguns testes chamam o importador neste processo: a raiz da fundação viva do ambiente (FUNDACAO_RAIZ, que o
+        # perfil do Windows da 1.7.10 põe nas sessões da raiz) não vale aqui, como o apoio já faz para os subprocessos.
+        ambiente = mock.patch.dict(os.environ)
+        ambiente.start()
+        self.addCleanup(ambiente.stop)
+        os.environ.pop("FUNDACAO_RAIZ", None)
         self.base = Path(os.path.realpath(tempfile.mkdtemp(prefix="importar-")))
         self.addCleanup(apagar_arvore, self.base)
         self.origem = self.base / "origem"

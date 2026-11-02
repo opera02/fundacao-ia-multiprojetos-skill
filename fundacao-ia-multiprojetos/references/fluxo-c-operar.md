@@ -92,6 +92,9 @@ com a âncora. Kit igual, skill nova [Decisão; defeito anotado na liberação d
 que `instrucoes_raiz.py gerar` produziria e, se for outro, regenera só as instruções da raiz, pelas mesmas regras
 (anteriores guardados, registro com o hash antes e depois, `desfazer` aceito); sem diferença, não escreve nada.
 
+**Na 1.7.10.1** (skill nova, kit 1.7.10 igual): o `aplicar` só regenera as instruções da raiz; o que muda é o preparo
+do Ubuntu e a ferramenta do titular, com o aceite de risco do canário ([correção 1.7.10.1](atualizacao-1.7.10.1.md)).
+
 **Na 1.7.10, o `aplicar` faz também** [Decisão; 1.7.10] (compatibilidade, o que muda e o que o `desfazer` não volta:
 [atualização para a 1.7.10](atualizacao-1.7.10.md)):
 - recusa com o WSL ligado, no começo e antes da restauração do ensaio, sem alterar nada, porque o banco não abre pelos

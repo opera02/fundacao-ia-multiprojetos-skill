@@ -1,5 +1,17 @@
 # Fontes verificadas e fatos voláteis
 
+## Conferência da 1.7.10.1 — 02/11/2026
+Duas fontes: o binário do Claude Code 2.1.302 fixado no Ubuntu (SHA-256 `60d7eb7f…e29a5`, o mesmo do relatório do
+canário), lido sem executar, e as transcrições das 12 sessões do canário real de 02/11/2026 (`claude -p`, forma
+`drvfs:/mnt/e`), lidas pelo coordenador. Valem para esta versão do Claude Code.
+
+| Fato | Uso na fundação | Situação |
+|---|---|---|
+| O binário registra plugins embutidos na partida (`builtinPluginsInitialized`), qualquer que seja o `--setting-sources` e sem `--plugin-dir`: `cc-plugin-sec-default`, `cc-plugin-agents-md` e `cc-plugin-telemetry` sempre; `cc-plugin-plugin-authoring` e `cc-plugin-mods-guide` fora do ponto de entrada `local-agent`; outros (`tips`, `mermaid`, `responsive-mode`) sob condição. O `cc-plugin-agents-md` depende da opção remota `tengu_agents_md_mod` (ligada por padrão) e lê arquivos `AGENTS.md` como instrução (de projeto, local e de usuário) | **corrige** a linha da carga de plugins de 01/11/2026 ("nenhuma origem embutida"): a documentação não os cita, mas o binário os tem. Nas 12 sessões do canário, o `system/init` listou `cc-plugin-agents-md`, `cc-plugin-telemetry` e `cc-plugin-plugin-authoring`, com e sem `--plugin-dir`: o item `plugin_setting_sources_local` falhou por eles. A lista de embutidos do canário segue vazia (falha fechada) até a 1.7.11 decidir a lista por versão e conferir se o `AGENTS.md` lido por esse plugin respeita o `claudeMdExcludes` de `projects/*/data/**` | lido no binário (02/11/2026); a origem embutida, confirmada pelo `system/init` das sessões |
+| No modo `-p`, um comando do Bash com variável (o `$?` do marcador `FIM-<nonce>-<i>-$?` do canário) é recusado antes de rodar, com "A variable in this command can't be checked before it runs" | das 29 chamadas do Bash do canário de 02/11/2026, 28 foram recusadas assim, também o controle do `/usr/bin/python3`, e 1 foi negada pelo `guarda_identidade.py`: os 7 itens de comando e a carga aninhada ficaram `nao_medido` sem nenhum comando rodar. A forma das sondas muda na 1.7.11 | visto nas transcrições (02/11/2026) |
+| Numa das 12 sessões, a salvaguarda do modelo padrão da conta (Opus 5.5) parou a resposta e a sessão passou ao Opus 4.8, que se recusou a rodar o comando que montava o caminho de outro projeto por partes; o `guarda_identidade.py` negou o caminho escrito por inteiro | o canário depende do modelo aceitar rodar os comandos como estão: registrar o modelo de cada sessão e contar a recusa como `nao_medido` com motivo próprio (1.7.11) | visto nas transcrições (02/11/2026) |
+| Sem nenhum comando rodar, o sandbox deixou na pasta do projeto do ensaio marcadores de 0 byte: `.env` e sete variantes, `.gitmodules`, `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `bunfig.toml`, `package.json`, `package-lock.json`, `pnpm-lock.yaml` e `yarn.lock` | a lista de limpeza do lançador tem só `.npmrc`, `.yarnrc` e `.yarnrc.yml` além da obrigatória: ampliar na 1.7.11 | visto no relatório do canário (02/11/2026) |
+
 ## Conferência da 1.7.10 — 31/10 e 01/11/2026
 Três fontes, cada uma com o seu limite:
 - **Binário do Claude Code 2.1.302 instalado, lido sem executar:** busca de texto nos bytes do executável, sem abrir

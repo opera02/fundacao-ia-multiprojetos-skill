@@ -108,6 +108,13 @@ def vigente(raiz, projeto, area):
     dados = json.loads(arquivo.read_text(encoding="utf-8"))
     return {**base, "valida": True, "versao": versao, "arquivo": str(arquivo), "sha256": _sha(arquivo),
             "sig_sha256": _sha(sig), "ficha": dados, "motivo_invalida": None}
+
+
+def conferir_assinatura(bruto, sig, ancora=None):
+    """A de ensaio (1.7.10.1, aceite de risco): vale a assinatura de ensaio, que cita o SHA-256 dos bytes."""
+    if sig == ("assinatura de ensaio " + hashlib.sha256(bruto).hexdigest() + "\\n").encode("ascii"):
+        return {"ok": True, "motivo": "assinatura válida", "assinante": "titular", "impressao_digital": "SHA256:ensaio"}
+    return {"ok": False, "motivo": "assinatura de ensaio não confere"}
 '''
 
 TITULAR_FALSO = '''"""Ferramenta do titular de ensaio: só registra os argumentos (a real assina com a chave do titular)."""
@@ -204,6 +211,30 @@ def gravar_ficha_na_caixa(raiz: Path, projeto: str, ficha: dict) -> Path:
     (caixa / (arquivo.name + ".sig")).write_text("assinatura de ensaio v" + str(ficha["versao"]) + "\n",
                                                  encoding="utf-8")
     return arquivo
+
+
+def aceite_de_ensaio(projeto: str, relatorio_sha256: str, claude_sha256: str, forma: str, *, aceito_em: str,
+                     vigencia_ate: str, confina=False, versao: int = 1) -> dict:
+    """Aceite de risco do canário (1.7.10.1) no esquema da ferramenta do titular, de ensaio."""
+    return {"schema_version": "fundacao.aceite_risco_canario/1", "project_id": projeto, "versao": versao,
+            "aceito_em": aceito_em, "vigencia_ate": vigencia_ate, "riscos": ["risco de ensaio"],
+            "canario": {"relatorio_sha256": relatorio_sha256, "claude_versao": "2.1.302",
+                        "claude_sha256": claude_sha256, "forma": forma, "confina_comandos": confina,
+                        "data": "2026-10-31T12:00:00Z", "falhou": ["plugin_setting_sources_local"],
+                        "nao_medido": ["leitura_state"], "vazou": []}}
+
+
+def gravar_aceite_na_caixa(raiz: Path, projeto: str, aceite: dict, *, assinatura: bytes | None = None) -> Path:
+    """O que a ferramenta do titular grava: o aceite na forma canônica e a assinatura de ensaio (a do substituto do
+    kit, `conferir_assinatura`, que cita o SHA-256 dos bytes)."""
+    caixa = raiz / ".claude" / "projetos" / projeto / "risco"
+    caixa.mkdir(parents=True, exist_ok=True)
+    bruto = (json.dumps(aceite, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    (caixa / "aceite-risco-canario.json").write_bytes(bruto)
+    (caixa / "aceite-risco-canario.json.sig").write_bytes(
+        assinatura if assinatura is not None
+        else ("assinatura de ensaio " + hashlib.sha256(bruto).hexdigest() + "\n").encode("ascii"))
+    return caixa / "aceite-risco-canario.json"
 
 
 def relatorio_de_canario(m, raiz: Path, claude: Path, *, versao: str = "2.1.302", **mudancas) -> dict:

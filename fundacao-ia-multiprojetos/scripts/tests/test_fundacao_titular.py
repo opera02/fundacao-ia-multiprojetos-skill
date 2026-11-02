@@ -126,7 +126,8 @@ class TestAssinarFicha(TitularCase):
         self.assertEqual((r["valida"], r["versao"]), (True, 1), r)
         for trecho in ("pypi.org", "files.pythonhosted.org", "passa a abrir: rede files.pythonhosted.org, rede pypi.org",
                        "deixa de abrir: nada", "escrito pela sessão", "    | Palavras do titular (fictícias).",
-                       "canário", "Sem data de validade", "Assinada pela chave de titular-ensaio"):
+                       "canário", "Sem data de validade", "Assinada pela chave de titular-ensaio",
+                       "esta ficha também vale se houver o seu aceite de risco"):  # 1.7.10.1, R17101-ACE-2
             self.assertIn(trecho, texto)
         self.assertEqual(len(self.perguntas), 1)
         self.assertIn(f"digite o nome do projeto ({PROJETO})", self.perguntas[0])
@@ -338,8 +339,10 @@ class TestVerificarFichaEParser(TitularCase):
         sub = next(a for a in p._actions if a.__class__.__name__ == "_SubParsersAction")
         opcoes = {nome: sorted(o for a in parser._actions for o in a.option_strings if o not in ("-h", "--help"))
                   for nome, parser in sub.choices.items()}
+        # 1.7.10.1: o aceite de risco do canário (DECISAO-007) recebe também só o relatório do ensaio e a vigência.
         self.assertEqual(opcoes, {"assinar-ficha": ["--chave", "--projeto", "--raiz", "--versao"],
-                                  "verificar-ficha": ["--projeto", "--raiz", "--versao"]})
+                                  "verificar-ficha": ["--projeto", "--raiz", "--versao"],
+                                  "aceitar-risco": ["--canario", "--chave", "--projeto", "--raiz", "--vigencia-ate"]})
         with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
             p.parse_args(["assinar-ficha", "--raiz", "r", "--proj", "x"])  # sem abreviação
 

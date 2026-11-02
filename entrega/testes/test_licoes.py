@@ -101,6 +101,19 @@ class TestLicoes(unittest.TestCase):
             self.assertIn(trecho, texto)
         self.assertNotIn(b"\r\n", antes)
 
+    def test_correcao_de_versao_liberada_com_quatro_numeros(self):
+        """1.7.10.1: a correção de uma versão liberada tem quatro números e vem depois dela, antes da seguinte."""
+        self.escrever(mudancas("9.9.1"))
+        self.escrever(mudancas("9.9.1.1", licoes="SEM_ENTRADA"), "9.9.1.1")
+        self.escrever(mudancas("9.9.2", licoes="SEM_ENTRADA"), "9.9.2")
+        LICOES.indice(self.raiz)
+        res = LICOES.validar(self.raiz)
+        self.assertEqual(res["problemas"], [])
+        self.assertEqual(res["arquivos"], ["MUDANCAS-9.9.1.md", "MUDANCAS-9.9.1.1.md", "MUDANCAS-9.9.2.md"])
+        self.assertProblema("'Versão: 9.9.1'", mudancas(cabecalho="Versão: 9.9.1.1"))
+        (self.pasta / "MUDANCAS-9.9.1.md").rename(self.pasta / "MUDANCAS-9.9.1.1.1.md")
+        self.assertProblema("nome fora do formato")
+
     def test_indice_editado_a_mao_e_acusado_e_o_indice_o_refaz(self):
         self.escrever(mudancas())
         LICOES.indice(self.raiz)

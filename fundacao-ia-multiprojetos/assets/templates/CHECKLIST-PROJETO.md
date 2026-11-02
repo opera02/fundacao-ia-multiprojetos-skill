@@ -19,7 +19,8 @@
 - No Windows, nas sessões da raiz, o shell lê tudo: os hooks são guarda-corpo. A separação dos projetos fica nas
   sessões do Ubuntu, lógica como acima até o canário passar.
 - Nada se abre sozinho: rede, sites, busca na web e plugins só valem com a ficha de aberturas assinada pelo titular e
-  com o canário aprovado (item C).
+  com o canário aprovado (item C) ou, com ele reprovado, com o aceite de risco que o titular assinar para este projeto
+  (passo do aceite, abaixo). O aceite não muda o isolamento: ele continua lógico.
 - Se um comando da sessão gravar fora do projeto (o canário mede isso), ele também pode gravar na sua pasta do
   Windows, por `/mnt/c`. Um atalho na pasta Inicializar rodaria no seu próximo logon como você, fora de qualquer
   proteção, e alcançaria todos os projetos. Um arquivo `.wslconfig` com `kernel=` trocaria o kernel do WSL no próximo
@@ -38,13 +39,14 @@
 - Lançador: SHA-256 de `/usr/local/bin/abrir-fundacao-<projeto>`:
 - Ficha de aberturas em vigor (versão e SHA-256), ou "nenhuma: tudo fechado":
 - Canário: arquivo em `/etc/fundacao-ia/canario/`, SHA-256, forma, data e `conclusao.confina_comandos`:
+- Aceite de risco do canário (data, vigência e SHA-256 do relatório aceito), ou "nenhum":
 - Decisões do titular que valem para este projeto (arquivo e data):
 
 No terminal do Ubuntu, estes dois comandos mostram os valores (só leem):
 
 ```sh
 sha256sum /etc/fundacao-ia/projetos/<projeto>/settings.wsl.json /usr/local/bin/abrir-fundacao-<projeto> /etc/fundacao-ia/canario/*.json
-python3 -I -B -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); print(json.dumps({k: d.get(k) for k in ('claude','canario','ficha','lancador')},ensure_ascii=False,indent=1))" /etc/fundacao-ia/projetos/<projeto>/hashes.json
+python3 -I -B -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); print(json.dumps({k: d.get(k) for k in ('claude','canario','aceite_risco','ficha','lancador')},ensure_ascii=False,indent=1))" /etc/fundacao-ia/projetos/<projeto>/hashes.json
 ```
 
 ## Estados e a regra do perfil novo
@@ -56,12 +58,14 @@ python3 -I -B -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8'
   atualização da fundação ou de um projeto novo na raiz, com o preparo do Ubuntu rodado de novo) ou o Claude Code
   fixado muda, os itens de `perfil` (C, 6, 7, 11 e 12) voltam a `pendente` e as provas deles são refeitas. Anote os
   hashes novos acima.
-- Com item pendente, vale a regra 9 da SKILL.md: dados reais só com o checklist completo. Nenhuma abertura vale sem o
-  item C com `true` e sem a ficha assinada; `aceito pelo titular` nos itens 6 e 7 mantém o trabalho com a separação
-  lógica e não abre nada.
+- Com item pendente, vale a regra 9 da SKILL.md: dados reais só com o checklist completo. Nenhuma abertura vale sem a
+  ficha assinada e sem o item C com `true` ou, com ele `false` ou `null`, sem o aceite de risco assinado deste projeto;
+  `aceito pelo titular` nos itens 6 e 7 mantém o trabalho com a separação lógica e não abre nada.
 - O item C vem antes de qualquer dado real. Com `false` ou `null` e a raiz no disco do Windows, ele só sai de
   `pendente` com a sua decisão (`aceito pelo titular`), que cita também o risco da pasta do Windows (no começo deste
-  checklist). A outra saída é levar a área de dados para o disco do Ubuntu, com o canário de lá aprovado.
+  checklist). Desde a 1.7.10.1, essa decisão pode ser o aceite de risco assinado (passo do aceite, abaixo), que também
+  deixa valer a ficha deste projeto. A outra saída é levar a área de dados para o disco do Ubuntu, com o canário de lá
+  aprovado.
 
 ## Itens
 
@@ -126,8 +130,9 @@ Antes: o `preparar-wsl.sh` já rodou uma vez (ele fixa o Claude Code em
    - `null`: não provou (veja `conclusao.motivo` e os itens `nao_medido`).
    `conclusao.carga_aninhada` é outra medida (se skill ou agente de subpasta carrega), fora de `confina_comandos`:
    anote-a no item 12.
-5. Só com `true`, instale o relatório. Em `--canario`, passe só o relatório que o ensaio do passo 3 gravou na sua
-   casa (`~/canario-drvfs.json`), nunca um arquivo de `projects/`. Antes, feche as sessões do Ubuntu e, no PowerShell
+5. Instale o relatório (com `true`, ele aprova; com `false` ou `null`, vai como revogação, e só abre o projeto com o
+   seu aceite de risco: passo do aceite, abaixo). Em `--canario`, passe só o relatório que o ensaio do passo 3 gravou
+   na sua casa (`~/canario-drvfs.json`), nunca um arquivo de `projects/`. Antes, feche as sessões do Ubuntu e, no PowerShell
    do Windows, rode `wsl --terminate <distribuição>`; depois abra um terminal novo do Ubuntu só para este passo. Assim
    nenhuma sessão roda durante o preparo, que grava como root o espelho em `<raiz>/.claude/projetos/`. Não ponha sudo
    na frente: o script pede o sudo sozinho. Em `--claude-versao`, use a mesma versão dos passos 2 e 3.
@@ -143,13 +148,11 @@ Antes: o `preparar-wsl.sh` já rodou uma vez (ele fixa o Claude Code em
    `--perfil-windows /mnt/c/Users/<usuario>` (o seu usuário do Windows).
    Vale só o relatório da forma de caminho da raiz: com a raiz no disco do Windows, o de `drvfs`. A área guarda um
    relatório por versão do Claude Code; trocar o que liberou uma ficha faz o lançador do projeto recusar abrir até um
-   novo preparo. Com `false` ou `null`, não instale: o `preparar-wsl.sh` recusaria o relatório e pararia (código 1),
-   sem preparar os projetos. As aberturas ficam fechadas, a separação continua lógica, e o resultado vai para o item C
-   e para a RETOMADA do projeto. Antes de qualquer dado real, decida como diz a regra do item C (em "Estados").
-   Atenção: nesta versão, um `false` ou `null` depois de um `true` já instalado não fecha nada sozinho. O relatório
-   aprovado continua valendo, com as aberturas da ficha. Para fechar, peça à sessão uma ficha nova sem as aberturas,
-   assine-a e rode de novo o preparo de cada projeto, o mesmo comando deste passo sem o `--canario` (com o relatório
-   reprovado, o preparo para com código 1 sem preparar nada): os perfis saem fechados.
+   novo preparo. Com `false` ou `null` (desde a 1.7.10.1), o script mostra `[revogar] canario` e segue: o relatório
+   substitui o aprovado da mesma versão do Claude Code, e o preparo de cada projeto fecha as aberturas, salvo no
+   projeto com o seu aceite de risco assinado para esse relatório. A separação continua lógica, e o resultado vai para
+   o item C e para a RETOMADA do projeto. Antes de qualquer dado real, decida como diz a regra do item C (em
+   "Estados"). Só um arquivo que não é relatório real do ensaio (simulação, outro esquema) é recusado (código 1).
 6. Limpe o ensaio:
 
    ```sh
@@ -162,6 +165,37 @@ Antes: o `preparar-wsl.sh` já rodou uma vez (ele fixa o Claude Code em
 Opcional, para decidir se os dados vão para o disco do Ubuntu: o mesmo ensaio no ext4, com `--base ~/ensaio-canario`
 (sem `--forma`: o padrão é `ext4`) e `--saida ~/canario-ext4.json`. Esse relatório não vale para a raiz no disco do
 Windows: não o instale nesse caso.
+
+## Passo do titular: o aceite de risco do canário (só com `false` ou `null`; desde a 1.7.10.1)
+
+Com o canário reprovado, você pode decidir que a ficha DESTE projeto valha mesmo assim. O aceite não muda o
+isolamento (continua lógico: os riscos do começo deste checklist valem) e não abre nada sozinho: abre só o que a ficha
+assinada lista, só neste projeto, até a data dele (até 180 dias; a ferramenta propõe 90). Ele se prende ao relatório:
+com outro relatório instalado, outro Claude Code fixado ou outra forma de caminho da raiz, tudo fecha de novo.
+
+1. Instale o relatório reprovado como no passo 5 do canário (ele vai como revogação; o preparo segue com tudo fechado).
+   Esse preparo também grava a cópia protegida da ferramenta com o comando `aceitar-risco`.
+2. Assine o aceite pela ferramenta fixa, na cópia protegida, fora do Claude (a caixa Executar, Win+R, abre o Python
+   fixado sem o perfil de um shell). Ela lê o relatório, mostra o que ele mediu e a lista fixa de riscos, pede que
+   você digite o nome do projeto e pede a senha da sua chave:
+
+   ```
+   C:\Windows\System32\wsl.exe -e /usr/bin/python3 -I -B -S "/usr/local/lib/fundacao-ia/<versão do kit>/assets/host/fundacao_titular.py" aceitar-risco --raiz "<raiz no Ubuntu>" --projeto <projeto> --canario "~/canario-drvfs.json"
+   ```
+
+   No terminal do Ubuntu, a mesma coisa:
+
+   ```sh
+   /usr/bin/python3 -I -B -S /usr/local/lib/fundacao-ia/<versão do kit>/assets/host/fundacao_titular.py aceitar-risco --raiz "<raiz no Ubuntu>" --projeto <projeto> --canario ~/canario-drvfs.json
+   ```
+
+   Passe o mesmo relatório do passo 5 do canário. `--vigencia-ate AAAA-MM-DD` escolhe outra data (até 180 dias).
+3. Com a ficha do projeto também assinada, rode de novo o preparo deste projeto (o comando do passo 5, sem o
+   `--canario` se o relatório já está instalado). O relatório mostra "canário NÃO aprovado: a ficha vale só neste
+   projeto, sob o aceite de risco"; o perfil novo vale numa sessão nova. Anote o aceite na Identificação.
+4. O item C fica `aceito pelo titular`, com o aceite citado (versão, data, vigência e SHA-256 do relatório). Os itens 6
+   e 7 continuam com a separação lógica. Para fechar antes da data: uma ficha nova sem as aberturas, assinada, e o
+   preparo (a "Correção 1.7.10.1" da skill, Retorno).
 
 ## Provas do perfil (refeitas a cada perfil novo)
 
@@ -180,7 +214,8 @@ arquivos de prova são fictícios e saem no fim.
 
    Código 0 com `"ok": true`: confere. Código 1: leia `problemas` e rode o preparo de novo.
 3. No `hashes.json` (segundo comando da Identificação), `canario.aprovado` tem de ser `true`, com a mesma forma da
-   raiz. Feito só com os três passos. Com `false`, o item fica `pendente`, ou `aceito pelo titular` com a decisão
+   raiz. Feito só com os três passos. Com `false` (com ou sem `aceite_risco`: o aceite não confina nada), o item fica
+   `pendente`, ou `aceito pelo titular` com a decisão
    citada: a separação é lógica.
 
 ### Prova 7 — segredo e escrita (a sessão roda; o titular cria e apaga o arquivo fictício)

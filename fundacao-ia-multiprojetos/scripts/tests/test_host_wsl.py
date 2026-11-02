@@ -317,18 +317,26 @@ class PrepararWslNoBash(unittest.TestCase):
         self.assertIn(sha(self.binario), lancador.read_text(encoding="utf-8"))
 
     def test_canario_pelo_preparo_do_ubuntu(self):
-        """1.7.10 (contratos, §0): --canario leva o relatório do ensaio real à área do titular; um relatório que não
-        prova o confinamento é recusado (código 1) e nada vai para a área."""
+        """1.7.10 (contratos, §0): --canario leva o relatório do ensaio real à área do titular. O que não é relatório
+        real é recusado (código 1) e nada vai para a área; desde a 1.7.10.1, o real que não prova o confinamento vai
+        como revogação ([revogar] canario) e o preparo dos projetos segue, com tudo fechado."""
         from test_host_projeto_apoio import relatorio_de_canario
         m = carregar_preparo(self.skill)
         relatorio = self.base / "relatorio-canario.json"
         canario = self.base / "area" / "canario" / "2.1.302.json"
-        ruim = relatorio_de_canario(m, self.raiz, self.binario, conclusao={"forma": "ext4", "confina_comandos": False})
-        relatorio.write_text(json.dumps(ruim), encoding="utf-8")
+        simulado = relatorio_de_canario(m, self.raiz, self.binario, simulado=True)
+        relatorio.write_text(json.dumps(simulado), encoding="utf-8")
         r = self.preparar_wsl("--claude-sha256", sha(self.binario), "--canario", relatorio, wsl=True, pacotes=True)
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertTrue([l for l in r.stdout.splitlines() if l.strip().startswith("[erro] canario:")], r.stdout)
         self.assertFalse(canario.exists())
+        forma = relatorio_de_canario(m, self.raiz, self.binario)["forma"]
+        ruim = relatorio_de_canario(m, self.raiz, self.binario, conclusao={"forma": forma, "confina_comandos": False})
+        relatorio.write_text(json.dumps(ruim), encoding="utf-8")
+        r = self.preparar_wsl("--claude-sha256", sha(self.binario), "--canario", relatorio, wsl=True, pacotes=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue([l for l in r.stdout.splitlines() if l.strip().startswith("[revogar] canario:")], r.stdout)
+        self.assertEqual(sha(canario), sha(relatorio))
         relatorio.write_text(json.dumps(relatorio_de_canario(m, self.raiz, self.binario)), encoding="utf-8")
         r = self.preparar_wsl("--claude-sha256", sha(self.binario), "--canario", relatorio, wsl=True, pacotes=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

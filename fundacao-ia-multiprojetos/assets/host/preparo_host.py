@@ -658,39 +658,64 @@ def _forma_do_relatorio(relatorio: dict) -> str | None:
     return forma_do_caminho(m.group(1), fs) if m else None
 
 
+def estrutura_do_relatorio_do_canario(relatorio) -> str | None:
+    """Motivo pelo qual o arquivo não é um relatório real do ensaio (`fundacao.ensaio_isolamento/1`), ou None. Não diz
+    se aprova: desde a 1.7.10.1 o relatório real que não aprova também é instalado, como revogação (a direção do CAN-2
+    do ramo v1710/seg-canario, do lote B, sem a recontagem dos itens do CAN-1). Real: o esquema, `simulado` false, a
+    versão e o SHA-256 do Claude Code, a conclusão true, false ou null e a forma de caminho que o canário prova, a mesma
+    no topo e na conclusão."""
+    if not isinstance(relatorio, dict) or relatorio.get("schema_version") != ESQUEMA_CANARIO:
+        return f"o arquivo não é um relatório do canário ({ESQUEMA_CANARIO})"
+    if relatorio.get("simulado") is not False:
+        return "relatório de simulação: só o ensaio real conta"
+    claude = _objeto(relatorio.get("claude"))
+    versao, sha = claude.get("versao"), claude.get("sha256")
+    if not (isinstance(versao, str) and VERSAO_CLAUDE.match(versao) and isinstance(sha, str) and SHA256.match(sha)):
+        return "relatório sem a versão e o SHA-256 do Claude Code que o canário rodou"
+    conclusao = relatorio.get("conclusao")
+    if not isinstance(conclusao, dict) or not any(conclusao.get("confina_comandos", 0) is v for v in (True, False, None)):
+        return "relatório sem a conclusão do ensaio (conclusao.confina_comandos: true, false ou null)"
+    if _forma_do_relatorio(relatorio) is None or conclusao.get("forma", relatorio.get("forma")) != relatorio.get("forma"):
+        return "relatório com uma forma de caminho que o canário não prova (só ext4 e drvfs:/mnt/<x>)"
+    return None
+
+
+def _canario_desta_raiz(relatorio: dict, *, claude_versao: str | None, claude_sha256: str | None,
+                        forma: str | None) -> str | None:
+    """Do relatório real (`estrutura_do_relatorio_do_canario`): o motivo de ele não ser do Claude Code fixado (versão
+    e SHA-256, quando dados) ou da forma de caminho da raiz (quando dada), ou None."""
+    versao, sha = relatorio["claude"]["versao"], relatorio["claude"]["sha256"]
+    if claude_versao is not None and (versao != claude_versao or sha != claude_sha256):
+        return (f"o canário rodou o Claude Code {versao} ({sha[:12]}...), não o fixado {claude_versao} "
+                f"({str(claude_sha256)[:12]}...): rode o ensaio com o binário fixado")
+    medida = _forma_do_relatorio(relatorio)
+    if forma is not None and medida != forma:
+        return f"o canário provou a forma {medida}, não a da raiz ({forma}): rode o ensaio na forma de caminho da raiz"
+    return None
+
+
 def conferir_relatorio_do_canario(relatorio, *, claude_versao: str | None = None, claude_sha256: str | None = None,
                                   forma: str | None = None) -> str | None:
     """Motivo da recusa do relatório `fundacao.ensaio_isolamento/1`, ou None. Vale só o ensaio real (não simulado) com
     `conclusao.confina_comandos: true` — o canário só conclui isso com todos os itens de comando aprovados, o perfil
     gerado pelo preparo, o sandbox ligado e a forma medida igual à declarada —, do Claude Code fixado (versão e SHA-256,
     quando dados) e da forma de caminho da raiz (quando dada)."""
-    if not isinstance(relatorio, dict) or relatorio.get("schema_version") != ESQUEMA_CANARIO:
-        return f"o arquivo não é um relatório do canário ({ESQUEMA_CANARIO})"
-    if relatorio.get("simulado") is not False:
-        return "relatório de simulação: só o ensaio real conta"
-    conclusao = _objeto(relatorio.get("conclusao"))
-    if conclusao.get("confina_comandos") is not True:
+    motivo = estrutura_do_relatorio_do_canario(relatorio)
+    if motivo:
+        return motivo
+    conclusao = relatorio["conclusao"]
+    if conclusao["confina_comandos"] is not True:
         return ("o canário não provou que o sandbox confina os comandos ("
                 + str(conclusao.get("motivo") or "sem conclusão")[:160] + ")")
-    claude = _objeto(relatorio.get("claude"))
-    versao, sha = claude.get("versao"), claude.get("sha256")
-    if not (isinstance(versao, str) and VERSAO_CLAUDE.match(versao) and isinstance(sha, str) and SHA256.match(sha)):
-        return "relatório sem a versão e o SHA-256 do Claude Code que o canário rodou"
-    if claude_versao is not None and (versao != claude_versao or sha != claude_sha256):
-        return (f"o canário rodou o Claude Code {versao} ({sha[:12]}...), não o fixado {claude_versao} "
-                f"({str(claude_sha256)[:12]}...): rode o ensaio com o binário fixado")
-    medida = _forma_do_relatorio(relatorio)
-    if medida is None or conclusao.get("forma", relatorio.get("forma")) != relatorio.get("forma"):
-        return "relatório com uma forma de caminho que o canário não prova (só ext4 e drvfs:/mnt/<x>)"
-    if forma is not None and medida != forma:
-        return f"o canário provou a forma {medida}, não a da raiz ({forma}): rode o ensaio na forma de caminho da raiz"
-    return None
+    return _canario_desta_raiz(relatorio, claude_versao=claude_versao, claude_sha256=claude_sha256, forma=forma)
 
 
 def portao_do_canario(area_raiz, *, claude_versao, claude_sha256, raiz_wsl: str, fs_raiz: str | None = None) -> dict:
     """Contratos, §0: nenhuma abertura vale sem o canário aprovado no ambiente real. Vale o relatório que o titular
     instalou (`instalar-canario`) em `<área>/canario/<versão>.json`, conferido contra o Claude Code fixado e a forma de
-    caminho da raiz (medida no /proc/mounts). Sem ele, `aprovado` False e o motivo (tudo fechado)."""
+    caminho da raiz (medida no /proc/mounts). Sem ele, `aprovado` False e o motivo (tudo fechado). O relatório real
+    que não aprova (false ou null), do Claude Code fixado e da forma da raiz, sai também em `reprovado` (o SHA-256 do
+    arquivo, a conclusão e o Claude Code): é só a ele que um aceite de risco do titular se prende (1.7.10.1)."""
     base = {"aprovado": False, "arquivo": None, "sha256": None, "forma": None}
     if not (isinstance(claude_versao, str) and VERSAO_CLAUDE.match(claude_versao)):
         return {**base, "motivo": "sem a versão do Claude Code fixado na área (rode o preparo do Ubuntu)"}
@@ -711,18 +736,217 @@ def portao_do_canario(area_raiz, *, claude_versao, claude_sha256, raiz_wsl: str,
     motivo = conferir_relatorio_do_canario(relatorio, claude_versao=claude_versao, claude_sha256=claude_sha256,
                                            forma=forma)
     if motivo:
-        return {**base, "forma": forma, "arquivo": arquivo.as_posix(), "motivo": motivo}
+        saida = {**base, "forma": forma, "arquivo": arquivo.as_posix(), "motivo": motivo}
+        if (estrutura_do_relatorio_do_canario(relatorio) is None and _canario_desta_raiz(
+                relatorio, claude_versao=claude_versao, claude_sha256=claude_sha256, forma=forma) is None):
+            saida["reprovado"] = {"sha256": hashlib.sha256(dados).hexdigest(),
+                                  "confina_comandos": relatorio["conclusao"]["confina_comandos"],
+                                  "claude_versao": claude_versao, "claude_sha256": claude_sha256,
+                                  "data": str(relatorio.get("data") or "")[:40]}
+        return saida
     return {"aprovado": True, "arquivo": arquivo.as_posix(), "sha256": hashlib.sha256(dados).hexdigest(),
             "forma": forma, "motivo": f"canário aprovado para o Claude Code {claude_versao} na forma {forma} "
                                       f"({str(relatorio.get('data') or 'sem data')[:32]})"}
 
 
-def com_canario(aberturas: dict, canario: dict) -> dict:
-    """A ficha só vale com o canário aprovado (contratos, §0): sem ele, tudo fechado, com o motivo."""
+def com_canario(aberturas: dict, canario: dict, aceite: dict | None = None) -> dict:
+    """A ficha só vale com o canário aprovado (contratos, §0) ou, com ele reprovado, com o aceite de risco assinado pelo
+    titular para este projeto e este relatório (`conferir_aceite_de_risco`; 1.7.10.1, DECISAO-007 da fundação): sem
+    um nem outro, tudo fechado, com o motivo. Sob o aceite, a ficha vale como está, e o isolamento continua lógico."""
     if not aberturas["valida"] or canario.get("aprovado") is True:
         return aberturas
+    if isinstance(aceite, dict) and aceite.get("valido") is True:
+        resumo = {k: aceite.get(k) for k in ("arquivo", "versao", "sha256", "sig_sha256", "aceito_em", "vigencia_ate",
+                                             "relatorio_sha256")}
+        return {**aberturas, "aceite_risco": resumo, "motivo": (
+            f"ficha de aberturas assinada e vigente, aplicada sob o aceite de risco do titular de {resumo['aceito_em']} "
+            f"(canário não aprovado; vale até {resumo['vigencia_ate']}; isolamento entre projetos só lógico)")}
+    extra = f"; aceite de risco: {aceite.get('motivo')}" if isinstance(aceite, dict) and aceite.get("motivo") else ""
     return aberturas_fechadas(f"a ficha v{aberturas['versao']} não vale sem o canário aprovado no ambiente real "
-                              f"(contratos, §0): tudo fechado ({canario.get('motivo')})")
+                              f"(contratos, §0): tudo fechado ({canario.get('motivo')}{extra})")
+
+
+# ------------------------------------------------------------------ aceite de risco do canário (1.7.10.1)
+# O titular aceita, por projeto e por relatório, que a ficha valha com o canário reprovado (false ou null): a ferramenta
+# fixa assets/host/fundacao_titular.py aceitar-risco monta o aceite do relatório e o assina no namespace da ficha
+# (fundacao-abertura); o esquema próprio impede que um sirva pelo outro. Os nomes abaixo são os da ferramenta (teste de
+# igualdade em scripts/tests/test_aceite_risco_canario.py).
+ESQUEMA_ACEITE = "fundacao.aceite_risco_canario/1"
+ACEITE_NOME = "aceite-risco-canario.json"
+PASTA_DO_ACEITE = "risco"  # <raiz>/.claude/projetos/<p>/risco/ (caixa de entrada) e <área>/projetos/<p>/risco/
+PRAZO_DO_ACEITE = 180  # dias, no máximo, da data do aceite até a vigência (a ferramenta propõe 90)
+CAMPOS_DO_ACEITE = frozenset({"schema_version", "project_id", "versao", "aceito_em", "vigencia_ate", "canario",
+                              "riscos"})
+VERSAO_MAXIMA_ACEITE = 999999  # a área guarda a maior instalada (risco/maior-versao): um aceite antigo não volta
+CAMPOS_DO_CANARIO_ACEITO = frozenset({"relatorio_sha256", "claude_versao", "claude_sha256", "forma", "confina_comandos",
+                                      "data", "falhou", "nao_medido", "vazou"})
+ITEM_DO_CANARIO = re.compile(r"^[a-z0-9_]{1,64}$")
+FORMA_ACEITA = re.compile(r"^(?:ext4|drvfs:/mnt/[a-z])$")
+TETO_SIG = 16 * 1024
+
+
+def _data_iso(valor) -> date | None:
+    try:
+        return date.fromisoformat(valor) if isinstance(valor, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", valor) else None
+    except ValueError:
+        return None
+
+
+def problemas_do_aceite(aceite, projeto: str, hoje: date) -> list[str]:
+    """O que o aceite tem fora do esquema fechado `fundacao.aceite_risco_canario/1`, do projeto ou da vigência (não
+    confere a assinatura nem o vínculo com o relatório instalado). Lista vazia: confere."""
+    if not isinstance(aceite, dict) or set(aceite) != CAMPOS_DO_ACEITE:
+        return ["aceite fora do esquema (campos: " + ", ".join(sorted(CAMPOS_DO_ACEITE)) + ")"]
+    problemas = []
+    if aceite["schema_version"] != ESQUEMA_ACEITE:
+        problemas.append(f"esquema do aceite desconhecido (use {ESQUEMA_ACEITE})")
+    if aceite["project_id"] != projeto:
+        problemas.append("aceite de outro projeto")
+    versao = aceite["versao"]
+    if not isinstance(versao, int) or isinstance(versao, bool) or not 1 <= versao <= VERSAO_MAXIMA_ACEITE:
+        problemas.append(f"versão do aceite fora da forma (um inteiro de 1 a {VERSAO_MAXIMA_ACEITE})")
+    aceito, vigencia = _data_iso(aceite["aceito_em"]), _data_iso(aceite["vigencia_ate"])
+    if aceito is None or vigencia is None:
+        problemas.append("datas do aceite fora da forma AAAA-MM-DD")
+    elif aceito > hoje or vigencia < aceito or (vigencia - aceito).days > PRAZO_DO_ACEITE:
+        problemas.append(f"vigência do aceite fora do prazo (até {PRAZO_DO_ACEITE} dias desde o aceite, não no futuro)")
+    elif vigencia < hoje:
+        problemas.append(f"aceite de risco vencido em {vigencia.isoformat()}: o titular assina um novo")
+    c = aceite["canario"]
+    if not isinstance(c, dict) or set(c) != CAMPOS_DO_CANARIO_ACEITO:
+        return problemas + ["canario do aceite fora do esquema"]
+    if not (isinstance(c["relatorio_sha256"], str) and SHA256.match(c["relatorio_sha256"])
+            and isinstance(c["claude_versao"], str) and VERSAO_CLAUDE.match(c["claude_versao"])
+            and isinstance(c["claude_sha256"], str) and SHA256.match(c["claude_sha256"])
+            and isinstance(c["forma"], str) and FORMA_ACEITA.match(c["forma"]) and isinstance(c["data"], str)
+            and len(c["data"]) <= 40 and (c["confina_comandos"] is False or c["confina_comandos"] is None)):
+        problemas.append("canario do aceite fora da forma (relatório, Claude Code, forma, conclusão false ou null)")
+    for chave in ("falhou", "nao_medido", "vazou"):
+        lista = c[chave]
+        if not isinstance(lista, list) or len(lista) > 50 or not all(isinstance(i, str) and ITEM_DO_CANARIO.match(i)
+                                                                     for i in lista):
+            problemas.append(f"canario.{chave} do aceite fora da forma")
+    riscos = aceite["riscos"]
+    if not (isinstance(riscos, list) and 1 <= len(riscos) <= 20
+            and all(isinstance(r, str) and r.strip() and len(r) <= 600 for r in riscos)):
+        problemas.append("riscos do aceite fora da forma (de 1 a 20 textos)")
+    return problemas
+
+
+def _modulo_aberturas(skill: Path = SKILL):
+    """O `fundacao.core.aberturas` do kit da skill (o mesmo de `carregar_vigente`), ou o motivo (texto) de não carregá-lo.
+    Nunca importa código da raiz da fundação, gravável pelas sessões."""
+    kit = Path(skill) / "assets" / "fundacao-kit"
+    if not (kit / "fundacao" / "core" / "aberturas.py").is_file():
+        return "o kit da skill não tem fundacao/core/aberturas.py (pacote ABERTURAS): tudo fechado"
+    carregado = sys.modules.get("fundacao")
+    if carregado is not None and not str(getattr(carregado, "__file__", "")).startswith(str(kit)):
+        return "outro pacote fundacao já carregado neste processo: tudo fechado"
+    sys.dont_write_bytecode = True
+    if str(kit) not in sys.path:
+        sys.path.insert(0, str(kit))
+    return importlib.import_module("fundacao.core.aberturas")
+
+
+def _assinatura_do_aceite(bruto: bytes, sig: bytes, skill: Path = SKILL) -> dict:
+    """A assinatura do aceite pela conferência da ficha (`core/aberturas.conferir_assinatura` do kit da skill: o
+    namespace fundacao-abertura e a linha da âncora do titular). Sem o kit ou com erro: ok False, com o motivo."""
+    modulo = _modulo_aberturas(skill)
+    conferir = None if isinstance(modulo, str) else getattr(modulo, "conferir_assinatura", None)
+    if conferir is None:
+        return {"ok": False, "motivo": modulo if isinstance(modulo, str) else "o kit não confere assinatura de abertura"}
+    try:
+        r = conferir(bruto, sig)
+    except Exception as exc:  # noqa: BLE001 - a conferência que falha fecha tudo, com o motivo
+        return {"ok": False, "motivo": f"a conferência da assinatura falhou ({type(exc).__name__})"}
+    return r if isinstance(r, dict) else {"ok": False, "motivo": "resultado da conferência fora da forma"}
+
+
+def conferir_aceite_de_risco(pasta, projeto: str, canario: dict, *, hoje: date | None = None, skill=SKILL) -> dict:
+    """O aceite de risco da `pasta` (a área do titular ou a caixa de entrada), inteiro: a assinatura do titular no
+    namespace fundacao-abertura, a forma canônica, o esquema fechado, o projeto, a vigência e o vínculo com o relatório
+    reprovado que o portão leu (`canario["reprovado"]`: o SHA-256 do arquivo e o Claude Code fixado) e com a forma da
+    raiz. Sem aceite, ou com qualquer diferença: `valido` False, com o motivo (tudo fechado)."""
+    pasta = Path(pasta)
+    res = {"valido": False, "arquivo": (pasta / ACEITE_NOME).as_posix(), "sha256": None, "sig_sha256": None,
+           "aceito_em": None, "vigencia_ate": None, "relatorio_sha256": None, "motivo": None}
+
+    def recusa(motivo: str) -> dict:
+        return {**res, "motivo": motivo}
+    if not os.path.lexists(pasta / ACEITE_NOME):
+        return recusa("sem aceite de risco assinado para este projeto")
+    try:
+        bruto = _ler_bytes_seguro(pasta / ACEITE_NOME, TETO_JSON)
+        sig = _ler_bytes_seguro(pasta / (ACEITE_NOME + ".sig"), TETO_SIG)
+    except (OSError, EntradaInvalida) as exc:
+        return recusa(f"aceite de risco ou assinatura ilegível ({exc})")
+    res.update(sha256=hashlib.sha256(bruto).hexdigest(), sig_sha256=hashlib.sha256(sig).hexdigest())
+    reprovado = _objeto(canario.get("reprovado"))
+    if not reprovado:
+        return recusa("o canário instalado não é um relatório reprovado do Claude Code fixado e da forma da raiz: o "
+                      "aceite não se aplica")
+    assinatura = _assinatura_do_aceite(bruto, sig, skill)
+    if assinatura.get("ok") is not True:
+        return recusa(f"a assinatura do aceite não confere ({assinatura.get('motivo')})")
+    try:
+        regras = modulos_do_kit(skill).regras
+        aceite = regras.carregar(bruto)
+    except (EntradaInvalida, ValueError) as exc:
+        return recusa(f"aceite ilegível ({exc})")
+    if not isinstance(aceite, dict) or regras.canonico(aceite) != bruto:
+        return recusa("aceite fora da forma canônica")
+    problemas = problemas_do_aceite(aceite, projeto, hoje or date.today())
+    if problemas:
+        return recusa("; ".join(problemas[:3]))
+    c = aceite["canario"]
+    for confere, outro in ((c["relatorio_sha256"] == reprovado.get("sha256"), "outro relatório do canário"),
+                           (c["claude_versao"] == reprovado.get("claude_versao")
+                            and c["claude_sha256"] == reprovado.get("claude_sha256"), "outro Claude Code"),
+                           (c["forma"] == canario.get("forma"), "outra forma de caminho da raiz")):
+        if not confere:
+            return recusa(f"o aceite é de {outro}, não do relatório instalado: o titular assina um aceite novo")
+    return {**res, "valido": True, "versao": aceite["versao"], "aceito_em": aceite["aceito_em"],
+            "vigencia_ate": aceite["vigencia_ate"], "relatorio_sha256": c["relatorio_sha256"],
+            "assinante": assinatura.get("assinante"),
+            "motivo": "aceite de risco assinado pelo titular, vigente e do relatório instalado"}
+
+
+def instalar_aceite_de_risco(raiz: Path, projeto: str, area_proj: Path, canario: dict, *, simular: bool,
+                             raiz_dono: bool, hoje: date | None = None, skill=SKILL) -> dict:
+    """Da caixa de entrada (`<raiz>/.claude/projetos/<p>/risco/`, gravada pela ferramenta do titular) para a área root,
+    como a ficha: só o aceite que confere inteiro com o relatório instalado (`conferir_aceite_de_risco`), copiado com o
+    SHA-256 conferido, e de versão maior que a maior já instalada (`risco/maior-versao`, o piso: um aceite trocado ou
+    mais curto não é desfeito por uma cópia antiga devolvida à caixa de entrada; revisão de segurança da 1.7.10.1,
+    R17101-ACE-1). O que a caixa tem e não confere não é instalado (o motivo vai ao relatório); o da área fica. Na
+    simulação, `previa` traz o aceite da caixa, para o plano."""
+    destino = Path(area_proj) / PASTA_DO_ACEITE
+    caixa = raiz / ".claude" / "projetos" / projeto / PASTA_DO_ACEITE
+    if not os.path.lexists(caixa / ACEITE_NOME):
+        return {"acao": "sem-aceite-novo", "detalhe": "caixa de entrada sem aceite de risco"}
+    r = conferir_aceite_de_risco(caixa, projeto, canario, hoje=hoje, skill=skill)
+    if not r["valido"]:
+        return {"acao": "sem-aceite-novo", "detalhe": f"o aceite da caixa de entrada não foi instalado ({r['motivo']})"}
+    copia = _carregar_script("copia_segura")
+    pares = ((ACEITE_NOME, r["sha256"]), (ACEITE_NOME + ".sig", r["sig_sha256"]))
+    if all(os.path.lexists(destino / n) and _sha_ou_motivo(destino / n) == s for n, s in pares):
+        return {"acao": "igual", "detalhe": "aceite de risco já instalado na área do titular"}
+    maior = _maior_versao(destino) if destino.is_dir() else 0
+    if r["versao"] <= maior:
+        aviso = (f"o aceite da caixa de entrada é a v{r['versao']}, e a área do titular já tem a v{maior}: ele não foi "
+                 "instalado (um aceite antigo não volta, e uma versão já instalada não é trocada); para mudar o aceite, "
+                 "assine um novo (fundacao_titular.py aceitar-risco)")
+        return {"acao": "sem-aceite-novo", "detalhe": aviso, "aviso": aviso}
+    if simular:
+        return {"acao": "instalar", "detalhe": f"o aceite de risco v{r['versao']} seria instalado na área do titular",
+                "previa": r}
+    _pasta_area(destino, raiz_dono)
+    for nome, esperado in pares:
+        temp = destino / f".{nome}.{secrets.token_hex(6)}.tmp"
+        copia.copiar_conferindo(caixa / nome, temp, sha256_esperado=esperado, modo=0o644, dentro_de=caixa)
+        _dono(temp, raiz_dono)
+        os.replace(temp, destino / nome)
+    _publicar(destino / "maior-versao", f"{r['versao']}\n".encode("ascii"), 0o644, raiz_dono)
+    return {"acao": "instalar", "detalhe": f"aceite de risco v{r['versao']} instalado na área do titular"}
 
 
 # ------------------------------------------------------------------ perfil do projeto no Ubuntu
@@ -1485,23 +1709,14 @@ def carregar_vigente(skill: Path = SKILL):
     """`aberturas.vigente(raiz, projeto, area)` do kit da skill (não abre o banco, não exige identidade). Sem o módulo
     (o pacote ABERTURAS da 1.7.10 ainda não integrado) ou com outro `fundacao` já carregado neste processo: uma função
     que devolve "sem ficha" (tudo fechado). Nunca importa código da raiz da fundação, gravável pelas sessões."""
-    kit = Path(skill) / "assets" / "fundacao-kit"
-
     def fechada(motivo):
         def vigente(raiz, projeto, area):
             return {"projeto": projeto, "valida": False, "versao": None, "arquivo": None, "sha256": None,
                     "sig_sha256": None, "ficha": None, "motivo_invalida": motivo, "area": str(area)}
         return vigente
 
-    if not (kit / "fundacao" / "core" / "aberturas.py").is_file():
-        return fechada("o kit da skill não tem fundacao/core/aberturas.py (pacote ABERTURAS): tudo fechado")
-    carregado = sys.modules.get("fundacao")
-    if carregado is not None and not str(getattr(carregado, "__file__", "")).startswith(str(kit)):
-        return fechada("outro pacote fundacao já carregado neste processo: tudo fechado")
-    sys.dont_write_bytecode = True
-    if str(kit) not in sys.path:
-        sys.path.insert(0, str(kit))
-    return importlib.import_module("fundacao.core.aberturas").vigente
+    modulo = _modulo_aberturas(skill)
+    return fechada(modulo) if isinstance(modulo, str) else modulo.vigente
 
 
 def _consultar(vigente, raiz: Path, projeto: str, area: Path) -> dict:
@@ -1799,11 +2014,14 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
                         temp_base: str = TEMP_BASE, sonda_interop_cmd: str = SONDA_INTEROP_CMD,
                         sonda_interop_binfmt: str = SONDA_INTEROP_BINFMT, skill=SKILL, seccomp=None, hoje=None,
                         aberturas: dict | None = None, gerenciadas: str = GERENCIADAS,
-                        fs_raiz: str | None = None, ferramenta_base: str | None = FERRAMENTA_BASE) -> dict:
+                        fs_raiz: str | None = None, ferramenta_base: str | None = FERRAMENTA_BASE,
+                        aceite: dict | None = None) -> dict:
     """Tudo o que `instalar_projeto` grava, calculado sem gravar nada (também a simulação). Problema = EntradaInvalida.
-    A ficha só é aplicada com o canário aprovado (`portao_do_canario`); `fs_raiz` substitui a medida do /proc/mounts
-    só nos testes de unidade (a linha de comando sempre mede). Com `ferramenta_base` (sem ela, só no ensaio), a cópia
-    protegida da ferramenta do titular entra no plano (folha da integração, I11)."""
+    A ficha só é aplicada com o canário aprovado (`portao_do_canario`) ou, com ele reprovado, com o aceite de risco
+    do titular da área (`conferir_aceite_de_risco`; `aceite` traz o da caixa de entrada na simulação); `fs_raiz`
+    substitui a medida do /proc/mounts só nos testes de unidade (a linha de comando sempre mede). Com
+    `ferramenta_base` (sem ela, só no ensaio), a cópia protegida da ferramenta do titular entra no plano (folha da
+    integração, I11)."""
     raiz = Path(os.path.abspath(raiz))
     projeto_valido(projeto)
     identificador(titular, "titular")
@@ -1855,7 +2073,10 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
     if aberturas is None:
         aberturas = aberturas_da_ficha(_consultar(vigente or carregar_vigente(skill), raiz, projeto, area / "ficha"),
                                        projeto, hoje, skill)
-    aberturas = com_canario(aberturas, canario)  # contratos, §0: sem o canário aprovado, a ficha não é aplicada
+    if aceite is None and canario.get("reprovado"):
+        aceite = conferir_aceite_de_risco(area / PASTA_DO_ACEITE, projeto, canario, hoje=hoje, skill=skill)
+    # contratos, §0: sem o canário aprovado (ou, reprovado, sem o aceite de risco do titular), a ficha não é aplicada
+    aberturas = com_canario(aberturas, canario, aceite)
     plugins = []
     for p in aberturas["plugins"]:
         if gravacao.com_ligacao(proj, p["origem"]):  # segunda camada (interface do PLUGINS): o kit também recusa
@@ -1910,6 +2131,10 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
         rastreados[(area / "ficha" / (ficha["arquivo"] + ".sig")).as_posix()] = ficha["sig_sha256"]
     if canario["aprovado"]:  # o relatório que liberou a ficha fica fixado: trocado, o lançador não abre
         rastreados[canario["arquivo"]] = canario["sha256"]
+    elif aberturas.get("aceite_risco"):  # sob o aceite: o relatório reprovado e o aceite assinado, fixados também
+        rastreados[canario["arquivo"]] = canario["reprovado"]["sha256"]
+        for nome, chave in ((ACEITE_NOME, "sha256"), (ACEITE_NOME + ".sig", "sig_sha256")):
+            rastreados[(area / PASTA_DO_ACEITE / nome).as_posix()] = aberturas["aceite_risco"][chave]
     arvores = {"skill": {"caminho": skill_copia.as_posix(), "sha256": sha_skill},
                "kit": {"caminho": (raiz / "fundacao").as_posix(), "sha256": kit_sha, "conta": "porteiro.sha256_do_kit"},
                **{f"plugin:{p['nome']}": {"caminho": (area / "plugins" / p["nome"]).as_posix(),
@@ -1931,7 +2156,7 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
                              "montagem": montagem},
               "ferramentas": ferramentas, "arquivos": rastreados, "arvores": arvores, "ficha": ficha,
               "marcadores": marcadores, "seccomp": sec, "gerenciadas": Path(gerenciadas).as_posix(),
-              "canario": canario,
+              "canario": canario, "aceite_risco": aberturas.get("aceite_risco"),
               "claude": {"versao": claude_versao, "sha256": claude_sha256, "origem_hash": origem_hash},
               "lancador": {"caminho": (Path(bin_dir) / f"abrir-fundacao-{projeto}").as_posix(),
                            "sha256": hashlib.sha256(texto_lancador.encode("utf-8")).hexdigest()}}
@@ -1939,7 +2164,8 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
             "bin": Path(bin_dir), "aberturas": aberturas, "plugins": plugins, "perfil": perfil, "arquivos": arquivos,
             "hashes": hashes, "lancador": texto_lancador, "skill": skill, "manifesto_skill": manifesto_skill,
             "skill_copia": skill_copia, "claude": Path(claude), "claude_copia": claude_copia,
-            "claude_sha256": claude_sha256, "seccomp": sec, "canario": canario, "ferramenta": ferramenta}
+            "claude_sha256": claude_sha256, "seccomp": sec, "canario": canario, "ferramenta": ferramenta,
+            "aceite": aceite}
 
 
 def _literais_do_perfil(perfil) -> list[str]:
@@ -1974,22 +2200,30 @@ def instalar_projeto(*, simular: bool = False, ensaio: bool = False, **kw) -> di
     raiz = Path(os.path.abspath(kw["raiz"]))
     projeto_valido(kw["projeto"])
     area = Path(kw.get("area_raiz", AREA_RAIZ)) / "projetos" / kw["projeto"]
-    # 1. Tudo conferido antes de gravar: a ficha que viria da caixa de entrada (a versão menor não volta), e o plano
-    # inteiro com ela e com o portão do canário (hooks, kit, Claude Code, plugins, perfil e lançador).
+    # 1. Tudo conferido antes de gravar: a ficha que viria da caixa de entrada (a versão menor não volta), o aceite de
+    # risco que viria dela (só o do relatório reprovado instalado) e o plano inteiro com eles e com o portão do
+    # canário (hooks, kit, Claude Code, plugins, perfil e lançador).
     ficha = instalar_ficha(raiz, kw["projeto"], area, vigente, simular=True, raiz_dono=raiz_dono)
     previa = None
     if ficha["acao"] == "instalar":
         caixa = raiz / ".claude" / "projetos" / kw["projeto"] / "ficha"
         previa = aberturas_da_ficha(_consultar(vigente, raiz, kw["projeto"], caixa), kw["projeto"], kw.get("hoje"),
                                     kw.get("skill", SKILL))
-    plano = planejar_instalacao(vigente=vigente, aberturas=previa, **kw)
+    canario = portao_do_canario(kw.get("area_raiz", AREA_RAIZ), claude_versao=kw.get("claude_versao"),
+                                claude_sha256=kw.get("claude_sha256"), raiz_wsl=raiz.as_posix(),
+                                fs_raiz=kw.get("fs_raiz"))
+    risco = instalar_aceite_de_risco(raiz, kw["projeto"], area, canario, simular=True, raiz_dono=raiz_dono,
+                                     hoje=kw.get("hoje"), skill=kw.get("skill", SKILL))
+    plano = planejar_instalacao(vigente=vigente, aberturas=previa, aceite=risco.get("previa"), **kw)
     if simular:
-        return _relatorio(plano, ficha, simular=True)
-    # 2. A ficha vai para a área root, e o plano é refeito a partir dela (a área é a fonte que vale).
+        return _relatorio(plano, ficha, simular=True, risco=risco)
+    # 2. A ficha e o aceite vão para a área root, e o plano é refeito a partir dela (a área é a fonte que vale).
     ficha = instalar_ficha(raiz, kw["projeto"], area, vigente, simular=False, raiz_dono=raiz_dono)
+    risco = instalar_aceite_de_risco(raiz, kw["projeto"], area, canario, simular=False, raiz_dono=raiz_dono,
+                                     hoje=kw.get("hoje"), skill=kw.get("skill", SKILL))
     plano = planejar_instalacao(vigente=vigente, **kw)
     acoes = _gravar_plano(plano, raiz_dono)
-    return _relatorio(plano, ficha, simular=False, acoes=acoes)
+    return _relatorio(plano, ficha, simular=False, acoes=acoes, risco=risco)
 
 
 def _gravar_plano(plano: dict, raiz_dono: bool) -> list[dict]:
@@ -2065,10 +2299,11 @@ def _gravar_se_mudou(destino: Path, dados: bytes, modo: int, raiz_dono: bool, it
     return {"item": item, "caminho": destino.as_posix(), "acao": acao, "sha256": sha}
 
 
-def _relatorio(plano: dict, ficha: dict, *, simular: bool, acoes=None) -> dict:
+def _relatorio(plano: dict, ficha: dict, *, simular: bool, acoes=None, risco: dict | None = None) -> dict:
     """O que o titular lê depois do preparo. Os avisos de honestidade (contratos, §0) saem cada um por si: a raiz em
     /mnt/<x> sempre (revisão do lote 2: com o filtro instalado o aviso sumia), os sockets sem filtro, o canário sem
-    aprovação (a ficha não vale) e os managed settings fixados, com o SHA-256 para o titular conferir."""
+    aprovação (a ficha não vale, salvo sob o aceite de risco do titular, que o aviso mostra) e os managed settings
+    fixados, com o SHA-256 para o titular conferir."""
     ab, canario = plano["aberturas"], plano["canario"]
     avisos = []
     if plano["raiz_wsl"].startswith(MONTAGEM):
@@ -2077,8 +2312,18 @@ def _relatorio(plano: dict, ficha: dict, *, simular: bool, acoes=None) -> dict:
     if not plano["seccomp"].get("instalado"):
         avisos.append("sockets sem filtro: o filtro seccomp do sandbox (@anthropic-ai/sandbox-runtime) não está "
                       "instalado num caminho fixo de dono root (" + str(plano["seccomp"].get("motivo")) + ")")
-    if not canario["aprovado"]:
+    aceite = ab.get("aceite_risco")
+    if not canario["aprovado"] and aceite:
+        avisos.append(f"canário NÃO aprovado: a ficha v{ab['versao']} vale só neste projeto, sob o aceite de risco "
+                      f"assinado pelo titular em {aceite['aceito_em']} (vale até {aceite['vigencia_ate']}); o isolamento "
+                      "entre projetos continua só lógico, como o aceite diz")
+    elif not canario["aprovado"]:
         avisos.append("sem canário aprovado, nenhuma abertura vale e a ficha não é aplicada: " + canario["motivo"])
+        motivo = _objeto(plano.get("aceite")).get("motivo")
+        if canario.get("reprovado") and motivo:
+            avisos.append(f"aceite de risco do canário: {motivo}")
+    if risco and risco.get("acao") == "sem-aceite-novo" and "não foi instalado" in str(risco.get("detalhe")):
+        avisos.append(str(risco["detalhe"]))
     gerenciadas = plano["hashes"]["arvores"].get("claude-code-gerenciado")
     if gerenciadas:
         avisos.append(f"managed settings em {gerenciadas['caminho']} (valem acima do perfil do projeto) foram fixados "
@@ -2096,7 +2341,8 @@ def _relatorio(plano: dict, ficha: dict, *, simular: bool, acoes=None) -> dict:
     return {"projeto": plano["projeto"], "simulacao": simular, "area": plano["area"].as_posix(),
             "lancador": (plano["bin"] / f"abrir-fundacao-{plano['projeto']}").as_posix(), "ficha": ficha,
             "aberturas": {k: ab[k] for k in ("valida", "motivo", "versao", "rede", "webfetch", "websearch")},
-            "canario": {k: canario.get(k) for k in ("aprovado", "motivo", "arquivo", "forma")},
+            "canario": {k: canario.get(k) for k in ("aprovado", "motivo", "arquivo", "forma", "reprovado")},
+            "aceite_risco": {"aplicado": aceite, "instalacao": {k: v for k, v in (risco or {}).items() if k != "previa"}},
             "gerenciadas": gerenciadas, "plugins": [p["nome"] for p in plano["plugins"]],
             "ferramentas": plano["hashes"]["ferramentas"], "seccomp": plano["seccomp"], "avisos": avisos,
             "ferramenta_titular": ferramenta, "acoes": acoes or [],
@@ -2105,10 +2351,12 @@ def _relatorio(plano: dict, ficha: dict, *, simular: bool, acoes=None) -> dict:
 
 def instalar_canario(relatorio, area_raiz=AREA_RAIZ, *, ensaio: bool = False, simular: bool = False) -> dict:
     """`instalar-canario` (titular, com sudo): confere o relatório do ensaio real do canário
-    (`scripts/ensaio_isolamento_wsl.py`, `fundacao.ensaio_isolamento/1` com os comandos confinados) e o copia, de dono
-    root, para `<área>/canario/<versão do Claude Code>.json`. O `instalar-projeto` seguinte o confere contra o Claude
-    Code fixado e a forma de caminho da raiz, o fixa no hashes.json e só então aplica a ficha (contratos, §0). Sem
-    root, só em ensaio (--area-raiz explícita)."""
+    (`scripts/ensaio_isolamento_wsl.py`, `fundacao.ensaio_isolamento/1`) e o copia, de dono root, para
+    `<área>/canario/<versão do Claude Code>.json`. O `instalar-projeto` seguinte o confere contra o Claude Code fixado e
+    a forma de caminho da raiz, o fixa no hashes.json e só então aplica a ficha (contratos, §0). Desde a 1.7.10.1, o
+    relatório real que não aprova (false ou null) também é instalado, como revogação: substitui o aprovado da mesma
+    versão, e a ficha de cada projeto fecha, salvo onde o titular assinou o aceite de risco desse relatório. Só o que
+    não é relatório real do ensaio é recusado. Sem root, só em ensaio (--area-raiz explícita)."""
     if os.name == "nt":
         raise EntradaInvalida("o canário é do Ubuntu (WSL2): rode no terminal do Ubuntu")
     raiz_dono = _e_root()
@@ -2120,15 +2368,20 @@ def instalar_canario(relatorio, area_raiz=AREA_RAIZ, *, ensaio: bool = False, si
         conteudo = json.loads(dados.decode("utf-8"))
     except (OSError, ValueError) as exc:
         raise EntradaInvalida(f"relatório do canário ilegível ({exc})") from None
+    estrutura = estrutura_do_relatorio_do_canario(conteudo)
+    if estrutura:
+        raise EntradaInvalida(f"relatório do canário recusado: {estrutura}")
     motivo = conferir_relatorio_do_canario(conteudo)
-    if motivo:
-        raise EntradaInvalida(f"relatório do canário recusado: {motivo}")
     versao = conteudo["claude"]["versao"]
     destino = Path(area_raiz) / "canario" / f"{versao}.json"
     sha = hashlib.sha256(dados).hexdigest()
+    proximo = ("rode de novo o preparar-wsl.sh de cada projeto: a ficha só vale com o canário da mesma versão do "
+               "Claude Code e da forma da raiz" if motivo is None else
+               "o relatório não aprova (false ou null) e vai como revogação: o preparo de cada projeto fecha as "
+               "aberturas, salvo no projeto em que o titular assinar o aceite de risco deste relatório "
+               "(fundacao_titular.py aceitar-risco) e rodar o preparo de novo")
     saida = {"canario": destino.as_posix(), "versao": versao, "forma": conteudo.get("forma"), "sha256": sha,
-             "simulacao": simular, "proximo_passo": "rode de novo o preparar-wsl.sh de cada projeto: a ficha só vale "
-                                                    "com o canário da mesma versão do Claude Code e da forma da raiz"}
+             "aprovado": motivo is None, "motivo": motivo, "simulacao": simular, "proximo_passo": proximo}
     if os.path.lexists(destino) and _sha_ou_motivo(destino) == sha:
         return {**saida, "acao": "igual"}
     acao = "atualizar" if os.path.lexists(destino) else "criar"
@@ -2140,7 +2393,8 @@ def instalar_canario(relatorio, area_raiz=AREA_RAIZ, *, ensaio: bool = False, si
 
 def aberturas_da_area(raiz, projeto: str, area_raiz, *, vigente=None, hoje=None) -> dict:
     """A ficha da área root com o mesmo portão do `instalar-projeto` (para gerar e conferir o perfil): sem área, sem a
-    versão do Claude Code fixada no hashes.json dela ou sem canário aprovado, tudo fechado."""
+    versão do Claude Code fixada no hashes.json dela ou sem canário aprovado (nem, reprovado, o aceite de risco do
+    titular na área), tudo fechado."""
     area = Path(area_raiz) / "projetos" / projeto
     if not area.is_dir():
         return aberturas_fechadas()
@@ -2152,7 +2406,9 @@ def aberturas_da_area(raiz, projeto: str, area_raiz, *, vigente=None, hoje=None)
     canario = portao_do_canario(area_raiz, claude_versao=claude.get("versao"), claude_sha256=claude.get("sha256"),
                                 raiz_wsl=raiz.as_posix())
     ab = aberturas_da_ficha(_consultar(vigente or carregar_vigente(), raiz, projeto, area / "ficha"), projeto, hoje)
-    return com_canario(ab, canario)
+    aceite = (conferir_aceite_de_risco(area / PASTA_DO_ACEITE, projeto, canario, hoje=hoje)
+              if canario.get("reprovado") else None)
+    return com_canario(ab, canario, aceite)
 
 
 # ------------------------------------------------------------------ lançador (abrir-sessao.sh -> abrir-fundacao-<p>)
@@ -2352,6 +2608,18 @@ def conferir_abertura(raiz, projeto: str, area, *, limpar: bool = False, hoje: d
         if not atual["aprovado"] or atual["sha256"] != canario.get("sha256"):
             problemas.append(f"o canário que liberou a ficha não vale mais ({atual['motivo']}): rode de novo o "
                              "preparar-wsl.sh")
+    aceite = _objeto(hashes.get("aceite_risco"))
+    if aceite:  # a ficha vale sob o aceite de risco: o relatório reprovado ainda é o mesmo, e o aceite, vigente
+        claude = _objeto(hashes.get("claude"))
+        atual = portao_do_canario(area.parent.parent, claude_versao=claude.get("versao"),
+                                  claude_sha256=claude.get("sha256"), raiz_wsl=raiz.as_posix())
+        if atual.get("aprovado") or _objeto(atual.get("reprovado")).get("sha256") != aceite.get("relatorio_sha256"):
+            problemas.append("o relatório do canário mudou desde o preparo (o aceite de risco é do anterior): rode de "
+                             "novo o preparar-wsl.sh")
+        vigencia = _data_iso(aceite.get("vigencia_ate"))
+        if vigencia is None or vigencia < (hoje or date.today()):
+            problemas.append(f"o aceite de risco do canário venceu ou está ilegível ({aceite.get('vigencia_ate')}): o "
+                             "titular assina um novo (fundacao_titular.py aceitar-risco) e roda o preparo")
     ficha = hashes.get("ficha")
     if isinstance(ficha, dict) and ficha.get("vigencia_ate"):
         try:

@@ -565,7 +565,8 @@ inteiro. A proteção do parágrafo anterior vale só enquanto isso não acontec
 sobrevive à sessão e vale para todos os projetos, e um texto injetado num documento real basta para pedir isso à
 sessão. Por isso o canário roda antes de qualquer dado real (item C de `assets/templates/CHECKLIST-PROJETO.md`); com
 `false` ou `null`, pôr dado real na raiz em `/mnt/e` é decisão do titular, que aceita também este risco, ou a área de
-dados vai para o ext4.
+dados vai para o ext4. Desde a 1.7.10.1, essa decisão pode abrir também a ficha de um projeto: o aceite de risco
+assinado (§8.4), que não muda nada do que está acima.
 
 ### 8.2 As camadas
 - **Perfil e lançador por projeto** (§5): gravados pelo preparo do titular na área de dono root; o lançador confere
@@ -723,14 +724,19 @@ tudo fechado.
   passa ao `--canario` só o relatório que esse ensaio gravou na casa dele, nunca um arquivo de `projects/`. Nesta
   versão, o portão confere o `confina_comandos` e os campos do relatório, não refaz a conclusão pelos itens: um
   relatório alterado à mão ainda passaria (1.7.11).
-- **Reprovado depois de aprovado** [revisão de segurança, CAN-2]: nesta versão, um canário `false` ou `null` não revoga
-  o aprovado da mesma versão do Claude Code. O `--canario` recusa o relatório novo, e o aprovado continua instalado,
-  com as aberturas da ficha. Para fechar: uma ficha nova sem as aberturas (fechar um item é uma versão nova sem ele,
-  §8.3), assinada, e de novo o preparo de cada projeto, sem o `--canario` (o relatório reprovado faria o preparo
-  parar com código 1), que fecha os perfis. A revogação pelo canário fica para a 1.7.11.
+- **Reprovado depois de aprovado** [revisão de segurança, CAN-2; 1.7.10.1]: o `--canario` instala o relatório real com
+  `false` ou `null` como revogação. Ele substitui o aprovado da mesma versão do Claude Code; o lançador recusa abrir
+  até o preparo de cada projeto rodar de novo, e o preparo fecha os perfis. Só um arquivo que não é relatório real do
+  ensaio é recusado.
+- **Aceite de risco do canário** [Decisão; 1.7.10.1; DECISAO-007 da fundação do titular]: com o canário reprovado, a
+  ficha de um projeto só vale com o aceite que o titular assina na ferramenta fixa (`aceitar-risco`), montado só com
+  código fixo a partir do relatório, no namespace da ficha e com esquema próprio, preso ao SHA-256 do relatório
+  instalado, ao Claude Code fixado, à forma da raiz, ao projeto e a uma vigência de até 180 dias. Ele não confina nada
+  (§8.1 e §8.5 continuam), não abre nada sozinho e não serve a outro projeto. Detalhes:
+  [correção 1.7.10.1](atualizacao-1.7.10.1.md).
 - **Passo a passo do titular:** `assets/templates/CHECKLIST-PROJETO.md`. O canário roda antes de qualquer dado real
   (§8.1: o risco do `/mnt/c`). O resultado vai para o checklist do projeto e para a RETOMADA. Com `false` ou `null`, as
-  aberturas ficam fechadas, e o isolamento continua lógico.
+  aberturas ficam fechadas, salvo sob o aceite de risco do projeto, e o isolamento continua lógico.
 - **O que só o canário confirma na versão fixada:** `references/fontes-verificadas.md`, conferência da 1.7.10.
 
 ### 8.5 O que continua lógico (registre sempre)
