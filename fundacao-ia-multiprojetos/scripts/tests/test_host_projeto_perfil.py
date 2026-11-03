@@ -121,7 +121,7 @@ class PlanoAMaisNegacoesNominais(Base):
         self.assertEqual(env["FUNDACAO_PROJECT"], "caso-real")
         self.assertEqual(env["FUNDACAO_RAIZ"], RAIZ)
         self.assertEqual(env["FUNDACAO_PORTEIRO"], PROJ + "/.porteiro")
-        self.assertEqual(env["FUNDACAO_FERRAMENTAS"], "Bash,Read,Edit,Write,Glob,Grep,Skill,Task,TodoWrite")
+        self.assertEqual(env["FUNDACAO_FERRAMENTAS"], "Bash,Read,Edit,Write,Glob,Grep,Skill,Agent,TodoWrite")
         self.assertEqual(env["FUNDACAO_MCP_PERMITIDAS"], "")
         self.assertEqual(env["FUNDACAO_DOMINIOS_WEB"], "")
         self.assertEqual(env["DISABLE_AUTOUPDATER"], "1")
@@ -145,6 +145,7 @@ class PlanoAMaisNegacoesNominais(Base):
                     vistos[(evento, g["matcher"])] = Path(h["args"][2]).name
                     self.assertTrue(h["args"][2].startswith(RAIZ + "/.claude/hooks/"))
         self.assertEqual(vistos, {("SessionStart", "compact"): "sinais_sessao.py",
+                                  ("SubagentStart", "*"): "sinais_sessao.py",
                                   ("PreToolUse", "*"): "guarda_ferramentas.py",
                                   ("PreToolUse", "Edit|Write|MultiEdit|NotebookEdit|mcp__.*"): "guarda_caminho.py",
                                   ("PreToolUse", "Bash|PowerShell"): "guarda_identidade.py",
@@ -273,7 +274,7 @@ class ConferirPerfil(Base):
             "state gravável": lambda p: fs(p)["allowWrite"].append(RAIZ + "/state"),
             "state sem negação": lambda p: p["permissions"]["deny"].remove(f"Read(/{RAIZ}/state/**)"),
             "outra identidade": lambda p: p["env"].update({IDENTIDADE: "titular"}),
-            "ferramenta a mais": lambda p: p["env"].update(FUNDACAO_FERRAMENTAS=p["env"]["FUNDACAO_FERRAMENTAS"] + ",Agent"),
+            "ferramenta a mais": lambda p: p["env"].update(FUNDACAO_FERRAMENTAS=p["env"]["FUNDACAO_FERRAMENTAS"] + ",Task"),
             "rede aberta": lambda p: p["sandbox"]["network"]["allowedDomains"].append("exemplo.invalid"),
             "rede sem lista estrita": lambda p: p["sandbox"]["network"].update(strictAllowlist=False),
             "plano A desligado": lambda p: p["permissions"].update(blockReadsOutsideWorkingDirectories=False),

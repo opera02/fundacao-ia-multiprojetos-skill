@@ -1,6 +1,6 @@
 # Árvore da skill e finalidade de cada componente
 
-Raiz: `fundacao-ia-multiprojetos/` · 444 arquivos. Pastas com muitos arquivos de mesma natureza são descritas uma vez. `evals/` fica fora do pacote `.skill` (vai no pacote completo).
+Raiz: `fundacao-ia-multiprojetos/` · 445 arquivos. Pastas com muitos arquivos de mesma natureza são descritas uma vez. `evals/` fica fora do pacote `.skill` (vai no pacote completo).
 
 | Caminho | Finalidade |
 |---|---|
@@ -80,6 +80,7 @@ Raiz: `fundacao-ia-multiprojetos/` · 444 arquivos. Pastas com muitos arquivos d
 | `evals/trigger-evals.json` | 20 consultas de acionamento (10 devem acionar, 10 não). |
 | `evals/verificar_execucoes.py` | Coleta fatos objetivos de todas as execuções (run-*) de cada braço (origem intacta, vazamentos, banco, ACL, acesso ao gabarito no trace e, em E7/E9, acessos ao outro projeto; em E11, fundação inalterada e relatório privado; em E13, backups apagados, novos e ensaios de restauração); recolhe as saídas da área do executor. |
 | `references/atualizacao-1.7.10.1.md` | Correção 1.7.10.1 (kit 1.7.10 igual): o relatório reprovado do canário como revogação e o aceite de risco assinado pelo titular por projeto e por relatório, o que muda, a ordem, o retorno e os limites. |
+| `references/atualizacao-1.7.10.2.md` | Correção 1.7.10.2 (kit 1.7.10 igual): a ferramenta de subagentes (Agent) nas sessões de projeto, com campos e tipos fechados no guarda, as regras da sessão no SubagentStart, a recusa de agentes nas managed settings, a ordem dos preparos, o retorno e os limites lidos no binário 2.1.302. |
 | `references/atualizacao-1.7.10.md` | Atualização para a 1.7.10 sem migração: compatibilidade, ordem com o preparo do host e o canário, o que o desfazer devolve e o que não volta, limites e o que fica para a 1.7.11. |
 | `references/atualizacao-1.7.9.md` | Compatibilidade da migração 5, retorno por cópia anterior e adoção explícita do livro assinado. |
 | `references/autonomia-e-escalonamento.md` | Quando decidir sozinho, preparar e pedir decisão ou bloquear; formato de pergunta e de bloqueio. |

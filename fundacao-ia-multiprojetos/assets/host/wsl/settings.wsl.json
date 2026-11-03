@@ -73,6 +73,21 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3",
+            "args": ["-I", "-B", "{{HOOK_SINAIS}}"],
+            "timeout": 3,
+            "onFailure": "block",
+            "statusMessage": "sinais_sessao: as regras da sessão para o subagente"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "*",

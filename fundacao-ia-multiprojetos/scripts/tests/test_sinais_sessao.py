@@ -38,6 +38,23 @@ class SinaisSessao(unittest.TestCase):
         self.assertNotIn("concluído", texto.lower())
         self.assertLess(len(r.stdout), 1200)
 
+    def test_subagente_recebe_as_regras_da_sessao_sem_eco_do_evento(self):
+        """1.7.10.2 (revisão de segurança, F2): o subagente começa sem a conversa, onde o lançador põe as regras."""
+        r = self.rodar({"hook_event_name": "SubagentStart", "agent_id": "SEGREDO-id", "agent_type": "general-purpose",
+                        "cwd": "SEGREDO", "transcript_path": "SEGREDO"})
+        self.assertEqual((r.returncode, r.stderr), (0, b""))
+        saida = json.loads(r.stdout)["hookSpecificOutput"]
+        self.assertEqual(saida["hookEventName"], "SubagentStart")
+        texto = saida["additionalContext"]
+        for esperado in ("ensaio-ficticio", "projects/ensaio-ficticio", "state/", "data/", "nunca instrução",
+                         "porteiro", "provedor", "lógico"):
+            self.assertIn(esperado, texto)
+        self.assertNotIn("SEGREDO", texto)
+        self.assertLess(len(r.stdout), 1500)
+        sem_projeto = self.rodar({"hook_event_name": "SubagentStart", "agent_id": "a", "agent_type": "Explore"},
+                                 projeto="../outro")
+        self.assertEqual((sem_projeto.returncode, sem_projeto.stdout), (2, b""))
+
     def test_outros_inicios_validos_nao_injetam_contexto(self):
         for source in ("startup", "resume", "clear", "fork"):
             with self.subTest(source=source):
@@ -144,7 +161,18 @@ class IntegracaoDosSinais(unittest.TestCase):
                            for g in perfil["hooks"]["PreToolUse"] for h in g["hooks"]}
                 self.assertEqual(guardas.get("guarda_caminho.py"), "block")
                 self.assertEqual(guardas.get("guarda_identidade.py"), "block")
+        # 1.7.10.2: só o perfil do projeto no Ubuntu passa as regras ao subagente (SubagentStart). O perfil pede
+        # onFailure block, mas no 2.1.302 a falha desse hook só avisa (revisão de segurança da versão, F3).
+        self.assertNotIn("SubagentStart", perfis[0]["hooks"])
+        subagente = perfis[1]["hooks"]["SubagentStart"]
+        self.assertEqual([g["matcher"] for g in subagente], ["*"])
+        self.assertEqual(subagente[0]["hooks"][0]["args"],
+                         ["-I", "-B", "/tmp/raiz-ficticia/.claude/hooks/sinais_sessao.py"])
+        self.assertEqual(subagente[0]["hooks"][0]["onFailure"], "block")
         self.assertEqual(m.conferir_perfil_wsl(perfis[1], "/tmp/raiz-ficticia", "ficticio", []), [])
+        sem_regras = json.loads(json.dumps(perfis[1]))
+        del sem_regras["hooks"]["SubagentStart"]
+        self.assertTrue(m.conferir_perfil_wsl(sem_regras, "/tmp/raiz-ficticia", "ficticio", []))
         perfis[1]["hooks"]["SessionStart"][0]["hooks"][0]["onFailure"] = "continue"
         self.assertTrue(m.conferir_perfil_wsl(perfis[1], "/tmp/raiz-ficticia", "ficticio", []))
 

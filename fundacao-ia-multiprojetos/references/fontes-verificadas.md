@@ -1,5 +1,23 @@
 # Fontes verificadas e fatos voláteis
 
+## Conferência da 1.7.10.2 — 03/11/2026
+Duas fontes: o binário do Claude Code 2.1.302 fixado no Ubuntu (o mesmo da conferência da 1.7.10.1), lido sem
+executar, por busca de texto nos bytes; e o pedido da sessão de um projeto real, que observou a ferramenta numa sessão
+aberta pelo lançador em 02/11/2026. Valem para esta versão do Claude Code.
+
+| Fato | Uso na fundação | Situação |
+|---|---|---|
+| A ferramenta de subagentes se chama `Agent`; o `--tools` aceita o nome antigo `Task`, e a ferramenta aparece na sessão com o nome novo | a lista do lançador passa a `Agent`, e o `guarda_ferramentas.py` aceita os dois nomes pelo mesmo item ([correção 1.7.10.2](atualizacao-1.7.10.2.md)) | o nome, lido no binário (03/11/2026); a aceitação do `Task` e a negação pelo guarda antigo, vistas pela sessão do projeto (02/11/2026) |
+| A entrada da ferramenta Agent tem `description`, `prompt`, `subagent_type`, `model`, `effort`, `run_in_background`, `name`, `team_name` e `mode` ("Deprecated; ignored"), `isolation` (`worktree` ou `remote`; "availability is gated") e `cwd`, que o esquema mostrado ao modelo omite | o guarda aceita os seis primeiros e nega os outros e qualquer campo novo | lido (03/11/2026) |
+| No esquema da entrada dos hooks, `agent_id` é "Absent for the main thread", e `agent_type` vem "when the hook fires from within a subagent" | os hooks valem para as ferramentas dos subagentes; a prova 13 do checklist do projeto mede isso na sessão real | lido (03/11/2026); a medida, pendente |
+| O WebFetch não fica disponível direto na sessão: a mensagem manda usar a ferramenta Agent com o `subagent_type` do agente `web-fetch`, que "always runs as a local agent" | com a ficha que abre o WebFetch, a página só se lê pela ferramenta Agent; se o `guarda_rede.py` roda dentro dele, não foi localizado (linha do `managedHooksOnly`, abaixo; a prova 13 mede) | lido (03/11/2026); a falta do WebFetch direto, vista pela sessão do projeto |
+| `isolation: "remote"` cai para o agente local com `--restricted`, sem login no claude.ai ou com a opção remota desligada (para `worktree` se houver repositório git) | o guarda nega o campo antes, qualquer que seja a opção remota da conta | lido (03/11/2026) |
+| `--restricted`: "removes the built-in tools that run commands or code (...) and WebFetch unless --tools names them, and ignores user, project and local settings files (managed settings and --settings still apply)"; sessões na nuvem não são criadas dele | não usado na 1.7.10.2; candidato a endurecimento do lançador na 1.7.11, medido no canário (muda a carga de configurações) | lido (03/11/2026) |
+| As definições de agente se juntam pelo `agentType`, na ordem embutidas, plugin, usuário, projeto, `flagSettings` e `policySettings`, e a posterior toma o lugar da anterior de mesmo nome; as de usuário e de projeto dependem das fontes de configuração ativas; as de plugin levam o prefixo `<plugin>:`; as gerenciadas vêm de `/etc/claude-code/.claude/agents` | o guarda confere o tipo só pelo nome; o preparo recusa agentes nas managed settings; com o `--setting-sources local`, as de usuário e de projeto ficam de fora | lido pela revisão de segurança da 1.7.10.2 (03/11/2026); quem preenche `projectAgentsElsewhere`, não localizado |
+| O texto da ferramenta Agent diz que cada chamada "starts a fresh agent with no memory of prior runs" e que o prompt "must be self-contained"; Explore, Plan e web-fetch têm `omitClaudeMd`; o hook `SubagentStart` aceita a saída `additionalContext` | o `sinais_sessao.py` repete ao subagente as regras que o lançador põe na conversa | lido pela revisão de segurança da 1.7.10.2 (03/11/2026); o efeito, pendente da prova 13 |
+| O `web-fetch` embutido roda o `SubagentStart` só com os hooks das managed settings (`managedHooksOnly`); o erro de um hook do `SubagentStart` vira aviso não bloqueante, mesmo com `onFailure: "block"` | o web-fetch não recebe as regras do `sinais_sessao.py`, e a falha do hook não para o subagente: limites registrados na correção 1.7.10.2; se o `guarda_rede.py` roda nas chamadas de WebFetch do web-fetch, não localizado | lido pela revisão de segurança da 1.7.10.2 (03/11/2026); a prova 13 mede o WebFetch do web-fetch |
+| `SubagentHandback` leva o relatório do subagente a quem o chamou: "Only a report delivered through SubagentHandback reaches your caller; plain text you write at the end of your run is NOT delivered", e, quando ela não está ativa, o texto final vale | o guarda a deixa passar com o item dos subagentes | lido pela revisão de segurança da 1.7.10.2 (03/11/2026); se ela fica ativa nas sessões de projeto, pendente da prova 13 |
+
 ## Conferência da 1.7.10.1 — 02/11/2026
 Duas fontes: o binário do Claude Code 2.1.302 fixado no Ubuntu (SHA-256 `60d7eb7f…e29a5`, o mesmo do relatório do
 canário), lido sem executar, e as transcrições das 12 sessões do canário real de 02/11/2026 (`claude -p`, forma
@@ -69,7 +87,8 @@ Três fontes, cada uma com o seu limite:
   de `denyRead` em `/mnt`;
 - se `Read(./**/X)` cobre o `X` da raiz do projeto, e se as regras Read filtram o resultado do Grep e do Glob (o
   `guarda_leitura.py` supõe o comportamento do ripgrep);
-- se o matcher `*` pega toda ferramenta, e qual nome a 2.1.302 aceita no `--tools` (`Task` ou `Agent`);
+- se o matcher `*` pega toda ferramenta (o nome da ferramenta de subagentes, `Agent`, está na conferência da
+  1.7.10.2);
 - se o `--plugin-dir` carrega com `--setting-sources local`, com que id o plugin aparece no `system/init`, se o
   `Skill(<nome>)` negado bloqueia `<p>-<n>:<nome>` e se `projects/<p>/.claude/` deixa de carregar;
 - se as chaves de cabeçalho fora da lista e o contexto dinâmico se comportam como a documentação diz; e, sem item no

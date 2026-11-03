@@ -95,6 +95,10 @@ que `instrucoes_raiz.py gerar` produziria e, se for outro, regenera só as instr
 **Na 1.7.10.1** (skill nova, kit 1.7.10 igual): o `aplicar` só regenera as instruções da raiz; o que muda é o preparo
 do Ubuntu e a ferramenta do titular, com o aceite de risco do canário ([correção 1.7.10.1](atualizacao-1.7.10.1.md)).
 
+**Na 1.7.10.2** (skill nova, kit 1.7.10 igual): o `aplicar` também só regenera as instruções da raiz. O hook
+`guarda_ferramentas.py` muda: depois da liberação, o titular roda o `preparar-maquina.ps1` e o `preparar-wsl.sh` com
+todos os projetos, porque o lançador de cada um confere os hooks da raiz ([correção 1.7.10.2](atualizacao-1.7.10.2.md)).
+
 **Na 1.7.10, o `aplicar` faz também** [Decisão; 1.7.10] (compatibilidade, o que muda e o que o `desfazer` não volta:
 [atualização para a 1.7.10](atualizacao-1.7.10.md)):
 - recusa com o WSL ligado, no começo e antes da restauração do ensaio, sem alterar nada, porque o banco não abre pelos

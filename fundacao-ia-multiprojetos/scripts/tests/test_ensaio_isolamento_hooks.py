@@ -207,7 +207,7 @@ class TestIntegracaoComOsHooksReais(Base):
         self.mod.HOOKS_ORIGEM = HOOKS_REAIS
         self.plano = self.mod.preparar(self.base)
         self.env = {"FUNDACAO_PROJECT": "ensaio-a", "FUNDACAO_RAIZ": self.base.as_posix(),
-                    "FUNDACAO_FERRAMENTAS": "Bash,Read,Edit,Write,Glob,Grep,Skill,Task,TodoWrite",
+                    "FUNDACAO_FERRAMENTAS": "Bash,Read,Edit,Write,Glob,Grep,Skill,Agent,TodoWrite",
                     "FUNDACAO_MCP_PERMITIDAS": ""}
 
     def carregar_hook(self, nome):
@@ -272,7 +272,10 @@ class TestIntegracaoComOPerfilDoHost(Base):
         self.assertEqual(self.mod.conferir_perfil_do_ensaio(destino, self.base, plano), [])
         perfil = json.loads(destino.read_text(encoding="utf-8"))
         args = [h["args"][-1] for grupos in perfil["hooks"].values() for g in grupos for h in g["hooks"]]
-        self.assertEqual(sorted(Path(a).name for a in args), sorted(HOOKS))
+        self.assertEqual(sorted({Path(a).name for a in args}), sorted(HOOKS))
+        # 1.7.10.2: o sinais_sessao.py também passa as regras da sessão ao subagente
+        self.assertEqual([Path(h["args"][-1]).name for g in perfil["hooks"]["SubagentStart"] for h in g["hooks"]],
+                         ["sinais_sessao.py"])
         fs = perfil["sandbox"]["filesystem"]
         self.assertIn(self.temp_base.as_posix() + "/fundacao-ia-ensaio-a", fs["allowRead"])
         self.assertIn("/tmp", fs["denyRead"])

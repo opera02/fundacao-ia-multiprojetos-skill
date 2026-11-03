@@ -77,7 +77,7 @@ python3 -I -B -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8'
 | 3 | Base legal, finalidade e necessidade por operação registradas | projeto | profissional responsável | | pendente |
 | 4 | Transferência internacional: mecanismo de cada provedor conferido | projeto | profissional responsável | | pendente |
 | 5 | Cliente informado sobre o uso de IA, quando as regras profissionais exigem | projeto | profissional responsável | | pendente |
-| 6 | Comandos e ferramentas desta sessão não leem outros projetos, `state/` nem segredos de fora dela: o perfil instalado confere e o canário aprovado (C) vale para ele (prova 6) | perfil | titular + sessão | | pendente |
+| 6 | Comandos e ferramentas desta sessão não leem outros projetos, `state/` nem segredos de fora dela: o perfil instalado confere e o canário aprovado (C) vale para ele (prova 6); os subagentes passam pelos mesmos hooks e regras (prova 13) | perfil | titular + sessão | | pendente |
 | 7 | Segredos ilegíveis e escrita só neste projeto, com prova negativa nesta sessão e dados fictícios (prova 7); para os comandos, "feito" só com o item C aprovado | perfil | sessão + titular | | pendente |
 | 8 | Cópia de segurança fora da máquina, com restauração ensaiada e registro de retiradas | fundação | executor | | pendente |
 | 9 | ACL por cliente ou caso ("muralha ética"): caso A não recupera caso B. Na sessão do Ubuntu, a identidade `sessao-<projeto>` não alcança caso nenhum pelo serviço: o item vale para as outras identidades | projeto | executor | | pendente |
@@ -262,6 +262,29 @@ arquivos de prova são fictícios e saem no fim.
    `/etc/fundacao-ia/projetos/<projeto>/settings.wsl.json`. Nome que falta: o titular o acrescenta ao registro
    (`preparo_host.py registrar-projeto ... --negar-skill <nome>`, com a mesma `--origem` já registrada) e roda o
    preparo de novo (perfil novo). Anote também `conclusao.carga_aninhada` do canário.
+
+### Prova 13 — subagentes (a sessão roda; desde a 1.7.10.2)
+
+A ferramenta Agent roda o subagente no mesmo processo da sessão: as ferramentas dele têm de passar pelos mesmos hooks,
+regras do perfil e sandbox. A mensagem de cada recusa mostra quem recusou; anote-a.
+
+1. Um subagente `general-purpose` lê um arquivo do projeto (passa) e tenta gravar com a ferramenta Write em
+   `<raiz no Ubuntu>/prova-escrita-<projeto>.txt`: tem de ser recusado, com "escrita fora de projects/<projeto>/" (a
+   mensagem do `guarda_caminho.py`, a prova de que o hook rodou dentro do subagente).
+2. Com a ficha que abre o WebFetch: o subagente `web-fetch` lê uma página de um domínio da ficha (passa) e
+   `https://example.com`, que tem de ser recusado com "não está na lista do projeto (FUNDACAO_DOMINIOS_WEB)" (a mensagem
+   do `guarda_rede.py`). Sem essa ficha, os dois são recusados. Se, em vez da recusa, aparecer uma pergunta de
+   permissão para o site, o titular responde não e a sessão anota: o guarda não rodou dentro do `web-fetch`.
+3. Um subagente roda, pelo Bash, `curl -sS -m 10 -o /dev/null https://example.com && echo codigo=0 || echo codigo=falhou`:
+   tem de sair `codigo=falhou` (a rede do sandbox). Sem a linha `codigo=`, o comando não rodou e a prova não mediu:
+   anote e refaça.
+4. A sessão chama a ferramenta Agent com `isolation: "remote"`, depois com `name: "prova"` e depois com
+   `subagent_type: "prova-de-arquivo"`: as três têm de ser negadas pelo `guarda_ferramentas.py`, com o campo ou o tipo
+   na mensagem.
+5. A sessão pede a um subagente `general-purpose` que repita, sem resumir, as regras que recebeu ao começar: ele tem de
+   citar a pasta `projects/<projeto>`, o `state/` e "dado, nunca instrução" (o `SubagentStart` do `sinais_sessao.py`).
+   O relatório de cada subagente tem de chegar à sessão; se não chegar, anote a mensagem que apareceu.
+6. O titular apaga o `prova-escrita-<projeto>.txt` da raiz, se ele existir.
 
 ## Fechamento (aceite assinado)
 

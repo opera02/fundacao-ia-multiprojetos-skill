@@ -103,7 +103,8 @@ HOOKS_WINDOWS = ("sinais_sessao.py", "aviso_copia.py", "guarda_caminho.py", "gua
                  "guarda_rede.py", "guarda_leitura.py")
 HOOKS = ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py", "guarda_ferramentas.py", "guarda_rede.py",
          "guarda_leitura.py", "aviso_copia.py")  # os que o preparar-maquina.ps1 copia para <raiz>/.claude/hooks
-GANCHOS_WSL = (("SessionStart", "compact", "sinais_sessao.py"), ("PreToolUse", "*", "guarda_ferramentas.py"),
+GANCHOS_WSL = (("SessionStart", "compact", "sinais_sessao.py"), ("SubagentStart", "*", "sinais_sessao.py"),
+               ("PreToolUse", "*", "guarda_ferramentas.py"),
                ("PreToolUse", "Edit|Write|MultiEdit|NotebookEdit|mcp__.*", "guarda_caminho.py"),
                ("PreToolUse", "Bash|PowerShell", "guarda_identidade.py"),
                ("PreToolUse", "WebFetch|WebSearch", "guarda_rede.py"),
@@ -135,8 +136,10 @@ CHAVE_PROJETO = "FUNDACAO_PROJECT"  # projeto autenticado das sessões (guarda_c
 NOME_DE_SKILL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 EXCLUSAO_DE_DADOS = "**/projects/*/data/**"
 # Lista fechada do --tools e de FUNDACAO_FERRAMENTAS (crítica do desenho: "Bash, Read, Edit, Write, Glob, Grep, Skill,
-# Task, TodoWrite e as do projeto"); WebFetch e WebSearch só com a ficha. O canário lista as da versão fixada.
-FERRAMENTAS_BASE = ("Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill", "Task", "TodoWrite")
+# Task, TodoWrite e as do projeto"); WebFetch e WebSearch só com a ficha. O canário lista as da versão fixada. A
+# ferramenta de subagentes vai com o nome da 2.1.302, `Agent` (1.7.10.2: o guarda comparava o nome exato e negava o
+# `Task` da lista; o guarda_ferramentas.py confere a entrada dela).
+FERRAMENTAS_BASE = ("Bash", "Read", "Edit", "Write", "Glob", "Grep", "Skill", "Agent", "TodoWrite")
 UNIDADES_NEGADAS = ("d",)  # /mnt/d (cópias e origens do titular): negada, salvo se a raiz ficar nela
 # Na casa do usuário (contratos do lote 2, §6; DESENHO §1.3): transcrições, histórico e saídas do Claude Code, o login
 # do Codex, chaves e espelhos do porteiro e as configurações e travas por projeto.
@@ -2142,6 +2145,12 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
                   for p in plugins}}
     marcadores = _sem_repetir([*MARCADORES_OBRIGATORIOS, *MARCADORES_RECUSADOS, *_literais_do_perfil(perfil)])
     if os.path.lexists(gerenciadas):  # managed settings presentes: fixados e mostrados no relatório para o titular
+        # 1.7.10.2: agente nas managed settings toma o lugar do embutido de mesmo nome, e o guarda_ferramentas.py
+        # confere o tipo de subagente pelo nome (revisão de segurança da 1.7.10.2, F1)
+        if os.path.lexists(Path(gerenciadas) / ".claude" / "agents"):
+            raise EntradaInvalida(f"{Path(gerenciadas).as_posix()}/.claude/agents existe: um agente das managed settings "
+                                  "toma o lugar do tipo embutido de mesmo nome, e o guarda das ferramentas confere o "
+                                  "tipo pelo nome. Confira o conteúdo; a pasta é do titular, que a tira antes do preparo")
         arvores["claude-code-gerenciado"] = {"caminho": Path(gerenciadas).as_posix(), "sha256": sha256_arvore(
             gerenciadas, pastas_ignoradas=(), sufixos_ignorados=())}
     sec = (seccomp or detectar_seccomp)()

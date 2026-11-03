@@ -25,7 +25,7 @@ from apoio import ENV, SKILL
 HOOKS = SKILL / "assets" / "hooks"
 NOVOS = ("guarda_ferramentas.py", "guarda_rede.py", "guarda_leitura.py", "aviso_copia.py")
 PRE_TOOL_USE = ("guarda_ferramentas.py", "guarda_rede.py", "guarda_leitura.py", "guarda_identidade.py")
-FERRAMENTAS = "Bash,Read,Edit,Write,Glob,Grep,Skill,Task,TodoWrite"
+FERRAMENTAS = "Bash,Read,Edit,Write,Glob,Grep,Skill,Agent,TodoWrite"
 
 
 def ambiente(**variaveis: str) -> dict:
@@ -238,6 +238,119 @@ class GuardaFerramentas(unittest.TestCase):
         self.assertLess(len(texto), 700)
         self.assertNotIn("\x1b", texto)
         self.assertNotIn("\n", texto)
+
+
+class GuardaFerramentasAgente(unittest.TestCase):
+    """1.7.10.2: a ferramenta de subagentes do Claude Code 2.1.302 (`Agent`; o `Task` antigo vale pelo mesmo item da
+    lista) passa com os campos do agente local e um tipo embutido da lista, e é negada com os campos que o levam para a
+    nuvem, para uma cópia git, para outra pasta ou para uma equipe, e com agente definido em arquivo (esquema da
+    ferramenta lido no binário 2.1.302 em 03/11/2026)."""
+    HOOK = "guarda_ferramentas.py"
+    LOCAL = {"description": "Revisar o passo 3", "prompt": "Leia outputs/x.md e aponte erros.",
+             "subagent_type": "general-purpose", "model": "sonnet", "effort": "high", "run_in_background": False}
+
+    def setUp(self):
+        self.m = carregar(self.HOOK)
+
+    def decide(self, nome, entrada, lista=FERRAMENTAS):
+        return "deny" if self.m.decide({"tool_name": nome, "tool_input": entrada},
+                                       {"FUNDACAO_FERRAMENTAS": lista}) else "sem_decisao"
+
+    def test_agente_local_segue(self):
+        for entrada in (self.LOCAL, {"description": "ler", "prompt": "Leia a lei.", "subagent_type": "web-fetch"},
+                        {"description": "procurar", "prompt": "Ache os testes.", "subagent_type": "Explore"},
+                        {"description": "planejar", "prompt": "Planeje."}, {}):
+            with self.subTest(entrada=entrada):
+                self.assertEqual(self.decide("Agent", entrada), "sem_decisao")
+        self.assertEqual(decisao(self.HOOK, ferramenta("Agent", **self.LOCAL), FUNDACAO_FERRAMENTAS=FERRAMENTAS),
+                         "sem_decisao")
+
+    def test_task_e_agent_valem_pelo_mesmo_item_da_lista(self):
+        antiga = FERRAMENTAS.replace("Agent", "Task")
+        for nome in ("Agent", "Task"):
+            for lista in (FERRAMENTAS, antiga):
+                with self.subTest(nome=nome, lista=lista):
+                    self.assertEqual(self.decide(nome, self.LOCAL, lista), "sem_decisao")
+            with self.subTest(nome=nome, lista="sem subagentes"):
+                self.assertEqual(self.decide(nome, self.LOCAL, "Bash,Read,Edit,Write"), "deny")
+        texto = motivo(self.HOOK, ferramenta("Agent", **self.LOCAL), FUNDACAO_FERRAMENTAS="Bash,Read")
+        self.assertIn("'Agent'", texto)
+        self.assertIn("FUNDACAO_FERRAMENTAS", texto)
+
+    def test_nuvem_copia_git_outra_pasta_e_equipe_negadas(self):
+        casos = {"isolation": ("remote", "worktree"), "cwd": ("/tmp/fundacao-ficticia/projects/outro",),
+                 "name": ("revisor",), "team_name": ("equipe",), "mode": ("bypassPermissions", "acceptEdits")}
+        for campo, valores in casos.items():
+            for valor in valores:
+                for nome in ("Agent", "Task"):
+                    with self.subTest(campo=campo, valor=valor, nome=nome):
+                        self.assertEqual(self.decide(nome, {**self.LOCAL, campo: valor}), "deny")
+            texto = motivo(self.HOOK, ferramenta("Agent", **{**self.LOCAL, campo: valores[0]}),
+                           FUNDACAO_FERRAMENTAS=FERRAMENTAS)
+            for trecho in (f"'{campo}'", "repita sem ele"):
+                self.assertIn(trecho, texto)
+        texto = motivo(self.HOOK, ferramenta("Agent", **{**self.LOCAL, "isolation": "remote"}),
+                       FUNDACAO_FERRAMENTAS=FERRAMENTAS)
+        self.assertIn("nuvem", texto)
+
+    def test_tipo_de_subagente_so_os_embutidos_da_lista(self):
+        for tipo in ("general-purpose", "web-fetch", "Explore", "Plan"):
+            with self.subTest(tipo=tipo):
+                self.assertEqual(self.decide("Agent", {**self.LOCAL, "subagent_type": tipo}), "sem_decisao")
+        for tipo in ("revisor-juridico", "claude-code-guide", "statusline-setup", "fork", "worker", "general-purpose ",
+                     "explore", "", 7, ["general-purpose"], {"tipo": "Plan"}):
+            with self.subTest(tipo=tipo):
+                self.assertEqual(self.decide("Agent", {**self.LOCAL, "subagent_type": tipo}), "deny")
+        texto = motivo(self.HOOK, ferramenta("Agent", **{**self.LOCAL, "subagent_type": "revisor-juridico"}),
+                       FUNDACAO_FERRAMENTAS=FERRAMENTAS)
+        for trecho in ("'revisor-juridico'", "general-purpose", "web-fetch", "titular"):
+            self.assertIn(trecho, texto)
+
+    def test_campo_aceito_fora_do_tipo_e_negado_sem_depender_do_binario(self):
+        """Revisão de segurança da 1.7.10.2 (endurecimento; H5): `subagent_type: null` e `model` objeto passavam."""
+        casos = {"subagent_type": (None, 7, ["Plan"]), "model": ({"provedor": "outro"}, None, 3),
+                 "description": (7, None, {"x": 1}), "prompt": (["p"], None), "effort": (1, None),
+                 "run_in_background": ("sim", 1, None)}
+        for campo, valores in casos.items():
+            for valor in valores:
+                with self.subTest(campo=campo, valor=valor):
+                    self.assertEqual(self.decide("Agent", {**self.LOCAL, campo: valor}), "deny")
+        texto = motivo(self.HOOK, ferramenta("Agent", **{**self.LOCAL, "run_in_background": "sim"}),
+                       FUNDACAO_FERRAMENTAS=FERRAMENTAS)
+        for trecho in ("'run_in_background'", "bool"):
+            self.assertIn(trecho, texto)
+
+    def test_relatorio_do_subagente_segue_com_o_item_dos_subagentes(self):
+        """`SubagentHandback` (2.1.302) leva o relatório do subagente a quem o chamou: negado, o relatório se perderia."""
+        for lista in (FERRAMENTAS, FERRAMENTAS.replace("Agent", "Task")):
+            with self.subTest(lista=lista):
+                self.assertEqual(self.decide("SubagentHandback", {"message": "relatório"}, lista), "sem_decisao")
+        self.assertEqual(self.decide("SubagentHandback", {"message": "relatório"}, "Bash,Read"), "deny")
+        self.assertEqual(decisao(self.HOOK, ferramenta("SubagentHandback", message="x"),
+                                 FUNDACAO_FERRAMENTAS=FERRAMENTAS), "sem_decisao")
+
+    def test_campo_novo_e_negado_com_a_lista_dos_aceitos(self):
+        self.assertEqual(self.decide("Agent", {**self.LOCAL, "politica_nova": True}), "deny")
+        texto = motivo(self.HOOK, ferramenta("Agent", **{**self.LOCAL, "politica_nova": 1}),
+                       FUNDACAO_FERRAMENTAS=FERRAMENTAS)
+        for trecho in ("'politica_nova'", "description", "run_in_background", "titular"):
+            self.assertIn(trecho, texto)
+
+    def test_entrada_ilegivel_do_agente_nega(self):
+        for entrada in (None, [], "texto", 7, ["description"]):
+            with self.subTest(entrada=entrada):
+                self.assertEqual(self.decide("Agent", entrada), "deny")
+        self.assertEqual(decisao(self.HOOK, {"tool_name": "Agent"}, FUNDACAO_FERRAMENTAS=FERRAMENTAS), "deny")
+
+    def test_campo_com_controle_vai_curto_e_limpo_na_mensagem(self):
+        texto = motivo(self.HOOK, ferramenta("Agent", **{**self.LOCAL, "c" * 5000 + "\n\x1b[31m": 1}),
+                       FUNDACAO_FERRAMENTAS=FERRAMENTAS)
+        self.assertLess(len(texto), 800)
+        self.assertNotIn("\x1b", texto)
+        self.assertNotIn("\n", texto)
+
+    def test_outras_ferramentas_nao_tem_a_entrada_lida(self):
+        self.assertEqual(self.decide("Bash", {"isolation": "remote", "cwd": "/", "name": "x"}), "sem_decisao")
 
 
 if __name__ == "__main__":

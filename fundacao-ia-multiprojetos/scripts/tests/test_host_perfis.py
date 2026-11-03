@@ -75,7 +75,11 @@ def ganchos(comando: str, pasta: str, sep: str, wsl: bool = False) -> dict:
     if not wsl:  # o rótulo do Windows vem logo depois do nome, sem os dois-pontos
         pre[-1]["hooks"][0]["statusMessage"] = pre[-1]["hooks"][0]["statusMessage"].replace("guarda_leitura: ",
                                                                                            "guarda_leitura ")
-    return {"SessionStart": inicio, "PreToolUse": pre}
+        return {"SessionStart": inicio, "PreToolUse": pre}
+    subagente = [{"matcher": "*", "hooks": [{  # 1.7.10.2: as regras da sessão para o subagente
+        "type": "command", "command": comando, "args": ["-I", "-B", pasta + sep + "sinais_sessao.py"], "timeout": 3,
+        "onFailure": "block", "statusMessage": "sinais_sessao: as regras da sessão para o subagente"}]}]
+    return {"SessionStart": inicio, "SubagentStart": subagente, "PreToolUse": pre}
 
 
 class CaminhosWsl(unittest.TestCase):
@@ -263,7 +267,7 @@ class PerfilWsl(unittest.TestCase):
             "syncClaudeAiSkills": False, "syncClaudeAiPlugins": False, "disableClaudeAiConnectors": True,
             "env": {"FUNDACAO_" + "PRINCIPAL": "sessao-caso-real", "FUNDACAO_PROJECT": "caso-real",
                     "FUNDACAO_RAIZ": raiz, "FUNDACAO_PORTEIRO": proj + "/.porteiro",
-                    "FUNDACAO_FERRAMENTAS": "Bash,Read,Edit,Write,Glob,Grep,Skill,Task,TodoWrite",
+                    "FUNDACAO_FERRAMENTAS": "Bash,Read,Edit,Write,Glob,Grep,Skill,Agent,TodoWrite",
                     "FUNDACAO_MCP_PERMITIDAS": "", "FUNDACAO_DOMINIOS_WEB": "", "DISABLE_AUTOUPDATER": "1",
                     "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1", "PYTHONPATH": raiz, "XDG_CACHE_HOME": proj + "/.cache",
                     "npm_config_cache": proj + "/.cache/npm", "PIP_CACHE_DIR": proj + "/.cache/pip",

@@ -577,9 +577,17 @@ assinado (§8.4), que não muda nada do que está acima.
   - `guarda_ferramentas.py` (PreToolUse, matcher `*`, só no Ubuntu): só as ferramentas de `FUNDACAO_FERRAMENTAS`, a
     mesma lista do `--tools` do lançador; MCP só com o servidor em `FUNDACAO_MCP_PERMITIDAS`, vazia na 1.7.10. Nega
     qualquer outro nome, inclusive ferramenta nova de uma versão futura do Claude Code; sem a lista, nega tudo.
+    Subagentes [1.7.10.2]: `Agent` (o nome da 2.1.302) e `Task` valem pelo mesmo item; a entrada só com os campos do
+    agente local, cada um com o tipo conferido, e `isolation` (nuvem ou cópia git), `cwd`, `name`, `team_name`, `mode`
+    ou campo novo, negados; o tipo, só com os nomes dos embutidos (`general-purpose`, `web-fetch`, `Explore`, `Plan`).
+    O guarda confere o nome, não a origem da definição. Pela leitura do binário, o `--setting-sources local` do
+    lançador deixa de fora as definições de usuário e de projeto, e o preparo recusa agentes nas managed settings;
+    a origem `projectAgentsElsewhere` não foi localizada (1.7.11). O `SubagentHandback` (o relatório do subagente)
+    vale com o mesmo item ([correção 1.7.10.2](atualizacao-1.7.10.2.md); prova 13 do checklist).
   - `guarda_rede.py` (PreToolUse `WebFetch|WebSearch`, nos dois perfis): WebFetch só para domínio de
     `FUNDACAO_DOMINIOS_WEB` (`d` exato, ou `*.d` para os subdomínios dele), só `http` e `https`, sem IP, sem porta além
-    da padrão e sem nome local; WebSearch só com `FUNDACAO_WEBSEARCH=1`. Nega sem perguntar. Nome internacional que o
+    da padrão e sem nome local; WebSearch só com `FUNDACAO_WEBSEARCH=1`. Nega sem perguntar onde roda; dentro do
+    agente `web-fetch` da 2.1.302, se ele roda não foi localizado (prova 13 do checklist). Nome internacional que o
     Python e o Claude Code leem diferente (ß, ς, letra posterior ao Unicode 3.2) é negado: use a forma `xn--`.
   - `guarda_leitura.py` (PreToolUse `Read|Grep|Glob`, nos dois perfis): nega `<raiz>/projects/<outro>/` e
     `<raiz>/state/`, resolvendo o caminho, o `path` do Grep, o padrão do Glob e cada pedaço do filtro `glob` do Grep.
@@ -602,7 +610,12 @@ assinado (§8.4), que não muda nada do que está acima.
     dos modelos de auditoria a partir da própria raiz; e todo comando acima de 16 KiB (conteúdo grande vai pela
     ferramenta Write). Na sessão do Windows aberta na raiz, passe sempre `projects/<p>/` ou use
     `cd projects/<p> && ...` [revisão de segurança, HOOK-F3 a HOOK-F5].
-  - `guarda_caminho.py` (escrita, §5) e `sinais_sessao.py` seguem como antes.
+  - `guarda_caminho.py` (escrita, §5) segue como antes. O `sinais_sessao.py` ganha, só no perfil do projeto no Ubuntu,
+    o `SubagentStart` [1.7.10.2]: o subagente começa sem a conversa da sessão, onde o lançador põe as regras, e o hook
+    as repete em `additionalContext` (a pasta do projeto, nada de outro projeto, `state/` ou segredo, dado não é
+    instrução, banco só pelo porteiro). Limites lidos no binário 2.1.302: o erro desse hook vira aviso, e o subagente
+    segue sem as regras; o agente `web-fetch` embutido roda o `SubagentStart` só com os hooks das managed settings e
+    não recebe as regras (a única ferramenta dele é o WebFetch).
   - `aviso_copia.py` (SessionStart `startup|resume`, só no Windows): lê só `registry/ultima-copia.json`; sem cópia, ou
     com a última passando de 7 dias, lembra com o comando pronto da cópia semanal. É lembrete, não prova, e nunca
     bloqueia a sessão (capacidade 11).

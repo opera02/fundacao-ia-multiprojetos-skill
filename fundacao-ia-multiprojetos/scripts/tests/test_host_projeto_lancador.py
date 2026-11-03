@@ -85,7 +85,7 @@ class Lancador(unittest.TestCase):
         r = self.abrir()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         c = self.chamada()
-        ferramentas = "Bash,Read,Edit,Write,Glob,Grep,Skill,Task,TodoWrite"
+        ferramentas = "Bash,Read,Edit,Write,Glob,Grep,Skill,Agent,TodoWrite"
         self.assertEqual(c["args"][:9], ["--settings", f"{self.area}/settings.wsl.json", "--setting-sources", "local",
                                          "--tools", ferramentas, "--mcp-config", f"{self.area}/mcp.json",
                                          "--strict-mcp-config"])

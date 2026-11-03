@@ -85,7 +85,7 @@ class InstalarProjeto(_Base):
         self.assertEqual(stat.S_IMODE(lancador.stat().st_mode), 0o755)
         texto = lancador.read_text(encoding="utf-8")
         for trecho in (sha(self.claude), f"AREA='{self.area.as_posix()}'", "--strict-mcp-config", "PLUGINS=''",
-                       "FERRAMENTAS='Bash,Read,Edit,Write,Glob,Grep,Skill,Task,TodoWrite'"):
+                       "FERRAMENTAS='Bash,Read,Edit,Write,Glob,Grep,Skill,Agent,TodoWrite'"):
             self.assertIn(trecho, texto)
         hashes = json.loads((self.area / "hashes.json").read_text(encoding="utf-8"))
         copia = Path(hashes["arvores"]["skill"]["caminho"])
@@ -210,6 +210,17 @@ class InstalarProjeto(_Base):
         esperado = self.m.sha256_arvore(gerenciadas, pastas_ignoradas=(), sufixos_ignorados=())
         self.assertEqual(rel["gerenciadas"]["sha256"], esperado)
         self.assertTrue(any("managed settings" in a and esperado in a for a in rel["avisos"]), rel["avisos"])
+
+    def test_agentes_nas_managed_settings_recusam_o_preparo(self):
+        """Revisão de segurança da 1.7.10.2, F1: um agente das managed settings toma o lugar do embutido de mesmo
+        nome, e o guarda das ferramentas confere o tipo pelo nome: o preparo recusa e não grava nada."""
+        agentes = self.base / "claude-code-gerenciado" / ".claude" / "agents"
+        agentes.mkdir(parents=True)
+        (agentes / "gp.md").write_text("---\nname: general-purpose\n---\nficticio\n", encoding="utf-8")
+        r = instalar(self.skill, self.raiz, self.base, "caso-real", self.claude)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn(".claude/agents existe", r.stdout + r.stderr)
+        self.assertFalse((self.area / "settings.wsl.json").exists())
 
     def test_projeto_fora_da_forma_do_kit_nao_ganha_area(self):
         (self.raiz / "projects" / "caso_real").mkdir()
