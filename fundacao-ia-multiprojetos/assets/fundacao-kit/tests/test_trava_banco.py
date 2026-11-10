@@ -9,6 +9,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
+import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from unittest import mock
@@ -16,7 +18,7 @@ from unittest import mock
 from helpers import FoundationTestCase
 
 from fundacao.__main__ import main
-from fundacao.core import trava_banco
+from fundacao.core import events, trava_banco, wsl_estado
 from fundacao.core.auth import ENV_PRINCIPAL
 from fundacao.core.db import conectar_somente_leitura, connect
 
@@ -38,6 +40,29 @@ class TravaBancoCase(FoundationTestCase):
         super().setUp()
         self.estado = self.root / "state"
         self.marcador = self.estado / trava_banco.MARCADOR
+        # O wsl.exe nunca roda de verdade nos testes: `_rodar_wsl` é trocado por um falso, que responde à listagem das
+        # distribuições registradas e das em execução (por padrão: Ubuntu registrada, nenhuma em execução).
+        self.wsl_registradas, self.wsl_ligadas, self.wsl_chamadas, self.wsl_falha = ["Ubuntu"], [], [], None
+        self.rodar_wsl_original = wsl_estado._rodar_wsl
+        patcher = mock.patch.object(wsl_estado, "_rodar_wsl", side_effect=self._wsl_falso)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def _utf16(nomes) -> bytes:
+        return "".join(n + "\r\n" for n in nomes).encode("utf-16-le")
+
+    def _wsl_falso(self, args, prazo_s=wsl_estado.WSL_PRAZO_S):
+        self.wsl_chamadas.append(list(args))
+        if isinstance(self.wsl_falha, BaseException):
+            raise self.wsl_falha
+        if self.wsl_falha is not None:
+            return self.wsl_falha
+        if args == ["-l", "-q"]:
+            return 0, self._utf16(self.wsl_registradas)
+        if args == ["-l", "--running", "-q"]:
+            return 0, self._utf16(self.wsl_ligadas)
+        raise AssertionError(f"o kit só pode listar o WSL, e não: {args}")
 
     def marcar(self, lado: str = OUTRO, *, idade_s: float = 0, **extra) -> dict:
         dados = dados_do_marcador(lado, idade_s, **extra)
@@ -197,6 +222,214 @@ class TestDestravar(TravaBancoCase):
         self.assertEqual(self.cli("status")[0], 2)
         self.assertEqual(self.cli("banco", "destravar", "--confirmar")[0], 0)
         self.assertEqual(self.cli("status")[0], 0)
+
+
+@unittest.skipUnless(MESMO == "windows", "a saída sozinha do marcador do Ubuntu é do lado do Windows")
+class TestLiberacaoSozinha(TravaBancoCase):
+    """1.7.11 (lição 6 da 1.7.10.2): marcador velho do Ubuntu, deste host, com o WSL desligado, sai sozinho na abertura
+    do banco para escrita, com o evento gravado antes. Qualquer dúvida mantém a recusa de antes."""
+
+    VELHO = trava_banco.VIVO_S + 5
+
+    def marcar_elegivel(self, **extra) -> dict:
+        return self.marcar("ubuntu", idade_s=self.VELHO, **{"host": trava_banco._host_local(), **extra})
+
+    def eventos(self) -> list:
+        return self.con.execute("SELECT * FROM event WHERE kind = ?", (trava_banco.EVENTO_LIBERADO,)).fetchall()
+
+    def test_elegivel_sai_sozinho_no_connect_com_evento_e_aviso(self):
+        dados = self.marcar_elegivel()
+        erro = io.StringIO()
+        with mock.patch.dict(os.environ, {ENV_PRINCIPAL: "operador-lab"}), redirect_stderr(erro):
+            connect(self.estado / "state.sqlite").close()
+        self.assertFalse(self.marcador.exists())
+        (evento,) = self.eventos()
+        carga = json.loads(evento["payload_json"])
+        self.assertEqual(carga["marcador"], dados)
+        self.assertEqual(carga["wsl"], {"medido": True, "em_execucao": [], "registradas": ["Ubuntu"]})
+        self.assertEqual((carga["lado"], carga["principal"], carga["pid"]), ("windows", "operador-lab", os.getpid()))
+        self.assertGreaterEqual(carga["renovado_ha_s"], self.VELHO)
+        self.assertEqual(evento["subject"], trava_banco.MARCADOR)
+        aviso = json.loads(erro.getvalue())["aviso"]
+        self.assertEqual((aviso["code"], aviso["marcador_removido"]), ("W_BANCO_MARCADOR_VELHO_LIBERADO", dados))
+        self.assertEqual(events.verify_chain(self.con), (True, None))
+        self.assertIn(["-l", "--running", "-q"], self.wsl_chamadas)
+
+    def test_host_com_outra_caixa_vale_o_mesmo_host(self):
+        self.marcar_elegivel(host=trava_banco._host_local().swapcase())
+        connect(self.estado / "state.sqlite").close()
+        self.assertFalse(self.marcador.exists())
+
+    def test_comando_da_cli_abre_o_banco_depois_de_o_marcador_sair(self):
+        self.marcar_elegivel()
+        codigo, saida, erro = self.cli("status")
+        self.assertEqual(codigo, 0, erro)
+        self.assertIsNone(saida["projeto_travado"])
+        self.assertIn("W_BANCO_MARCADOR_VELHO_LIBERADO", erro)
+        self.assertFalse(self.marcador.exists())
+        self.assertEqual(len(self.eventos()), 1)
+
+    def assertNada(self, msg: str, esperado: str | None = None):
+        """Nada sai: o connect recusa, o marcador fica e nenhum evento de saída é gravado."""
+        with self.assertRaises(trava_banco.BancoTravado, msg=msg) as ctx:
+            connect(self.estado / "state.sqlite")
+        self.assertTrue(self.marcador.exists(), msg)
+        self.assertEqual(self.eventos(), [], msg)
+        if esperado:
+            self.assertIn(esperado, ctx.exception.details.get("nao_tirado_sozinho", "") + str(ctx.exception))
+
+    def test_wsl_em_execucao_nada_sai(self):
+        self.marcar_elegivel()
+        self.wsl_ligadas = ["Ubuntu"]
+        self.assertNada("WSL ligado", "em execução")
+        self.wsl_ligadas = ["docker-desktop"]  # qualquer distribuição, não só o Ubuntu
+        self.assertNada("outra distribuição ligada", "docker-desktop")
+
+    def test_marcador_recente_nada_sai(self):
+        self.marcar("ubuntu", idade_s=10, host=trava_banco._host_local())
+        self.assertNada("marcador recente", "em uso")
+        self.assertEqual(self.wsl_chamadas, [], "marcador recente nem pergunta ao WSL")
+
+    def test_outro_host_nada_sai_e_nem_pergunta_ao_wsl(self):
+        self.marcar("ubuntu", idade_s=self.VELHO)  # host "maquina-ficticia"
+        self.assertNada("outro host", "outro host")
+        self.assertEqual(self.wsl_chamadas, [])
+
+    def test_wsl_que_falha_nada_sai(self):
+        self.marcar_elegivel()
+        falhas = {"wsl.exe ausente": FileNotFoundError("sem wsl"),
+                  "tempo esgotado": subprocess.TimeoutExpired("wsl.exe", 8),
+                  "erro do sistema": OSError(5, "negado"),
+                  "código de erro": (4294967295, b""),
+                  "código de erro com nomes": (1, self._utf16(["Ubuntu"])),
+                  "saída ímpar": (0, b"abc"),
+                  "sem nenhuma registrada": (0, b"")}
+        for nome, falha in falhas.items():
+            with self.subTest(falha=nome):
+                self.wsl_falha = falha
+                self.assertNada(nome, "não deu para medir o WSL")
+
+    def test_sem_distribuicao_registrada_e_saida_vazia_e_duvida(self):
+        self.marcar_elegivel()
+        self.wsl_registradas = []  # `-l -q` vazia: pode ser falha disfarçada
+        self.assertNada("sem registradas", "nenhuma distribuição registrada")
+
+    def test_marcador_do_windows_ilegivel_ou_vivo_nada_sai(self):
+        casos = {"lado windows": lambda: self.marcar("windows", idade_s=self.VELHO, host=trava_banco._host_local()),
+                 "ilegível": lambda: self.marcador.write_bytes(b"lixo"),
+                 "vivo": lambda: self.marcar("ubuntu", host=trava_banco._host_local())}
+        for nome, criar in casos.items():
+            with self.subTest(caso=nome):
+                criar()
+                if nome == "lado windows":
+                    connect(self.estado / "state.sqlite").close()  # do mesmo lado: abre como sempre, sem tirar
+                    self.assertTrue(self.marcador.exists())
+                else:
+                    self.assertNada(nome)
+                self.marcador.unlink()
+
+    def test_marcador_renovado_durante_a_medida_nada_sai(self):
+        self.marcar_elegivel()
+        original = self._wsl_falso
+
+        def renova(args, prazo_s=0):
+            self.marcar("ubuntu", host=trava_banco._host_local())  # o porteiro acorda no meio da medida
+            return original(args)
+
+        with mock.patch.object(wsl_estado, "_rodar_wsl", side_effect=renova):
+            self.assertNada("renovado durante a medida", "mudou")
+
+    def test_falha_ao_gravar_o_evento_deixa_o_marcador(self):
+        self.marcar_elegivel()
+        with mock.patch.object(events, "emit", side_effect=OSError("disco cheio (simulado)")):
+            with self.assertRaises(OSError):
+                connect(self.estado / "state.sqlite")
+        self.assertTrue(self.marcador.exists(), "sem evento, o marcador não sai")
+
+    def test_so_a_abertura_para_escrita_tira(self):
+        self.marcar_elegivel()
+        with self.assertRaises(trava_banco.BancoTravado):
+            conectar_somente_leitura(self.estado / "state.sqlite")
+        with self.assertRaises(trava_banco.BancoTravado):
+            trava_banco.conferir(self.estado)  # a conferência simples (backup, atualização) também só recusa
+        self.assertTrue(self.marcador.exists())
+        self.assertEqual(self.wsl_chamadas, [])
+
+    def test_destravar_do_titular_continua_igual(self):
+        self.marcar_elegivel()
+        self.wsl_ligadas = ["Ubuntu"]  # o comando explícito do titular não consulta o WSL
+        self.assertTrue(trava_banco.destravar(self.estado, confirmar=True)["removido"])
+        self.assertEqual(self.wsl_chamadas, [])
+
+
+class TestMedidaDoWsl(TravaBancoCase):
+    @unittest.skipUnless(MESMO == "windows", "o WSL só se mede pelo Windows")
+    def test_medida_em_utf16_com_ou_sem_bom(self):
+        self.wsl_registradas, self.wsl_ligadas = ["Ubuntu", "docker-desktop"], ["Ubuntu"]
+        medida = trava_banco.wsl_em_execucao()
+        self.assertEqual(medida, {"medido": True, "em_execucao": ["Ubuntu"], "registradas": ["Ubuntu", "docker-desktop"]})
+        with mock.patch.object(wsl_estado, "_rodar_wsl", return_value=(0, "\ufeffUbuntu\r\n".encode("utf-16-le"))):
+            self.assertEqual(trava_banco.wsl_em_execucao()["em_execucao"], ["Ubuntu"])
+
+    def test_fora_do_windows_nao_mede(self):
+        with mock.patch.object(trava_banco, "lado_desta_maquina", return_value="ubuntu"):
+            self.assertFalse(trava_banco.wsl_em_execucao()["medido"])
+        self.assertEqual(self.wsl_chamadas, [])
+
+    @unittest.skipUnless(os.name == "nt", "caminho do sistema do Windows")
+    def test_wsl_exe_so_pelo_caminho_absoluto_do_sistema(self):
+        sistema = self.root / "Windows"
+        (sistema / "System32").mkdir(parents=True)
+        with mock.patch.dict(os.environ, {"SystemRoot": str(sistema)}):
+            self.assertIsNone(wsl_estado._wsl_do_sistema(), "sem o arquivo, nada; nunca o nome nu")
+            (sistema / "System32" / "wsl.exe").write_bytes(b"")
+            self.assertEqual(wsl_estado._wsl_do_sistema(), str(sistema / "System32" / "wsl.exe"))
+
+    @unittest.skipUnless(os.name == "nt", "wsl.exe do Windows")
+    def test_roda_sem_a_variavel_de_utf8_e_com_prazo(self):
+        sistema = self.root / "Windows"
+        (sistema / "System32").mkdir(parents=True)
+        (sistema / "System32" / "wsl.exe").write_bytes(b"")
+        resposta = subprocess.CompletedProcess([], 0, stdout=b"x", stderr=b"")
+        with mock.patch.dict(os.environ, {"SystemRoot": str(sistema), "WSL_UTF8": "1"}),                 mock.patch("subprocess.run", return_value=resposta) as rodar:
+            self.assertEqual(self.rodar_wsl_original(["-l", "-q"]), (0, b"x"))
+        comando = rodar.call_args.args[0]
+        self.assertEqual(comando, [str(sistema / "System32" / "wsl.exe"), "-l", "-q"])
+        self.assertEqual(rodar.call_args.kwargs["timeout"], wsl_estado.WSL_PRAZO_S)
+        self.assertNotIn("WSL_UTF8", rodar.call_args.kwargs["env"])
+        self.assertFalse(rodar.call_args.kwargs.get("shell"))
+
+
+class TestSituacaoComWsl(TravaBancoCase):
+    @unittest.skipUnless(MESMO == "windows", "o WSL só se mede pelo Windows")
+    def test_situacao_diz_se_o_wsl_esta_ligado_e_o_que_fazer(self):
+        self.marcar("ubuntu", idade_s=trava_banco.VIVO_S + 5, host=trava_banco._host_local())
+        codigo, r, erro = self.cli("banco", "situacao")
+        self.assertEqual((codigo, r["wsl"]["medido"], r["wsl"]["em_execucao"]), (0, True, []), erro)
+        self.assertIn("sai sozinho", r["o_que_fazer"])
+        self.assertIn("banco destravar --confirmar", r["o_que_fazer"])
+        self.assertTrue(self.marcador.exists(), "a situação nunca tira o marcador")
+        self.wsl_ligadas = ["Ubuntu"]
+        r = self.cli("banco", "situacao")[1]
+        self.assertEqual(r["wsl"]["em_execucao"], ["Ubuntu"])
+        self.assertIn("está ligado", r["o_que_fazer"])
+        self.assertNotIn("sai sozinho na próxima", r["o_que_fazer"].split("Com ele fechado")[0])
+        self.wsl_falha = OSError(2, "sem wsl")
+        r = self.cli("banco", "situacao")[1]
+        self.assertEqual(r["wsl"]["medido"], False)
+        self.assertIn("Não deu para ver se o Ubuntu está ligado", r["o_que_fazer"])
+        self.assertTrue(self.marcador.exists())
+
+    @unittest.skipUnless(MESMO == "windows", "o WSL só se mede pelo Windows")
+    def test_situacao_de_outro_host_nao_promete_saida_sozinha(self):
+        self.marcar("ubuntu", idade_s=trava_banco.VIVO_S + 5)  # host fictício
+        r = self.cli("banco", "situacao")[1]
+        self.assertIn("não sai sozinho", r["o_que_fazer"])
+        self.assertIn("outro host", r["o_que_fazer"])
+
+    def test_situacao_sem_marcador_nao_traz_o_que_fazer(self):
+        r = self.cli("banco", "situacao")[1]
+        self.assertNotIn("o_que_fazer", r)
 
 
 class TestErroDeArquivoNaCli(TravaBancoCase):

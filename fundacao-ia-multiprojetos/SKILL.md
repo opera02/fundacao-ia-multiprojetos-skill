@@ -3,7 +3,7 @@ name: fundacao-ia-multiprojetos
 description: Implanta, adapta, verifica e mantém uma fundação técnica reutilizável para operar vários projetos com IA (núcleo com contratos, projetos isolados criados por modelo, orquestração com retomada, agentes, dois ou mais provedores, memória persistente, GOLD, RAG, CAG, hooks, MCP, skills, plugins, consumo, observabilidade, backup e restauração), seguindo o livro Fundação de IA Multiprojetos 2.0 com as correções 3.0. Use quando pedirem para criar ou estender essa fundação, criar um projeto a partir do modelo, diagnosticar e migrar um projeto existente para ela (por exemplo OpenSquad, squads de agentes ou scripts com IA), ou auditar, atualizar, desativar, restaurar ou retomar a fundação e seus projetos, mesmo sem citar o livro. Não use para redigir peças, calcular honorários avulsos, criar uma skill isolada ou só explicar conceitos sem implementar.
 license: MIT (texto integral em LICENSE.txt, na raiz desta skill)
 metadata:
-  version: "1.7.10.2"
+  version: "1.7.11"
   owner: "titular da fundação (usuário que define objetivos e aprova)"
   compatibility: "Kit e scripts testados no Windows 11 com Python 3.12.10; listagem no Claude Code 2.1.302 conferida até a 1.4.1. Projetada para outros hosts Agent Skills, como Codex 0.163.0 e o catálogo de skills do Chat/Work (não testados). Kit e scripts exigem Python 3.10+ (biblioteca padrão) e SQLite com FTS5. CAG real exige torch, transformers e um modelo local autorizado; MCP usa o pacote mcp 2.x (Python 3.11+) se presente. Sem rede por padrão."
   source: "Livro Fundação de IA Multiprojetos, edição 2.0 (18/10/2026), e documento 2.0 para 3.0"
@@ -21,7 +21,7 @@ com continuidade pela `RETOMADA.md`.
 Nos comandos, `<skill>` é esta pasta e `<raiz>` é a raiz da fundação.
 
 Exemplos jurídicos, OpenSquad, CaixaSim, nomes de pastas e Python+SQLite são
-**didáticos**: servem de cenário e referência, não de limite de domínio ou tecnologia.
+**didáticos**, não limite de domínio ou tecnologia.
 
 ## 1. Antes de qualquer ação
 
@@ -50,9 +50,8 @@ lendo, leia antes `assets/templates/AUDITORIA-SEGURANCA.md`; nos demais pedidos,
    `references/autonomia-e-escalonamento.md` §6.
 3. **Identifique o ambiente que você realmente acessa.** Se o pedido deixa sondar o host, rode
    `python <skill>/scripts/inspecionar_ambiente.py --pasta <raiz> --somente-localizar` (não executa programas nem
-   grava, mas lê PATH, algumas variáveis de ambiente, `/proc` e, no Windows, o registro; procura programas só nas
-   pastas absolutas do PATH). Em exFAT/FAT não há permissões do SO. Se a sessão não alcança a máquina/pasta do
-   usuário, não conclua nada sobre ela: entregue o comando ou prompt para a sessão certa e pare essa parte.
+   grava, mas lê PATH, algumas variáveis de ambiente, `/proc` e, no Windows, o registro; procura programas só nas pastas absolutas do PATH).
+   Em exFAT/FAT não há permissões do SO. Se a sessão não alcança a máquina/pasta do usuário, não conclua nada sobre ela: entregue o comando ou prompt para a sessão certa e pare essa parte.
 4. **Escolha o fluxo** (seção 2) e **carregue só as referências da etapa** (seção 8).
 
 ## 2. Seleção do fluxo
@@ -64,7 +63,7 @@ lendo, leia antes `assets/templates/AUDITORIA-SEGURANCA.md`; nos demais pedidos,
 | A fundação existe: verificar, auditar, atualizar, desativar/substituir, fazer backup, restaurar, retomar, criar outro projeto, promover conhecimento | **C — Operar** | `references/fluxo-c-operar.md` |
 
 O fluxo B precisa de uma versão de fundação de destino. Se ela não existir,
-execute o fluxo A até "núcleo + modelo de projeto" (etapas A1–A6) e então volte ao B.
+execute o fluxo A até "núcleo + modelo de projeto" (etapas A1–A6) e volte ao B.
 Pedido ambíguo: decida pela existência de `registry/` e `state/` (fundação) e de
 um projeto de origem; pergunte apenas se a escolha mudar o trabalho.
 
@@ -94,7 +93,7 @@ um projeto de origem; pergunte apenas se a escolha mudar o trabalho.
 3. **Fundação × projeto × caso.** O núcleo não contém regra de domínio; regras, documentos, memórias e caches do
    projeto ficam no projeto; dados de caso ficam no caso. Reutilizar procedimento não autoriza reutilizar fatos.
 4. **Referência recuperável antes de alterar estado existente** e restauração
-   ensaiada em pasta separada (nunca sobre a origem).
+   ensaiada em pasta separada.
 5. **Passos pequenos, idempotentes e verificáveis.** Detecte o que já existe,
    atualize só o necessário e não duplique configuração, dados ou efeitos.
 6. **Contratos e versões.** `schema_version` ≠ `version`; atualizar o modelo de projeto ≠ migrar instâncias;
@@ -112,7 +111,7 @@ um projeto de origem; pergunte apenas se a escolha mudar o trabalho.
 Autorização aplicável já dada dispensa nova pergunta. Bloqueio na exclusão não
 suspende cópia e restauração já autorizadas; confira identidade, fonte e destino antes.
 Resultado ausente é etapa pendente: execute-a se já coberta pelo pedido e escopo
-vigentes, sem outro impedimento. Só a ausência não exige nova decisão.
+vigentes, sem outro impedimento; a ausência, sozinha, não exige nova decisão.
 
 - **Resolva sozinho (confiança alta):** escolhas técnicas rotineiras dentro do escopo — estrutura de arquivos,
   testes, nomes, correção do próprio código, reexecução de verificações somente leitura, adaptação de caminhos ao
@@ -158,9 +157,9 @@ conteúdo; avisa se faltar a origem).
 ## 7. Kit de referência (opcional e substituível)
 
 `assets/fundacao-kit/` implementa os contratos em Python + SQLite (biblioteca
-padrão) com suíte de conformidade e um servidor MCP de leitura. Use-o quando não
-houver fundação anterior e a composição didática for aceitável; outra tecnologia
-serve se cumprir os mesmos contratos e cenários.
+padrão) com suíte de conformidade e servidor MCP de leitura. Use-o sem fundação
+anterior e com composição didática aceitável; outra tecnologia serve se cumprir os
+mesmos contratos e cenários.
 
 ```
 python <skill>/scripts/instalar_kit.py --destino <raiz>   # plano antes de escrever; conflito: nada escrito, código 3 (C6)
@@ -199,12 +198,14 @@ entregas valem com a assinatura do titular: `decisao preparar` → ele assina �
 | Estados, níveis de evidência, rótulos de origem | `references/principios-e-evidencias.md` |
 | Decidir sozinho, perguntar ou bloquear | `references/autonomia-e-escalonamento.md` |
 | Auditoria de segurança da fundação em uso, só lendo | `assets/templates/AUDITORIA-SEGURANCA.md` |
-| Capacidade específica (implementar e verificar) | `references/capacidades/`: [01 orquestração](references/capacidades/01-orquestracao.md) · [02 agentes](references/capacidades/02-agentes-subagentes.md) · [03 provedores](references/capacidades/03-provedores-modelos.md) · [04 memória](references/capacidades/04-memoria.md) · [05 GOLD](references/capacidades/05-gold.md) · [06 RAG](references/capacidades/06-rag.md) · [07 CAG e caches](references/capacidades/07-cag-caches.md) · [08 ferramentas/hooks/MCP/skills/plugins](references/capacidades/08-ferramentas-hooks-mcp-skills-plugins.md) · [09 consumo](references/capacidades/09-consumo-qualidade.md) · [10 observabilidade e conversa](references/capacidades/10-observabilidade-conversa.md) · [11 manutenção e recuperação](references/capacidades/11-manutencao-recuperacao.md) |
+| Capacidade específica (implementar e verificar) | `references/capacidades/`: [01 orquestração](references/capacidades/01-orquestracao.md) · [02 agentes](references/capacidades/02-agentes-subagentes.md) · [03 provedores](references/capacidades/03-provedores-modelos.md) · [04 memória](references/capacidades/04-memoria.md) · [05 GOLD](references/capacidades/05-gold.md) · [06 RAG](references/capacidades/06-rag.md) · [07 CAG](references/capacidades/07-cag-caches.md) · [08 ferramentas e plugins](references/capacidades/08-ferramentas-hooks-mcp-skills-plugins.md) · [09 consumo](references/capacidades/09-consumo-qualidade.md) · [10 observabilidade](references/capacidades/10-observabilidade-conversa.md) · [11 manutenção e cópias](references/capacidades/11-manutencao-recuperacao.md) |
 | Isolamento, injeção, controles preventivos; decisões assinadas do titular e conclusão da tarefa | `references/seguranca-isolamento.md` (§2) |
 | Preparar o host (Windows e WSL2) para dados reais: chave e âncora do titular, hooks, perfis, sandbox e lançador | `references/fluxo-a-implantar.md` §Host e `references/seguranca-isolamento.md` §5 |
 | Falar com usuário leigo: paradas, perguntas, comandos, formulário e folha de decisões | `references/comunicacao-leigo.md` |
 | Antes de dados reais (sigilo, LGPD, treino) | `references/privacidade-sigilo.md` |
 | Requisitos R01–R60 e como demonstrá-los | `references/requisitos.md` |
+| Cópia de segurança cifrada | `references/capacidades/11-manutencao-recuperacao.md` |
+| Código enxuto: desligado por padrão (P8: diff menor, sem ganho de tokens em tarefa pequena) | `references/codigo-enxuto.md` |
 | Comando/API/versão/custo atual | `references/fontes-verificadas.md` |
 | Conteúdo do livro por aula, casos e dados de laboratório | `references/livro/indice-aulas.md` e `references/livro/` |
 | Termos, padrões e regras de decisão do livro | `references/livro/glossario.md`, `references/livro/padroes.md`, `references/livro/cheatsheet.md` |
@@ -218,11 +219,10 @@ não reconstrua de memória uma regra que deveria estar na referência.
 Pedido: "Crie a fundação em `D:\IA\fundacao` com os projetos juridico-lab e
 reversa-lab, só com dados fictícios; tenho Claude Code e Codex."
 
-Resposta esperada: escopo da conversa; inventário com efeitos declarados (§1);
-decisão sobre kit/alternativa; referência recuperável; kit e `init`; dois projetos
-pelo modelo; tarefa persistida e lida após reinício; negativa antes da leitura;
-`R12` **bloqueado** até autorização de cota e teto de 4 chamadas, com comando
-pronto. Matriz válida e RETOMADA com próxima ação e efeitos já realizados.
+Resposta esperada: escopo da conversa; inventário; decisão sobre o kit; referência
+recuperável; kit e `init`; dois projetos pelo modelo; tarefa lida após reinício; negativa
+antes da leitura; `R12` **bloqueado** até autorização de cota e teto de 4 chamadas, com
+comando pronto; matriz e RETOMADA válidas.
 
 ## 10. O que esta skill não faz
 

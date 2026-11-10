@@ -22,11 +22,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from apoio import ENV, SCRIPTS, rodar_script
+from apoio import ENV, SCRIPTS
 
 LINUX = sys.platform.startswith("linux")
 HOOKS = ("sinais_sessao.py", "guarda_ferramentas.py", "guarda_caminho.py", "guarda_identidade.py", "guarda_rede.py",
-         "guarda_leitura.py")
+         "guarda_leitura.py", "regras_codigo.py")
 
 
 def carregar():
@@ -151,12 +151,16 @@ def executor_ruim(nonce: str):
         canarios = {"leitura_outro": base / plano["canarios"]["ensaio_b"]["arquivo"],
                     "leitura_state": base / plano["canarios"]["state"]["arquivo"],
                     "temp_outro": Path(plano["canarios"]["temp_b"]["arquivo"])}
+        if "area_b" in plano["canarios"]:  # a área root fictícia (revisão de segurança da 1.7.10, WSL-01)
+            canarios["leitura_area_outro"] = Path(plano["canarios"]["area_b"]["arquivo"])
         saidas, init = {}, {}
         if rot in canarios:
             saidas[indice(sessao, "python3")] = canarios[rot].read_text(encoding="utf-8").strip()
         if rot == "escrita_fora":
             (base / "fora-do-projeto.txt").write_text("vazou", encoding="utf-8")
             (base / "fora-do-projeto-2.txt").write_text("vazou", encoding="utf-8")
+        if rot == "escrita_claude_raiz":  # <raiz>/.claude (revisão de segurança da 1.7.10, HOOK-F1)
+            (base / ".claude" / "settings.json").write_text("x", encoding="utf-8")
         if rot == "rede_fora":
             saidas[0] = f"REDE-{nonce}-200-000"
         if rot == "socket_barramento":
@@ -207,6 +211,8 @@ class Base(unittest.TestCase):
         self.temp_base = self.tmp / "tmp-lancador"  # o "/tmp" do lançador deste teste
         self.temp_base.mkdir()
         self.mod.TEMP_BASE = self.temp_base.as_posix()
+        # O "/var/tmp" da área root fictícia (revisão de segurança da 1.7.10, WSL-01): o temp do teste, nunca o real.
+        self.mod.AREA_BASE = self.temp_base.as_posix()
         self.mod.HOOKS_ORIGEM = hooks_ficticios(self.tmp / "hooks-da-skill")
         # A casa do teste (a configuração do ensaio vai para <casa>/.local/share/fundacao-ia/ensaio): nunca a real.
         self.casa = self.tmp / "casa"
@@ -728,7 +734,8 @@ class TestInjecaoDoPerfilDoHost(Base):
         self.assertTrue(self.mod.gerar_perfil_pelo_host(fake, self.base, destino)["gerado"])
         argv = json.loads(destino.read_text(encoding="utf-8"))["argv"]
         self.assertEqual(argv[argv.index("--temp-base") + 1], self.temp_base.as_posix())
-        self.assertEqual(argv[argv.index("--area-raiz") + 1], str(self.base / "area"))
+        # A área root fictícia do ensaio, fora da base (revisão de segurança da 1.7.10, WSL-01).
+        self.assertEqual(argv[argv.index("--area-raiz") + 1], str(self.temp_base / "fundacao-ia-ensaio.area"))
         self.assertTrue(argv[argv.index("--perfil-windows") + 1].startswith(str(self.base)))
 
 
@@ -802,27 +809,29 @@ class TestLinhaDeComando(Base):
         self.assertEqual(list(self.temp_base.iterdir()), [])
         self.assertFalse(config.exists())
 
+    # Estes rodam uma cópia fora da raiz: a árvore de trabalho pode ficar em <raiz>/projects/, onde o ensaio recusa
+    # rodar (revisão de segurança da 1.7.10, CI-F1) e o código 2 viria dessa recusa, não da que o teste mede.
     def test_simular_com_saida_recusa_codigo_2(self):
         self.mod.preparar(self.base)
-        r = rodar_script("ensaio_isolamento_wsl.py", "rodar", "--base", self.base, "--simular",
-                         "--saida", str(self.base / "rel.json"))
+        r = rodar_copia(copia_do_script(self.tmp / "skill"), "rodar", "--base", self.base, "--simular",
+                        "--saida", str(self.base / "rel.json"))
         self.assertEqual(r.returncode, 2, r.stdout)
 
     def test_rodar_real_sem_claude_recusa_com_codigo_2(self):
         self.mod.preparar(self.base)
-        r = rodar_script("ensaio_isolamento_wsl.py", "rodar", "--base", self.base)
+        r = rodar_copia(copia_do_script(self.tmp / "skill"), "rodar", "--base", self.base)
         self.assertEqual(r.returncode, 2, r.stdout)
         self.assertIn("erro", json.loads(r.stdout))
 
     def test_rodar_real_claude_relativo_recusa_codigo_2(self):
         self.mod.preparar(self.base)
-        r = rodar_script("ensaio_isolamento_wsl.py", "rodar", "--base", self.base, "--claude", "claude")
+        r = rodar_copia(copia_do_script(self.tmp / "skill"), "rodar", "--base", self.base, "--claude", "claude")
         self.assertEqual(r.returncode, 2, r.stdout)
 
     def test_limpar_sem_marcador_pela_cli_codigo_2(self):
         pasta = self.tmp / "sem-marcador"
         pasta.mkdir()
-        r = rodar_script("ensaio_isolamento_wsl.py", "limpar", "--base", pasta)
+        r = rodar_copia(copia_do_script(self.tmp / "skill"), "limpar", "--base", pasta)
         self.assertEqual(r.returncode, 2, r.stdout)
 
     def test_preparar_pela_cli_sem_um_hook_na_skill_recusa_codigo_2(self):

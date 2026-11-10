@@ -41,6 +41,12 @@ quando só multiplica mensagens, tempo e consumo.
 5. **Divergência resolve-se na evidência**, não por votação nem pelo nome mais
    especializado; rodada de correção limitada [Livro p49–50].
 6. Registre `run_id`, papel, provedor, entradas, saídas e vínculo das afirmações às fontes.
+7. **Tarefa de código** [Decisão; ponytail, P3 — ideia adaptada]: o pacote de delegação cita a regra de
+   `references/codigo-enxuto.md` §1. Com o campo `regras_codigo` do projeto ligado, o hook `assets/hooks/regras_codigo.py`
+   a entrega a cada subagente; sem o campo, copie o §1 na instrução, porque o subagente não vê a conversa. A passagem
+   diz o que ficou sem fazer ou sem conferir. No fechamento do lote, o coordenador roda
+   `python <skill>/scripts/chamadores_abertos.py --repositorio <worktree> --base <ref>` para achar a definição
+   removida que ainda é chamada.
 
 ## Paralelismo em ondas: quem escreve, quem lê
 [Decisão; análise do vibe-coding-toolkit, 21/10/2026 — regra de ondas do toolkit, adaptada.] Antes de rodar

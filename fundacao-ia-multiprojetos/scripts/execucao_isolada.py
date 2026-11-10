@@ -36,9 +36,9 @@ SHA-256 como o da ficha].
 O perfil (`fundacao.perfil_execucao/1`, dentro de `projects/<P>/`) diz o tipo — `comandos-do-projeto` (código NÃO
 preso, por decisão do titular) ou `ferramentas-de-terceiros` (código preso pelo manifesto, inclusive a venv) —, os
 modelos de argv (marcadores `{caminho}`, `{caminhos}` no fim e `{saida}`, só para caminhos do projeto), as montagens
-(árvore de trabalho ou código e alvos só leitura, uma pasta de saída gravável; a raiz nunca), a rede (negada: a lista
-de domínios fica com a jaula do porteiro), o ambiente, os limites e a validade. O lançador confere o SHA-256 do
-perfil contra o `<h>`, a validade, o argv contra os modelos e, no segundo
+(árvore de trabalho ou código e alvos só leitura, uma pasta de saída gravável; a raiz nunca), a rede (negada; a rede
+da caixa pela jaula do porteiro fica para a 1.7.11), o ambiente, os limites e a validade. O lançador confere o SHA-256
+do perfil contra o `<h>`, a validade, o argv contra os modelos e, no segundo
 tipo, o manifesto antes e depois; roda pela mesma caixa bubblewrap (sem ele, recusa: não há `--sem-isolamento`), com
 os caminhos de segredo das árvores montadas escondidos (fora do código preso, os nomes fortes e as pastas de segredo;
 dentro dele, só os nomes fortes, e uma pasta de segredo de outro nome lá recusa; as negações por caminho do perfil do

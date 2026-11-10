@@ -83,9 +83,10 @@ class LancadorNoBash(unittest.TestCase):
         linhas = self.chamada()
         args = [l[4:] for l in linhas if l.startswith("ARG:")]
         self.assertEqual(args[:4], ["--settings", str(self.area / "settings.wsl.json"), "--setting-sources", "local"])
-        self.assertEqual(len(args), 10)
-        self.assertIn("RETOMADA.md", args[9])
-        self.assertIn("caso-real", args[9])
+        self.assertEqual(args[9], "--allow-dangerously-skip-permissions")  # 1.7.11, DECISAO-010 item 1
+        self.assertEqual(len(args), 11)
+        self.assertIn("RETOMADA.md", args[10])
+        self.assertIn("caso-real", args[10])
         self.assertIn("ENV:FUNDACAO_PROJECT=caso-real", linhas)
         self.assertIn("PWD:" + str(self.raiz / "projects" / "caso-real"), linhas)  # 1.7.10: a pasta do projeto
 
@@ -279,6 +280,7 @@ class PrepararWslNoBash(unittest.TestCase):
         area = self.base / "area" / "projetos" / "caso-real"
         for valor in (sha(self.binario), str(area), "caso-real", "/claude/2.1.302/claude", "manifesto"):
             self.assertIn(valor, conteudo)
+        self.assertIn("ARGS+=(--allow-dangerously-skip-permissions)", conteudo)  # 1.7.11, DECISAO-010 item 1
         antes = fotografia(self.home, self.raiz, self.conf, self.base / "area", self.base / "bin")
         r2 = self.preparar_wsl("--claude-sha256", sha(self.binario), wsl=True, pacotes=True)
         self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
@@ -292,15 +294,19 @@ class PrepararWslNoBash(unittest.TestCase):
         hooks da raiz diferentes dos da skill, o kit da raiz diferente do da skill e a falta da pasta do Windows (que o
         perfil nega) param o script (código 1) sem gravar o lançador."""
         hook = self.raiz / ".claude" / "hooks" / "guarda_identidade.py"
+        regras = self.raiz / ".claude" / "hooks" / "regras_codigo.py"  # 1.7.11 (ponytail, P7): também fixado
         kit = self.raiz / "fundacao" / "__init__.py"
         casos = {  # nome: (mudança, argumentos a mais, item com [erro], trecho da mensagem)
             "hook diferente do da skill": (lambda: hook.write_bytes(hook.read_bytes() + b"# alterado\n"), (),
                                            "projeto caso-real", "guarda_identidade"),
+            "hook das regras de código diferente do da skill": (
+                lambda: regras.write_bytes(regras.read_bytes() + b"# alterado\n"), (), "projeto caso-real",
+                "regras_codigo"),
             "kit diferente do da skill": (lambda: kit.write_bytes(kit.read_bytes() + b"# alterado\n"), (),
                                           "projeto caso-real", "kit da raiz"),
             "sem a pasta do Windows": (lambda: None, ("--perfil-windows", ""), "perfil-windows", "--perfil-windows"),
         }
-        originais = {p: p.read_bytes() for p in (hook, kit)}
+        originais = {p: p.read_bytes() for p in (hook, regras, kit)}
         lancador = self.base / "bin" / "abrir-fundacao-caso-real"
         for nome, (mudanca, extra, item, trecho) in casos.items():
             with self.subTest(nome):
@@ -330,8 +336,12 @@ class PrepararWslNoBash(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertTrue([l for l in r.stdout.splitlines() if l.strip().startswith("[erro] canario:")], r.stdout)
         self.assertFalse(canario.exists())
-        forma = relatorio_de_canario(m, self.raiz, self.binario)["forma"]
-        ruim = relatorio_de_canario(m, self.raiz, self.binario, conclusao={"forma": forma, "confina_comandos": False})
+        bom = relatorio_de_canario(m, self.raiz, self.binario)
+        # formato real (1.7.11): a conclusão traz a forma e o sistema de arquivos medidos, e um item de comando falhou
+        itens = [{**i, "veredito": "falhou"} if i["id"] == "leitura_outro_projeto" else i for i in bom["itens"]]
+        ruim = relatorio_de_canario(m, self.raiz, self.binario, itens=itens, conclusao={
+            "forma": bom["forma"], "sistema_de_arquivos": bom["sistema_de_arquivos"], "confina_comandos": False,
+            "motivo": "leitura_outro_projeto falhou"})
         relatorio.write_text(json.dumps(ruim), encoding="utf-8")
         r = self.preparar_wsl("--claude-sha256", sha(self.binario), "--canario", relatorio, wsl=True, pacotes=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -385,6 +395,176 @@ class ModelosSemBash(unittest.TestCase):
         m = carregar_preparo()
         self.assertEqual(sorted(set(m.MARCADOR.findall(LANCADOR.read_text(encoding="utf-8")))),
                          sorted(m.CHAVES_DO_LANCADOR))
+
+
+class PassoDaJaulaNoTexto(unittest.TestCase):
+    """O passo 6 do `preparar-wsl.sh` (1.7.11, lote L4), conferido no texto do script em qualquer sistema: mostra o plano ANTES de
+    instalar, não baixa nada, usa o sudo pelo caminho absoluto, a simulação não instala e as opções existem."""
+
+    @classmethod
+    def setUpClass(cls):
+        texto = PREPARAR.read_text(encoding="utf-8")
+        inicio = texto.index("# 6. Jaula do Criador (1.7.11, lote L4)")
+        cls.texto, cls.passo = texto, texto[inicio:texto.index("\nfim", inicio)]
+        cls.codigo = [l.strip() for l in cls.passo.splitlines() if l.strip() and not l.lstrip().startswith("#")]
+
+    def test_as_opcoes_existem_no_uso_e_no_laco(self):
+        for opcao in ("--preparar-jaula", "--canario-jaula", "--sudo-senha"):
+            self.assertGreaterEqual(self.texto.count(opcao), 3, opcao)  # cabeçalho, uso e laço de argumentos
+        self.assertIn("--canario|--canario-jaula)", self.texto.replace("--seccomp-versao|", ""))
+        self.assertIn('--canario-jaula) CANARIOS_JAULA+=("$2") ;;', self.texto)
+
+    def test_o_plano_aparece_antes_de_qualquer_instalacao(self):
+        plano = next(i for i, l in enumerate(self.codigo) if "plano-jaula" in l)
+        mostra = next(i for i, l in enumerate(self.codigo) if l == "printf '%s\\n' \"$plano_jaula\"")
+        instala = [i for i, l in enumerate(self.codigo) if "chama_jaula" in l and "instalar-jaula" in l]
+        self.assertTrue(instala)
+        self.assertLess(plano, mostra)
+        self.assertLess(mostra, min(instala))
+        self.assertIn('plano_jaula=$("$PY" -I -B "$AJUDANTE" plano-jaula "${args_jaula[@]}" --texto); r=$?', self.codigo)
+
+    def test_a_simulacao_nao_instala_nada(self):
+        entrada = self.codigo.index('if [ "$SIMULAR" = 1 ]; then')
+        senao = self.codigo.index("else", entrada)
+        self.assertTrue(all("instalar-jaula" not in l and "instalar-canario-jaula" not in l
+                            for l in self.codigo[entrada:senao]))
+        self.assertIn("relata instalar jaula", " ".join(self.codigo[entrada:senao]))
+
+    def test_o_sudo_e_pelo_caminho_absoluto_e_nao_ha_download(self):
+        import re
+        for l in self.codigo:  # o sudo como comando (não o texto de uma mensagem nem a opção --sudo-senha)
+            if re.search(r"(?:^|[\s(;|&])sudo\s", l) and "echo" not in l and "relata" not in l:
+                self.fail("sudo sem o caminho absoluto: " + l)
+        for baixa in ("curl", "wget", "apt-get", "apt install", "pip ", "npm ", "git clone", "tar -x"):
+            self.assertFalse([l for l in self.codigo if baixa in l], baixa)  # downloads: lotes L5 e L6, mostrados antes
+        self.assertIn("/usr/bin/sudo", " ".join(self.codigo))
+
+    def test_sem_secao_de_jaula_o_passo_so_diz_igual(self):
+        rc4 = self.codigo.index('if [ "$r" = 4 ]; then')
+        resto = " ".join(self.codigo[rc4:rc4 + 3])
+        self.assertIn("relata igual jaula", resto)
+        self.assertNotIn("criar", resto.replace("--canario-jaula sem jaula instalada", ""))
+
+    def test_o_ensaio_do_instalar_projeto_aponta_a_jaula_para_a_pasta_de_ensaio(self):
+        self.assertIn('--jaula-base "$AREA_RAIZ/jaula-ensaio/programas"', self.texto)
+        self.assertIn('--ensaio-base "$AREA_RAIZ/jaula-ensaio"', self.passo)
+
+
+def sudoers_de_ensaio_pode() -> bool:
+    return LINUX and Path("/usr/sbin/visudo").exists()
+
+
+@unittest.skipUnless(PODE, "1.7.10: o preparar-wsl.sh grava a área do titular no Linux (bash e /usr/bin/python3)")
+class PrepararWslComJaula(unittest.TestCase):
+    """O passo da jaula no ensaio completo (sem sudo, em pasta descartável): sem seção, nada; com a seção, o plano antes e a
+    instalação depois; o canário da jaula refaz a sudoers. O `visudo` é o de verdade (só confere o texto)."""
+
+    def setUp(self):
+        self.base = Path(tempfile.mkdtemp(prefix="preparar-wsl-jaula-")).resolve()
+        self.skill, self.raiz = montar_raiz(self.base)
+        pj = carregar_preparo(self.skill).preparo_jaula()
+        for rel, _ in pj.ARQUIVOS_DA_JAULA:  # a cópia de ensaio da skill só tem 3 scripts
+            if rel.startswith("scripts/"):
+                shutil.copyfile(SKILL / rel, self.skill / rel)
+        self.preparar = self.skill / "assets" / "host" / "wsl" / "preparar-wsl.sh"
+        self.home = self.base / "home"
+        versoes = self.home / ".local" / "share" / "claude" / "versions"
+        versoes.mkdir(parents=True)
+        self.binario = versoes / "2.1.302"
+        self.binario.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8", newline=chr(10))
+        self.binario.chmod(0o755)
+        self.falsos = self.base / "bin-falso"
+        self.falsos.mkdir()
+        for nome in ("bwrap", "socat", "npm", "corepack"):
+            (self.falsos / nome).write_text(VAZIO, encoding="utf-8", newline=chr(10))
+            (self.falsos / nome).chmod(0o755)
+        (self.falsos / "dpkg-query").write_text(DPKG_INSTALADO, encoding="utf-8", newline=chr(10))
+        (self.falsos / "dpkg-query").chmod(0o755)
+        self.conf = self.base / "wsl.conf"
+        self.conf.write_text("[boot]" + chr(10) + "systemd=true" + chr(10), encoding="utf-8", newline=chr(10))
+        (self.base / "tmp").mkdir()
+        self.area = self.base / "area"
+        self.jaula = self.area / "jaula-ensaio"
+
+    def tearDown(self):
+        for p in sorted(self.base.rglob("*"), reverse=True):
+            try:
+                if not p.is_symlink():
+                    os.chmod(p, 0o700 if p.is_dir() else 0o600)
+            except OSError:
+                pass
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def rodar(self, *args):
+        env = {"HOME": str(self.home), "PATH": str(self.falsos) + os.pathsep + "/usr/bin:/bin", "WSL_DISTRO_NAME": "Ensaio"}
+        return rodar_bash(self.preparar, "--raiz", self.raiz, "--projeto", "caso-real", "--titular", "titular",
+                          "--wsl-conf", self.conf, "--python", "/usr/bin/python3", "--claude-versao", "2.1.302",
+                          "--claude-sha256", sha(self.binario), "--perfil-windows", "/mnt/c/Users/<usuario>",
+                          "--area-raiz", self.area, "--bin", self.base / "bin", "--temp-base", self.base / "tmp",
+                          "--sonda-interop-cmd", self.base / "sem-interop", "--sonda-interop-binfmt",
+                          self.base / "sem-interop", *args, env_extra=env)
+
+    def com_ficha_de_jaula(self):
+        from test_host_projeto_apoio import ficha_de_ensaio, gravar_ficha_na_caixa, relatorio_de_canario
+        m = carregar_preparo(self.skill)
+        relatorio = self.base / "relatorio-canario.json"
+        relatorio.write_text(json.dumps(relatorio_de_canario(m, self.raiz, self.binario)), encoding="utf-8")
+        hoje = __import__("datetime").date.today().isoformat()
+        gravar_ficha_na_caixa(self.raiz, "caso-real", ficha_de_ensaio(
+            "caso-real", 1, navegador={"dominios": ["esaj.exemplo.org"], "logins": [], "modos": ["sessao"]},
+            outras_llm=[{"provedor": "openai-codex", "autenticacao": "conta_chatgpt", "modos": ["exec"],
+                         "conteudo_de_terceiros": True, "teto_chamadas_dia": 5,
+                         "r55": {"plano": "plano-teste", "treinamento_desligado": True, "conferido_em": hoje}}]))
+        return relatorio
+
+    def test_sem_secao_de_jaula_o_passo_diz_igual_e_nao_cria_nada(self):
+        r = self.rodar()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue([l for l in r.stdout.splitlines() if l.strip().startswith("[igual] jaula:")], r.stdout)
+        self.assertIn("nada a instalar", r.stdout)
+        self.assertFalse(self.jaula.exists())
+        self.assertFalse((self.area / "projetos" / "caso-real" / "porteiro-jaula.json").exists())
+
+    @unittest.skipUnless(sudoers_de_ensaio_pode(), "precisa do visudo (/usr/sbin/visudo) para a primeira instalação")
+    def test_simulacao_com_jaula_mostra_o_plano_e_nao_grava(self):
+        canario = self.com_ficha_de_jaula()
+        r = self.rodar("--canario", canario)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        (self.jaula / "sudoers.d" / "fundacao-jaula").unlink()  # a simulação mostra o que voltaria a ser criado
+        antes = fotografia(self.area)
+        r = self.rodar("--simular")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for trecho in ("Jaula do Criador", "o que será instalado", "fundacao-jaula", "sudoers", "[instalar] jaula:"):
+            self.assertIn(trecho, r.stdout)
+        self.assertEqual(fotografia(self.area), antes)
+        self.assertFalse((self.jaula / "sudoers.d" / "fundacao-jaula").exists())
+
+    @unittest.skipUnless(sudoers_de_ensaio_pode(), "precisa do visudo (/usr/sbin/visudo) para conferir a sudoers de ensaio")
+    def test_instala_depois_de_mostrar_e_a_segunda_vez_nada_muda(self):
+        canario = self.com_ficha_de_jaula()
+        r = self.rodar("--canario", canario)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertLess(r.stdout.index("o que será instalado"), r.stdout.index("[criar] programa:jaula-entrar"))
+        programas = next((self.jaula / "programas").iterdir())
+        self.assertTrue((programas / "jaula-entrar").is_file())
+        self.assertTrue((self.jaula / "sudoers.d" / "fundacao-jaula").is_file())
+        sudoers = (self.jaula / "sudoers.d" / "fundacao-jaula").read_text(encoding="utf-8")
+        self.assertIn(" caso-real canario", sudoers)  # só o canário: o relatório da jaula ainda não existe
+        self.assertNotIn(" caso-real navegador", sudoers)
+        self.assertIn("canario-caso-real-nav.json", r.stdout)  # o comando do canário, pronto para colar
+        antes = fotografia(self.area)
+        r2 = self.rodar("--canario", canario)
+        self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+        self.assertEqual(fotografia(self.area), antes)
+        for mudou in ("[criar]", "[atualizar]", "[remover]"):
+            self.assertNotIn(mudou, r2.stdout)
+
+    def test_canario_da_jaula_sem_secao_e_recusado(self):
+        resposta = self.base / "r.json"
+        resposta.write_text("{}", encoding="utf-8")
+        r = self.rodar("--canario-jaula", resposta)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("--canario-jaula sem jaula instalada", r.stdout)
 
 
 if __name__ == "__main__":

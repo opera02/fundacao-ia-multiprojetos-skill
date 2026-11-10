@@ -192,7 +192,11 @@ class RegraDaCopia:
                 "mudaram_durante_a_copia": sorted(self.mudaram),
                 "pastas_vazias": regras_da_copia.pastas_vazias(pastas, self.arquivos_git, self.levados)}
 
-    def texto_credenciais(self) -> str:
+    def texto_credenciais(self, cifrada: bool = False) -> str:
+        """Texto de `credentials` do manifesto; `cifrada` (1.7.11): a cópia vai para as partes .gpg do titular."""
+        fim = ("A cópia é CIFRADA para a chave pública do titular (partes .gpg): estes arquivos só abrem com a chave "
+               "privada e a senha dele" if cifrada else
+               "A cópia não é cifrada: guarde-a como guarda a fundação")
         return (f"o .env fica fora; {self.segredos} arquivo(s) com cara de segredo (pastas e nomes de segredo) "
-                "entraram em claro, sem leitura (segredos_incluidos); config do git com credencial fica fora "
-                "(git.config_fora). A cópia não é cifrada: guarde-a como guarda a fundação")
+                f"entraram {'dentro da cifra' if cifrada else 'em claro'}, sem leitura (segredos_incluidos); config do git "
+                f"com credencial fica fora (git.config_fora). {fim}")

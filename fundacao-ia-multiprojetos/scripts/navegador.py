@@ -47,6 +47,14 @@ integração da 1.7.10).
   (presas à conta e, a App-Bound, à máquina): no Linux os logins não devem funcionar, e o caminho é um perfil novo com
   os logins feitos pelo titular numa janela do navegador, o que fica para a 1.7.11 (FLUXB-F1). Não lê cookies, senhas
   nem o valor da chave: decodifica só o começo, onde fica o prefixo.
+- `jaula <carga>` (1.7.11, lote L5; DESENHO-JAULA §5): SÓ dentro da caixa bubblewrap da jaula, que a entrada fixa
+  (`jaula-entrar`, como o usuário `fundacao-jaula`) monta com este comando. É aqui que o `--com-janela` recusado acima
+  ganha o caminho legítimo: a janela do titular roda na jaula (`abrir-navegador-<p> login <site>`), com o perfil novo do
+  projeto fora de `projects/` (`/var/lib/fundacao-ia/jaula/<p>/navegador/perfil`, 0700 do usuário da jaula), o Playwright
+  e o Chromium de dono root fixados e o invólucro `chromium-sem-disfarce` (sem disfarce de automação, proxy de lista da
+  jaula e ECH desligado). A sessão pede `abrir`, `roteiro` ou `sondar` pelo porteiro da jaula, sem passo de JavaScript, de
+  envio de arquivo nem de leitura de cookie. Não há cópia nem importação do perfil do Chrome do Windows (escolha do titular
+  de 08/11/2026: perfil novo); `conferir-perfil-chrome` só avisa que os logins dele não funcionariam.
 Saída em JSON. Códigos: 0 feito; 1 o navegador falhou (o resultado diz onde); 2 recusa; 3 não instalado.
 """
 
@@ -62,6 +70,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unicodedata
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -71,6 +80,25 @@ PRAZO_PADRAO = 30  # segundos por ação
 TETO_TEXTO = 1_000_000  # caracteres de texto devolvidos por leitura
 MAX_PASSOS = 200
 TETO_LOCAL_STATE = 20 * 1024 * 1024
+# Na jaula (1.7.11, lote L5; DESENHO-JAULA §5): o perfil e a saída são lugares FIXOS no código, nunca escolha da ficha, da
+# sessão ou do pedido. O Chromium é sempre o invólucro `chromium-sem-disfarce`, que impõe "sem disfarce" e o proxy da jaula.
+PERFIL_DA_JAULA = "/home/jaula/perfil"
+SAIDA_DA_JAULA = "/trabalho/saida"
+ARQUIVO_DE_ESTADO = ".fundacao-estado.json"  # o storage_state do Playwright (cookies de sessão): nunca vai para a saída
+ARQUIVO_DE_SEGREDOS = ".fundacao-cookies.json"  # dentro do perfil privado: a entrada fixa o lê para conferir a saída
+TAMANHO_DE_SEGREDO = 20  # o mesmo mínimo da conferência de segredo da saída (jaula.TAMANHO_SEGREDO_MINIMO)
+ARQUIVO_DA_SAIDA = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.png\Z")
+ACOES_DA_JAULA = ("abrir", "roteiro", "sondar", "janela")
+CAMPOS_DA_CARGA = frozenset({"acao", "url", "texto", "captura", "passos", "sandbox", "grafico", "variante"})
+TETO_PAGINA_SALVA = 5 * 1024 * 1024
+# Sem extensões nem sincronização, sem chaveiro (cookies e senhas não vão a nenhum cofre do sistema), sem o primeiro uso e
+# com o ECH desligado (o proxy recusa ClientHello com ECH; o invólucro o desliga também).
+ARGS_DA_JAULA = ("--disable-extensions", "--disable-sync", "--no-first-run", "--password-store=basic",
+                 "--disable-features=EncryptedClientHello,AutofillServerCommunication")
+# Preenchimento automático e gerenciador de senhas desligados no perfil (a sessão não faz o navegador colar dado pessoal
+# num formulário). [medir] os nomes das preferências na versão fixada do Chromium.
+PREFERENCIAS_DA_JAULA = {"autofill": {"profile_enabled": False, "credit_card_enabled": False},
+                         "credentials_enable_service": False, "profile": {"password_manager_enabled": False}}
 ID_PROJETO = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$")  # o identificador do kit (fundacao/core/paths.py)
 FORA_DO_NAVEGADOR = {".git", ".claude", ".porteiro", "_browser_profile"}  # em qualquer ponto do caminho
 FORA_NO_TOPO = {"data", "decisoes"}  # primeiro nível do projeto
@@ -141,6 +169,10 @@ SE_FALTAREM = "Se faltarem bibliotecas do sistema, "
 FALTAM_BIBLIOTECAS = "faltam bibliotecas do sistema para o Chromium: "
 SEM_PLAYWRIGHT_NA_JANELA = "Playwright não instalado neste Python. " + JANELA_1711
 SEM_CHROMIUM_NA_JANELA = "o Chromium do Playwright não está instalado. " + JANELA_1711
+SEM_PLAYWRIGHT_NA_JAULA = ("o Playwright da jaula não está instalado: o titular roda o preparar-wsl.sh (passo da jaula, "
+                           "como administrador do Linux), que mostra antes cada endereço e tamanho do que baixa")
+SEM_CHROMIUM_NA_JAULA = ("o Chromium da jaula não está instalado: o titular roda o preparar-wsl.sh (passo da jaula, "
+                         "como administrador do Linux), que mostra antes cada endereço e tamanho do que baixa")
 # O motivo de falha é dado do navegador: pode trazer texto da página (o seletor, o endereço e a prévia do elemento no
 # registro de chamadas). Sai dele a linha com um passo como root (`passo_como_root`) e a linha que cita um caminho de
 # pasta que a sessão grava (`cita_pasta_da_sessao`), seja qual for a grafia do passo; o resto fica (revisão de
@@ -562,8 +594,14 @@ def motivo(exc: Exception) -> str:
 
 
 @contextlib.contextmanager
-def contexto(perfil: Path | None, *, janela: bool = False, prazo_s: int = PRAZO_PADRAO, sem_rede: bool = False):
-    """Um contexto do Chromium: persistente no perfil do projeto ou efêmero; downloads recusados."""
+def contexto(perfil: Path | None, *, janela: bool = False, prazo_s: int = PRAZO_PADRAO, sem_rede: bool = False,
+             jaula: dict | None = None):
+    """Um contexto do Chromium: persistente no perfil do projeto ou efêmero; downloads recusados. Com `jaula` (só DENTRO
+    da jaula, lote L5): o perfil e o Chromium são os fixos dela, e a janela do titular é permitida."""
+    if jaula is not None:
+        with _contexto_da_jaula(jaula, janela, prazo_s) as par:
+            yield par
+        return
     sync_playwright = _sync_playwright(janela)
     opcoes = opcoes_de_lancamento(proxy_do_ambiente(), janela=janela, sem_rede=sem_rede)
     with sync_playwright() as p:
@@ -620,11 +658,11 @@ def sondar(perfil: Path | None = None) -> tuple[dict, int]:
 
 
 def abrir(url: str, *, texto: bool = False, captura: Path | None = None, perfil: Path | None = None,
-          janela: bool = False, prazo_s: int = PRAZO_PADRAO) -> dict:
+          janela: bool = False, prazo_s: int = PRAZO_PADRAO, jaula: dict | None = None) -> dict:
     url_valida(url)
-    if janela:  # passo do titular: nada de projects/ roda nele (FLUXB-F1)
+    if janela and jaula is None:  # passo do titular: nada de projects/ roda nele (FLUXB-F1)
         conferir_passo_do_titular()
-    with contexto(perfil, janela=janela, prazo_s=prazo_s) as (ctx, _navegador):
+    with contexto(perfil, janela=janela, prazo_s=prazo_s, jaula=jaula) as (ctx, _navegador):
         pagina = ctx.new_page()
         resposta = pagina.goto(url)
         res = {"url": pagina.url, "titulo": pagina.title(), "status": getattr(resposta, "status", None),
@@ -635,7 +673,9 @@ def abrir(url: str, *, texto: bool = False, captura: Path | None = None, perfil:
             captura.parent.mkdir(parents=True, exist_ok=True)
             pagina.screenshot(path=str(captura), full_page=True)
             res["captura"] = str(captura)
-        if janela:  # o titular faz os logins e fecha a janela
+        if janela and jaula is not None:  # a janela da jaula: o titular entra no site ou resolve o desafio e a fecha
+            res["pagina_salva"] = esperar_a_janela(ctx, salvar=jaula.get("variante") == "captcha")
+        elif janela:  # o titular faz os logins e fecha a janela
             pagina.wait_for_event("close", timeout=0)
     return res
 
@@ -646,7 +686,12 @@ def ler_roteiro(arquivo: Path) -> list[dict]:
         dados = json.loads(Path(arquivo).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise Recusa(f"roteiro ilegível: {arquivo} ({type(exc).__name__})") from None
-    passos = dados.get("passos") if isinstance(dados, dict) else dados
+    return validar_passos(dados.get("passos") if isinstance(dados, dict) else dados)
+
+
+def validar_passos(passos, *, em_jaula: bool = False) -> list[dict]:
+    """Os passos de um roteiro, conferidos inteiros. `em_jaula`: o passo `captura` é só um NOME de arquivo `.png` (a
+    jaula grava na pasta de saída dela; caminho do projeto não existe lá)."""
     if not isinstance(passos, list) or not passos or len(passos) > MAX_PASSOS:
         raise Recusa(f"o roteiro é uma lista de 1 a {MAX_PASSOS} passos (ou {{\"passos\": [...]}})")
     acoes = ("ir", "clicar", "preencher", "esperar", "texto", "captura")
@@ -665,15 +710,18 @@ def ler_roteiro(arquivo: Path) -> list[dict]:
             raise Recusa(f"passo {i}: {acao} precisa de um texto")
         if acao == "ir":
             url_valida(alvo)
+        if acao == "captura" and em_jaula and not ARQUIVO_DA_SAIDA.fullmatch(alvo):
+            raise Recusa(f"passo {i}: na jaula a captura é só um nome de arquivo .png (letras, dígitos, ponto, hífen)")
         if acao == "preencher" and not isinstance(passo.get("valor"), str):
             raise Recusa(f"passo {i}: preencher precisa de \"valor\" (texto)")
     return passos
 
 
-def roteiro(passos: list[dict], capturas: dict, *, perfil: Path | None = None, prazo_s: int = PRAZO_PADRAO) -> dict:
-    """Roda os passos; `capturas`: índice do passo -> arquivo já conferido dentro do projeto."""
+def roteiro(passos: list[dict], capturas: dict, *, perfil: Path | None = None, prazo_s: int = PRAZO_PADRAO,
+            jaula: dict | None = None) -> dict:
+    """Roda os passos; `capturas`: índice do passo -> arquivo já conferido dentro do projeto (ou da saída da jaula)."""
     resultados = []
-    with contexto(perfil, prazo_s=prazo_s) as (ctx, _navegador):
+    with contexto(perfil, prazo_s=prazo_s, jaula=jaula) as (ctx, _navegador):
         pagina = ctx.new_page()
         for i, passo in enumerate(passos):
             acao = next(a for a in ("ir", "clicar", "preencher", "esperar", "texto", "captura") if a in passo)
@@ -705,6 +753,250 @@ def roteiro(passos: list[dict], capturas: dict, *, perfil: Path | None = None, p
                         "falhou_no_passo": i, "erro": motivo(exc), "observacao": DADO_DA_PAGINA}
         return {"passos": len(passos), "resultados": resultados, "url_final": pagina.url,
                 "observacao": DADO_DA_PAGINA}
+
+
+# --- dentro da jaula (1.7.11, lote L5; DESENHO-JAULA §5) ---------------------------------------------------------------
+# O que segue roda DENTRO da caixa bubblewrap da jaula, como o usuário `fundacao-jaula`, com o `navegador.py jaula <carga>`
+# montado pela entrada fixa (`jaula.argv_do_programa`). A carga é JSON de campos fechados e é conferida DE NOVO aqui. Nada
+# deste lado lê o projeto (a jaula não o monta): o perfil é o persistente do projeto (ou um temporário, no desafio) e a saída
+# vai para /trabalho/saida, de onde a entrada fixa a copia para outputs/navegador/<pedido>/ depois da conferência de segredo.
+def _sync_playwright_da_jaula():
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        raise NaoInstalado(SEM_PLAYWRIGHT_NA_JAULA) from None
+    return sync_playwright
+
+
+def _erro_da_jaula(exc: Exception) -> Exception:
+    """Falha ao lançar o Chromium na jaula: o passo é do titular (preparar-wsl.sh), nunca a dica de instalação da sessão."""
+    texto = str(exc)
+    if "Executable doesn't exist" in texto or "não está instalado" in texto or "playwright install" in texto:
+        return NaoInstalado(SEM_CHROMIUM_NA_JAULA)
+    if "install-deps" in texto or "missing dependencies" in texto:
+        return NaoInstalado("faltam bibliotecas do sistema para o Chromium na jaula: o titular roda de novo o "
+                            "preparar-wsl.sh (passo da jaula, como administrador do Linux)")
+    return exc
+
+
+def gravar_preferencias(perfil: Path) -> None:
+    """Desliga o preenchimento automático e o gerenciador de senhas no perfil, mesclando com o que já há."""
+    arquivo = perfil / "Default" / "Preferences"
+    try:
+        atuais = json.loads(arquivo.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        atuais = {}
+    atuais = atuais if isinstance(atuais, dict) else {}
+    for chave, valor in PREFERENCIAS_DA_JAULA.items():
+        antigo = atuais.get(chave)
+        atuais[chave] = {**(antigo if isinstance(antigo, dict) else {}), **valor} if isinstance(valor, dict) else valor
+    arquivo.parent.mkdir(parents=True, exist_ok=True)
+    arquivo.write_text(json.dumps(atuais), encoding="utf-8")
+
+
+def guardar_segredos(ctx, perfil: Path, estado: dict | None = None) -> None:
+    """Os valores de cookie do contexto e do `estado` (20 caracteres ou mais) ficam num arquivo 0600 do perfil privado, que a
+    entrada fixa lê para recusar, na saída, o arquivo que os traga por inteiro. Junta com os de antes. Não cobre armazenamento
+    local nem cópia transformada (limite dito). Falha aqui não derruba o pedido: a entrada fixa recusa a saída se faltar o
+    arquivo."""
+    arquivo = perfil / ARQUIVO_DE_SEGREDOS
+    try:
+        antes = json.loads(arquivo.read_text(encoding="utf-8")) if arquivo.is_file() else []
+        cookies = list((estado or {}).get("cookies") or [])
+        try:
+            cookies += ctx.cookies()
+        except Exception:  # noqa: BLE001 — o contexto pode já estar fechado (a janela do titular): vale o estado visto
+            pass
+        valores = {c["value"] for c in cookies if isinstance(c, dict) and isinstance(c.get("value"), str)}
+        todos = sorted({v for v in [*(antes if isinstance(antes, list) else []), *valores]
+                        if isinstance(v, str) and len(v) >= TAMANHO_DE_SEGREDO})
+        fd = os.open(arquivo, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(todos, f)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def guardar_estado(ctx, perfil: Path, estado: dict | None = None) -> dict | None:
+    """O `storage_state` do Playwright (cookies, inclusive os de sessão, que o Chromium não grava ao fechar) num arquivo 0600
+    do perfil privado: o login feito na janela do titular sobrevive a ela. O conteúdo NUNCA vai para a saída: os valores de
+    cookie dele entram na conferência de segredo (`guardar_segredos`), e nenhum passo do roteiro lê ou grava esse arquivo."""
+    try:
+        estado = estado if estado is not None else ctx.storage_state()
+        fd = os.open(perfil / ARQUIVO_DE_ESTADO, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(estado, f)
+        return estado
+    except Exception:  # noqa: BLE001 — o contexto pode já estar fechado
+        return None
+
+
+def carregar_estado(ctx, perfil: Path) -> None:
+    """Põe no contexto os cookies do estado guardado (os de sessão inclusive). O armazenamento local não volta."""
+    try:
+        arquivo = perfil / ARQUIVO_DE_ESTADO
+        cookies = json.loads(arquivo.read_text(encoding="utf-8")).get("cookies") if arquivo.is_file() else None
+        if isinstance(cookies, list) and cookies:
+            ctx.add_cookies([c for c in cookies if isinstance(c, dict)])
+    except Exception:  # noqa: BLE001 — estado ilegível ou cookie inválido: segue com o perfil, sem o estado
+        pass
+
+
+@contextlib.contextmanager
+def _contexto_da_jaula(jaula: dict, janela: bool, prazo_s: int):
+    """O Chromium da jaula: SEMPRE o invólucro `chromium-sem-disfarce` (que tira o disfarce e força o proxy da jaula) e
+    SEMPRE o perfil fixo. O sandbox próprio do Chromium vem LIGADO, salvo se o canário da jaula, gravado na instalação de
+    dono root, mediu que o namespace aninhado não existe (`jaula["sandbox"]`, medida M6): a escolha não é da ficha nem da
+    sessão. Downloads recusados."""
+    sync_playwright = _sync_playwright_da_jaula()
+    perfil = Path(PERFIL_DA_JAULA)
+    perfil.mkdir(parents=True, exist_ok=True)
+    gravar_preferencias(perfil)
+    args = list(ARGS_DA_JAULA)
+    if janela:
+        args.append(f"--ozone-platform={jaula.get('grafico') or 'wayland'}")
+    opcoes = {"executable_path": str(AQUI / "chromium-sem-disfarce"), "headless": not janela, "args": args,
+              "chromium_sandbox": jaula.get("sandbox") is not False, "accept_downloads": False}
+    proxy = proxy_do_ambiente()
+    if proxy:
+        opcoes["proxy"] = proxy
+    with sync_playwright() as p:
+        try:
+            ctx = p.chromium.launch_persistent_context(str(perfil), **opcoes)
+        except Exception as exc:  # noqa: BLE001 — o Playwright tem a própria classe de erro
+            raise _erro_da_jaula(exc) from None
+        ctx.set_default_timeout(prazo_s * 1000)
+        carregar_estado(ctx, perfil)
+        guardar_segredos(ctx, perfil)  # já na largada: um pedido que morre no meio não deixa cookie fora da conferência
+        try:
+            yield ctx, None
+        finally:
+            guardar_segredos(ctx, perfil, guardar_estado(ctx, perfil))
+            ctx.close()
+
+
+def esperar_a_janela(ctx, *, salvar: bool) -> dict | None:
+    """Espera o titular fechar a janela. No desafio (`salvar`), guarda a ÚLTIMA página vista em /trabalho/saida/pagina.html:
+    o desafio é resolvido pela mão do titular na janela; nada aqui o resolve, burla ou contorna."""
+    fechada, ultima, visto, rapidas = [], None, None, 0
+    ctx.on("close", lambda *_: fechada.append(True))
+    while not fechada and rapidas < 5:  # a espera que falha na hora, 5 vezes seguidas: janela já fechada ou navegador morto
+        if salvar:
+            try:
+                ultima = ctx.pages[-1].content() if ctx.pages else ultima
+            except Exception:  # noqa: BLE001 — a página pode estar navegando ou fechando
+                pass
+        else:  # login: o estado (cookies de sessão) visto por último é o que sobra quando a janela fecha
+            try:
+                visto = ctx.storage_state()
+            except Exception:  # noqa: BLE001
+                pass
+        inicio = time.monotonic()
+        try:
+            ctx.wait_for_event("close", timeout=2000)
+        except Exception:  # noqa: BLE001 — o prazo de 2 s sem fechar: volta ao laço
+            rapidas = rapidas + 1 if time.monotonic() - inicio < 0.5 else 0
+    if visto is not None:
+        perfil = Path(PERFIL_DA_JAULA)
+        guardar_segredos(ctx, perfil, guardar_estado(ctx, perfil, visto))
+    if not salvar or not ultima:
+        return None
+    dados = ultima.encode("utf-8")[:TETO_PAGINA_SALVA]
+    Path(SAIDA_DA_JAULA).mkdir(parents=True, exist_ok=True)
+    Path(SAIDA_DA_JAULA, "pagina.html").write_bytes(dados)
+    return {"arquivo": "pagina.html", "bytes": len(dados)}
+
+
+def sondar_na_jaula(jaula: dict) -> dict:
+    """about:blank e nada mais: prova o que o invólucro e o perfil prometem (navigator.webdriver verdadeiro: o disfarce
+    padrão está fora; o canal do Chromium e o sandbox próprio)."""
+    with contexto(None, jaula=jaula) as (ctx, _navegador):
+        pagina = ctx.new_page()
+        pagina.goto("about:blank")
+        return {"webdriver": pagina.evaluate("navigator.webdriver"), "versao": getattr(ctx.browser, "version", None),
+                "sandbox_proprio": jaula.get("sandbox") is not False, "perfil": PERFIL_DA_JAULA,
+                "observacao": DADO_DA_PAGINA}
+
+
+def ler_carga_da_jaula(texto: str) -> dict:
+    try:
+        carga = json.loads(texto)
+    except ValueError:
+        raise Recusa("carga da jaula: JSON ilegível") from None
+    if not isinstance(carga, dict) or set(carga) - CAMPOS_DA_CARGA or carga.get("acao") not in ACOES_DA_JAULA:
+        raise Recusa(f"carga da jaula: campos fechados ({', '.join(sorted(CAMPOS_DA_CARGA))}) e acao em "
+                     f"{', '.join(ACOES_DA_JAULA)}")
+    return carga
+
+
+def executar_na_jaula(texto: str) -> tuple[dict, int]:
+    """O `navegador.py jaula <carga>`: devolve (resultado, código). O resultado também vai inteiro para
+    /trabalho/saida/resultado.json (a saída padrão é cortada em 64 KiB pela entrada fixa)."""
+    carga = ler_carga_da_jaula(texto)
+    acao = carga["acao"]
+    jaula = {"sandbox": carga.get("sandbox"), "grafico": carga.get("grafico"), "variante": carga.get("variante")}
+    saida, codigo = Path(SAIDA_DA_JAULA), 0
+    if acao == "sondar":
+        res = sondar_na_jaula(jaula)
+    elif acao == "roteiro":
+        passos = validar_passos(carga.get("passos"), em_jaula=True)
+        res = roteiro(passos, {i: saida / p["captura"] for i, p in enumerate(passos) if "captura" in p}, jaula=jaula)
+        codigo = 1 if "erro" in res else 0
+    else:
+        res = abrir(str(carga.get("url")), texto=carga.get("texto") is True,
+                    captura=saida / "captura.png" if carga.get("captura") is True else None, janela=acao == "janela",
+                    jaula=jaula)
+    saida.mkdir(parents=True, exist_ok=True)
+    (saida / "resultado.json").write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
+    return res, codigo
+
+
+def _cliente_da_jaula():
+    """O `pedido_jaula.py`, ao lado deste script. É só da SESSÃO: a jaula nunca o carrega (o fecho dos módulos que o preparo
+    instala não o inclui), por isso o caminho vem de `joinpath` e não do `_carregar` dos irmãos que a jaula também carrega."""
+    spec = importlib.util.spec_from_file_location("_navegador_pedido_jaula", AQUI.joinpath("pedido_jaula.py"))
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+def pedir_a_jaula(acao: str, alvo: str | None, *, texto: bool = False, captura: bool = False) -> tuple[dict, int]:
+    """O `navegador.py pedir` (na SESSÃO, fora da jaula): monta a carga da ação com os campos tipados e a entrega pelo
+    `pedido_jaula.py` ao porteiro da jaula, que a passa à entrada fixa. Aqui só se confere a forma (a entrada fixa confere o
+    endereço contra navegador.dominios e cada passo, e o porteiro, se a ficha abre a operação)."""
+    if (alvo and acao == "sondar") or ((texto or captura) and acao != "abrir"):
+        raise Recusa(f"{acao} não leva esse argumento")
+    if acao == "abrir":
+        carga = {"acao": "abrir", "url": url_valida(alvo or ""), "texto": texto, "captura": captura}
+    elif acao == "roteiro":
+        if not alvo:
+            raise Recusa("roteiro pede o arquivo dos passos")
+        carga = {"acao": "roteiro", "passos": validar_passos(ler_roteiro(Path(alvo)), em_jaula=True)}
+    else:
+        carga = {"acao": "sondar"}
+    cliente = _cliente_da_jaula()
+    try:
+        resposta = cliente.pedir("navegador", carga)
+    except cliente.PedidoRecusado as exc:
+        raise Recusa(str(exc)) from None
+    try:
+        res = json.loads(resposta["stdout"])
+    except ValueError:
+        res = {"stdout": resposta["stdout"][:4000], "stderr": resposta["stderr"][:2000]}
+    codigo = 0 if resposta["codigo"] == 0 else (2 if resposta["codigo"] == 2 else 1)
+    return {"jaula": res, "codigo_da_jaula": resposta["codigo"], "observacao": DADO_DA_PAGINA}, codigo
+
+
+def chave_do_windows(pasta) -> str | None:
+    """Se o `Local State` do perfil tem a chave de cifra do Windows (DPAPI ou App-Bound), o tipo dela; senão None (inclusive
+    perfil novo, sem `Local State`). A entrada fixa recusa o perfil privado que a traga fora da importação prevista, que
+    esta versão não tem (N-NAV-5): os logins do Windows não funcionam no Linux."""
+    try:
+        r = conferir_perfil_chrome(pasta)
+    except Recusa:
+        return None
+    cifra = r["os_crypt"]
+    return next((v for v in (cifra["encrypted_key"], cifra["app_bound_encrypted_key"]) if "Windows" in v), None)
 
 
 def _tipo_da_chave(valor, prefixos: dict) -> str:
@@ -778,6 +1070,15 @@ def main(argv: list | None = None) -> int:
     r.add_argument("--prazo", type=int, default=PRAZO_PADRAO, help="segundos por ação")
     c = sub.add_parser("conferir-perfil-chrome", help="tipo da chave de cifra de um perfil copiado (só o Local State)")
     c.add_argument("pasta", type=Path)
+    pj = sub.add_parser("pedir", help="a sessão pede à jaula (pelo porteiro da jaula) abrir, roteiro ou sondar")
+    pj.add_argument("acao", choices=("abrir", "roteiro", "sondar"))
+    pj.add_argument("alvo", nargs="?", help="o endereço (abrir) ou o arquivo dos passos (roteiro)")
+    pj.add_argument("--texto", action="store_true", help="abrir: devolve o texto visível da página")
+    pj.add_argument("--captura", action="store_true", help="abrir: grava a captura da página na saída da jaula")
+    j = sub.add_parser("jaula", help="SÓ dentro da jaula (a entrada fixa a monta): abrir, roteiro, sondar ou janela")
+    j.add_argument("carga", nargs="?", help="JSON de campos fechados (acao, url, texto, captura, passos, sandbox, grafico, "
+                                            "variante); sem ele, vale a variável FUNDACAO_CARGA, por onde a entrada fixa a "
+                                            "entrega (o argv do processo é legível por todos)")
     args = ap.parse_args(argv)
     codigo = 0
     try:
@@ -785,6 +1086,10 @@ def main(argv: list | None = None) -> int:
             raise Recusa("--prazo de 1 a 3600 segundos")
         if args.cmd == "conferir-perfil-chrome":
             res = conferir_perfil_chrome(args.pasta)
+        elif args.cmd == "pedir":
+            res, codigo = pedir_a_jaula(args.acao, args.alvo, texto=args.texto, captura=args.captura)
+        elif args.cmd == "jaula":
+            res, codigo = executar_na_jaula(args.carga if args.carga is not None else os.environ.get("FUNDACAO_CARGA", ""))
         else:
             precisa = args.perfil is not None or getattr(args, "captura", None) is not None or args.cmd == "roteiro"
             pasta = pasta_do_projeto(args.raiz, args.projeto) if precisa else None

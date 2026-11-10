@@ -395,6 +395,7 @@ class TestRestauracao(FoundationTestCase):
     def test_copia_com_kit_mais_antigo_pede_atualizacao(self):
         """N3: a raiz restaurada roda o kit que veio na cópia; a restauração avisa quando ele difere."""
         init = self.root / "fundacao" / "__init__.py"
+        self.desvincular(init)
         init.write_text(re.sub(r'KIT_VERSION = "[^"]+"', 'KIT_VERSION = "1.3.0"', init.read_text(encoding="utf-8")),
                         encoding="utf-8")
         snap = self.pasta("snap")

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import sys
 import unittest
@@ -111,8 +112,11 @@ class TestConfigNaCasa(Base):
         saida = json.loads(r.stdout)
         cfg = self.mod.config_do_ensaio(self.base)
         self.assertEqual(saida["config"], cfg.as_posix())
-        self.assertIn("CLAUDE_CONFIG_DIR=" + cfg.as_posix(), saida["proximo_passo"])
-        self.assertEqual(saida["sessoes"], {"com_barramento": 12, "sem_barramento": 11})
+        # O comando que o titular cola vai entre aspas quando o caminho tem caractere de shell (o ~ do nome curto 8.3
+        # do runner do Windows): o teste compara com a mesma citação, que não muda um caminho comum.
+        self.assertIn("CLAUDE_CONFIG_DIR=" + shlex.quote(cfg.as_posix()), saida["proximo_passo"])
+        # Revisão de segurança da 1.7.10: +2 sessões (a área root de outro projeto e <raiz>/.claude).
+        self.assertEqual(saida["sessoes"], {"com_barramento": 25, "sem_barramento": 24})
         self.assertTrue(cfg.is_dir())
 
     @unittest.skipUnless(hasattr(os, "geteuid"), "a recusa de root é do POSIX")
@@ -137,7 +141,7 @@ class TestConferirLogin(Base):
     def test_sem_login_recusa_com_o_comando_pronto(self):
         with self.assertRaises(self.mod.Erro) as ctx:
             self.mod.conferir_login(self.base, "/fixo/claude", self.plano)
-        self.assertIn("CLAUDE_CONFIG_DIR=" + self.cfg.as_posix(), str(ctx.exception))
+        self.assertIn("CLAUDE_CONFIG_DIR=" + shlex.quote(self.cfg.as_posix()), str(ctx.exception))
         self.assertIn("/login", str(ctx.exception))
 
     def test_com_login_devolve_a_config_conferida(self):
@@ -172,7 +176,7 @@ class TestConferirLogin(Base):
         r = rodar_copia(script, "rodar", "--base", self.base, "--claude", sys.executable,
                         "--temp-base", self.temp_base.as_posix(), env=self.env)
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
-        self.assertIn("CLAUDE_CONFIG_DIR=" + self.cfg.as_posix(), json.loads(r.stdout)["erro"])
+        self.assertIn("CLAUDE_CONFIG_DIR=" + shlex.quote(self.cfg.as_posix()), json.loads(r.stdout)["erro"])
 
 
 class TestLimparConfig(Base):

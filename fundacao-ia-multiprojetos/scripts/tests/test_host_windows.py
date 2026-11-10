@@ -192,9 +192,14 @@ class SemUac(_Base):
         self.assertEqual(rel["python_conferencia"]["certificado_thumbprint"],
                          "DE01DAAE82D04F466A576E178F6B07A839238953")
         claude = self.raiz / ".claude"
-        for nome in ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py"):
+        for nome in ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py", "regras_codigo.py"):
             self.assertEqual(sha(claude / "hooks" / nome), sha(SKILL / "assets" / "hooks" / nome))
         win = json.loads((claude / "settings.json").read_text(encoding="utf-8"))
+        # 1.7.11 (ponytail, P7): o hook das regras de código enxuto é copiado para a raiz (o perfil do Ubuntu o usa), mas
+        # não é registrado no perfil do Windows: nada lá liga o campo.
+        self.assertNotIn("regras_codigo", json.dumps(win))
+        self.assertNotIn("SubagentStart", win["hooks"])
+        self.assertNotIn("FUNDACAO_REGRAS_CODIGO", win["env"])
         gancho = win["hooks"]["PreToolUse"][0]["hooks"][0]
         self.assertEqual(gancho["command"], sys.executable)
         self.assertEqual(gancho["args"], ["-I", "-B", str(claude / "hooks" / "guarda_caminho.py")])  # 1.7.10: -I -B
@@ -345,6 +350,29 @@ class ChaveSemSenha(_Base):
         p, rel = self.rodar("-SemUAC")
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertEqual(self.item(rel, "chave")["estado_da_senha"], "ausente")
+        self.assertFalse((self.raiz / ".claude").exists())
+
+
+@unittest.skipIf(ELEVADO, "o script recusa rodar elevado (código 2), por desenho: este ensaio exige a conta comum")
+class ChaveAusenteSemConsole(_Base):
+    def test_chave_ausente_sem_console_recusa_sem_chamar_o_ssh_keygen(self):
+        cmd = [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(self.ps1),
+               "-Raiz", str(self.raiz), "-Titular", "titular", "-Chave", str(self.chave), "-Ancora", str(self.ancora),
+               "-Ferramentas", str(self.ferramentas), "-Python", sys.executable, "-SemBackups", "-SemUAC",
+               "-Relatorio", str(self.base / "rel-sem-console.json")]
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, encoding="utf-8", errors="replace", env=ENV)
+        try:
+            saida, erro = proc.communicate(timeout=90)
+        except subprocess.TimeoutExpired:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=30)
+            proc.communicate()
+            self.fail("o script esperou entrada: o ssh-keygen foi chamado sem console")
+        rel = json.loads((self.base / "rel-sem-console.json").read_text(encoding="utf-8"))
+        self.assertEqual(proc.returncode, 1, saida + erro)
+        self.assertEqual(self.item(rel, "chave")["acao"], "erro")
+        self.assertIn("ssh-keygen -t ed25519", self.item(rel, "chave")["detalhe"])
+        self.assertFalse(self.chave.exists())
         self.assertFalse((self.raiz / ".claude").exists())
 
 

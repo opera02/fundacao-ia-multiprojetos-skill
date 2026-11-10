@@ -4,8 +4,10 @@ lote 2, §0, §3, §5 `plugins[]`, §6 e §8; pacote PLUGINS). Sem ele, as skill
 não chegam à ficha de aberturas.
 
   python plugin_candidato.py montar   --raiz R --projeto P --nome N --origem <pasta em projects/P> [--descricao T]
-  python plugin_candidato.py conferir --pasta <candidato> [--projeto P]
-  python plugin_candidato.py revisar  --pasta <candidato> [--saida <arquivo .md em projects/P/outputs/>]
+                                      [--com-scripts]
+  python plugin_candidato.py conferir --pasta <candidato> [--projeto P] [--com-scripts]
+  python plugin_candidato.py revisar  --pasta <candidato> [--saida <arquivo .md em projects/P/outputs/>] [--com-scripts]
+  python plugin_candidato.py travar   --pasta <candidato> --skill S --rodas <pasta em projects/P, ex.: outputs/rodas-S-AAAAMMDD>
 
 Honestidade (contratos, §0): nada daqui abre coisa alguma. O candidato só vale depois que o titular o revisa, o lista
 na ficha de aberturas (`plugins[] {nome, origem, manifesto_sha256}`) e a assina pela ferramenta fixa dele, e depois do
@@ -105,12 +107,25 @@ candidato vai entre crases (ali o Markdown não interpreta HTML, comentário nem
 Só lê o candidato; com `--saida`, grava só esse arquivo (novo, em `projects/P/outputs/`, sem nome oculto como
 `.claude/` ou `.porteiro/`, sem arquivo de instrução como CLAUDE.md ou AGENTS.md, sem seguir ligação); sem, imprime o
 Markdown.
+Skills com scripts (1.7.11, lote S1; DESENHO-SKILLS-E-AGENTES §3.1 e §3.2): com `--com-scripts` (no `montar`, no `conferir`
+e no `revisar`; sem a opção, tudo fica como era e o `.py` recusa), o candidato aceita `skills/<s>/scripts/<arquivo>.py`
+(arquivo em minúsculas, números e sublinhado, sem `#!`: "tire a primeira linha #!: o executor chama o interpretador") e
+`skills/<s>/requirements.lock`, a forma do kit (core/aberturas_scripts.py); shell, Node, binário e `.pyc` seguem
+recusados. O `conferir` e o `montar` trazem `skills_com_scripts_para_a_ficha`, a sugestão que a linha da ficha leva
+(SHA-256 do `SKILL.md`, de cada script e do lock, modo `sessao`, pacotes e a pasta das rodas), e o kit confere o
+candidato com ela como confere a ficha. O `travar` lê as rodas (`.whl`) que o titular baixou para uma pasta do projeto
+(só arquivo comum, sem ligação, nome de roda válido; nada é baixado nem instalado), calcula o SHA-256 de cada uma e
+grava `skills/<s>/requirements.lock` no candidato, com a linha `# rodas: <pasta>`. O `revisar` ganha a seção "Código que
+roda" (o que cada script importa e as marcas de rede, programas, `eval`/`exec` e escrita de arquivo, lidas pela árvore
+sintática sem importar nem executar o script, mais a lista de pacotes do lock), e o `conferir` avisa a skill cujo nome
+está no registro de skills negadas, se `registry/projetos-host.json` da raiz for legível. Nada daqui roda o script.
 Saída JSON. Códigos: 0 feito ou conforme; 2 recusado (com cada motivo) ou uso incorreto.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import importlib.util
 import json
@@ -231,6 +246,14 @@ PADROES = (
                            r"\bapi[_-]?key\b|\bsenha\b|\bpassword\b|\btoken\b")),
 )
 LIMITE_DE_MARCAS = 100
+# "Código que roda" (lote S1): marcas da árvore sintática de cada script, sem importar nem executar; não julgam.
+REDE_PY = frozenset("socket urllib http ftplib smtplib telnetlib requests httpx curl_cffi aiohttp websockets selenium "
+                    "playwright patchright".split())
+EXEC_PY = frozenset("subprocess pty pexpect ctypes multiprocessing".split())
+ESCREVE_PATH = frozenset("write_text write_bytes unlink touch mkdir rmdir".split())
+ESCREVE_OS = frozenset("remove unlink rename replace rmdir mkdir makedirs removedirs chmod symlink link truncate".split())
+TETO_RODAS = {"rodas": 300, "bytes_roda": 512 << 20, "total": 4 << 30}  # o `travar`: rodas, por roda e no total
+REGISTRO = "registry/projetos-host.json"  # o registro de skills negadas da raiz (preparo_host.REGISTRO_HOST)
 
 
 def _carregar(nome: str):
@@ -272,6 +295,7 @@ FICHA = _carregar_do_kit("core.aberturas_regras")  # o nome de plugin que a fich
 # (SO_PELA_FICHA) só abrem pela ficha; a menção como o Claude Code 2.1.302 a colhe (as duas varreduras dele, à parte:
 # a forma entre aspas, cruzando quebra de linha, e cada trecho sem espaço que começa com '@'), mais a REFERENCIA.
 MARKDOWN = _carregar_do_kit("core.aberturas_markdown")
+SCRIPTS = _carregar_do_kit("core.aberturas_scripts")  # a forma do .py e do lock, e o lock em si (lote S1)
 FERRAMENTAS_DO_CABECALHO, SO_PELA_FICHA = MARKDOWN.FERRAMENTAS_DO_CABECALHO, MARKDOWN.SO_PELA_FICHA
 REFERENCIA = MARKDOWN.REFERENCIA
 # O conteúdo de executável, em todo sistema (emenda E9; revisão da integração, rodada 2): o bit de execução só vale
@@ -506,9 +530,14 @@ def _motivo_da_forma(partes: list, e_pasta: bool) -> str | None:
     return "fora da forma do plugin"
 
 
-def _motivo_do_nome(rel: str, e_pasta: bool) -> str | None:
+def _e_codigo_da_skill(rel: str) -> bool:
+    """`rel` é `skills/<s>/scripts/<arquivo>.py` ou `skills/<s>/requirements.lock` na forma do kit (lote S1)."""
+    return SCRIPTS.problema_do_caminho(rel.split("/")) is None
+
+
+def _motivo_do_nome(rel: str, e_pasta: bool, com_scripts: bool = False) -> str | None:
     """Regras do último nome de `rel`: portabilidade, oculto, segredo, instrução, configuração e executável (o tipo é
-    de `_motivo_do_tipo`)."""
+    de `_motivo_do_tipo`). Com `com_scripts`, o `.py` de `skills/<s>/scripts/` na forma do kit deixa de ser executável."""
     nome = rel.rsplit("/", 1)[-1]
     base = nome.split(".", 1)[0].casefold()
     # Controle (tab e quebra de linha inclusive: o NTFS não os aceita), formatação invisível, surrogate solto e os
@@ -539,17 +568,21 @@ def _motivo_do_nome(rel: str, e_pasta: bool) -> str | None:
     if rel != ".claude-plugin/plugin.json" and any(fnmatchcase(dobrado, g) for g in CONFIGURACOES):
         return "configuração do Claude Code ou de pacote de código (hooks, MCP, settings): 1.7.11"
     if os.path.splitext(dobrado)[1] in EXECUTAVEIS:
-        return "script, binário ou pacote (executa ou esconde o conteúdo): 1.7.11"
+        py = rel.endswith(".py") and _e_codigo_da_skill(rel)
+        if py and com_scripts:
+            return None
+        return "script, binário ou pacote (executa ou esconde o conteúdo): 1.7.11" + (
+            " (o .py de skills/<s>/scripts/ entra com --com-scripts)" if py else "")
     return None
 
 
-def _motivo_do_tipo(rel: str) -> str | None:
+def _motivo_do_tipo(rel: str, com_scripts: bool = False) -> str | None:
     """O tipo de um arquivo pela regra do kit (aberturas_plugins: "só Markdown em skills/, agents/ e commands/";
     emenda E4, integração, item I12): fora o plugin.json e a licença da raiz (`LICENCAS`), só .md. Antes valiam aqui
     .txt, .json, .yaml, .yml, .csv e imagens, que o kit recusa: o candidato conforme caía no `abertura preparar`."""
     if rel == ".claude-plugin/plugin.json" or ("/" not in rel and rel.casefold() in LICENCAS):
         return None
-    if os.path.splitext(rel.rsplit("/", 1)[-1].casefold())[1] == ".md":
+    if os.path.splitext(rel.rsplit("/", 1)[-1].casefold())[1] == ".md" or (com_scripts and _e_codigo_da_skill(rel)):
         return None
     return "tipo de arquivo fora da lista (em skills/, agents/ e commands/ só Markdown .md, a regra do kit na 1.7.10)"
 
@@ -745,6 +778,12 @@ def _conferir_arquivo(rel: str, dados: bytes, plugin: str) -> tuple[list, dict |
         return [f"{rel}: U+FEFF (BOM) fora do começo do Markdown: caractere invisível que esconde texto do titular (só "
                 "no começo ele é tirado, como o Claude Code faz ao ler o cabeçalho)"], None, texto
     motivos, componente = [], None
+    if ext == ".py":  # só chega aqui o .py da skill (--com-scripts): o texto, como o kit o confere (lote S1)
+        MARKDOWN.conferir_python(rel, dados, lambda r, m, versao=None: motivos.append(f"{r}: {m}"))
+    elif ext == ".lock":
+        motivos += [f"{rel}: {m}" for m in SCRIPTS.ler_lock(dados)[0]]
+        if not re.search(r"(?m)^# rodas: \S+$", texto):
+            motivos.append(f"{rel}: sem a linha '# rodas: <pasta das rodas>': gere o lock com o travar")
     if ext == ".md":
         if SHELL_EMBUTIDO.search(texto):
             motivos.append(f"{rel}: execução de shell embutida (! seguido de crase, ou cerca de crases ou tils seguida "
@@ -757,10 +796,11 @@ def _conferir_arquivo(rel: str, dados: bytes, plugin: str) -> tuple[list, dict |
 
 # --- conferência -----------------------------------------------------------------------------------------------------
 def _avaliar(nome: str, projeto: str | None, arquivos: list, pastas: list, achados: list, base: Path,
-             gerados: dict | None = None) -> tuple[dict, dict, list]:
+             gerados: dict | None = None, com_scripts: bool = False) -> tuple[dict, dict, list]:
     """Forma, nomes, conteúdo e manifesto de um candidato — no disco ou, no `montar`, ainda na origem: (resultado,
     textos, arquivos lidos). `arquivos` [(rel, caminho)] é lido dentro de `base`; `gerados` {rel: bytes}. O arquivo
-    lido que começa com `#!`, ELF ou MZ recusa em todo sistema (PELO_CONTEUDO; antes, só numa montagem sem metadata)."""
+    lido que começa com `#!`, ELF ou MZ recusa em todo sistema (PELO_CONTEUDO; antes, só numa montagem sem metadata).
+    `com_scripts` (lote S1): o `.py` de skills/<s>/scripts/ e o requirements.lock da skill, na forma do kit, valem."""
     gerados = gerados or {}
     motivos = list(achados)
     if not nome_valido(nome):
@@ -777,7 +817,8 @@ def _avaliar(nome: str, projeto: str | None, arquivos: list, pastas: list, achad
         return any(rel.startswith(r + "/") for r in recusadas)
 
     for rel in sorted(pastas):
-        if not sob_recusada(rel) and (motivo := _motivo_da_forma(rel.split("/"), True) or _motivo_do_nome(rel, True)):
+        if not sob_recusada(rel) and (motivo := _motivo_da_forma(rel.split("/"), True)
+                                      or _motivo_do_nome(rel, True, com_scripts)):
             motivos.append(f"{_exibir(rel)}/: {motivo}")
             recusadas.append(rel)
     entradas = sorted([*arquivos, *((rel, None) for rel in gerados)], key=lambda e: e[0])
@@ -786,7 +827,8 @@ def _avaliar(nome: str, projeto: str | None, arquivos: list, pastas: list, achad
     for rel, caminho in entradas:
         if sob_recusada(rel):
             continue
-        motivo = _motivo_da_forma(rel.split("/"), False) or _motivo_do_nome(rel, False) or _motivo_do_tipo(rel)
+        motivo = (_motivo_da_forma(rel.split("/"), False) or _motivo_do_nome(rel, False, com_scripts)
+                  or _motivo_do_tipo(rel, com_scripts))
         if motivo:
             motivos.append(f"{_exibir(rel)}: {motivo}")
         aceitos.append((rel, caminho, motivo is None))
@@ -813,7 +855,9 @@ def _avaliar(nome: str, projeto: str | None, arquivos: list, pastas: list, achad
             break
         lista.append({"caminho": rel, "bytes": len(dados), "sha256": hashlib.sha256(dados).hexdigest()})
         if caminho is not None and KIT.executavel_pelo_conteudo(dados):  # em todo sistema (revisão, rodada 2)
-            motivos.append(f"{_exibir(rel)}: {PELO_CONTEUDO}")
+            sem_shebang = "tire a primeira linha #!: o executor chama o interpretador"
+            motivos.append(f"{_exibir(rel)}: " + (sem_shebang if com_scripts and dados.startswith(b"#!")
+                                                  and _e_codigo_da_skill(rel) else PELO_CONTEUDO))
             continue
         if nome_certo:
             achados_do_arquivo, componente, texto = _conferir_arquivo(rel, dados, nome)
@@ -839,8 +883,50 @@ def _avaliar(nome: str, projeto: str | None, arquivos: list, pastas: list, achad
     sha = KIT.sha256_do_manifesto(dados["arquivos"]) if conforme else None  # a receita única (emenda E3; item I4)
     res = {"schema_version": ESQUEMA, "nome": nome, "pasta": str(base), "conforme": conforme, "motivos": motivos,
            "manifesto": dados if conforme else None, "manifesto_sha256": sha, "arquivos": len(lista),
-           "bytes": sum(a["bytes"] for a in lista), "componentes": componentes, "avisos": avisos}
+           "bytes": sum(a["bytes"] for a in lista), "componentes": componentes, "avisos": avisos,
+           "agentes_para_a_ficha": agentes_para_a_ficha(componentes, dados["arquivos"]) if conforme else [],
+           "skills_com_scripts_para_a_ficha":
+               skills_com_scripts_para_a_ficha(dados["arquivos"], textos) if conforme and com_scripts else []}
     return res, textos, dados["arquivos"]
+
+
+def agentes_para_a_ficha(componentes: list, arquivos: list) -> list:
+    """O `agentes` que a linha da ficha leva (1.7.11, lote A2) para cada agente do candidato que traz `tools` e cujo
+    arquivo é `agents/<name>.md`: nome, SHA-256 do arquivo, ferramentas e modelo (`inherit` sem `model`) como o
+    cabeçalho os diz. É sugestão: quem decide o que abre é o titular, na ficha, e o kit recusa o que não bate com o
+    arquivo (aberturas_agentes). Agente sem `tools` ou fora desse nome fica de fora (e o aviso de `tools` já o cita)."""
+    shas = {a["caminho"]: a["sha256"] for a in arquivos}
+    saida = []
+    for c in componentes:
+        if (c["tipo"] != "agente" or not isinstance(c["ferramentas"], list) or not c["ferramentas"]
+                or c["arquivo"] != f"agents/{c['nome']}.md" or c["arquivo"] not in shas
+                or not all(isinstance(f, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,39}", f) for f in c["ferramentas"])):
+            continue
+        saida.append({"nome": c["nome"], "sha256": shas[c["arquivo"]], "ferramentas": list(c["ferramentas"]),
+                      "modelo": c["modelo"] or "inherit"})
+    return saida
+
+
+def skills_com_scripts_para_a_ficha(arquivos: list, textos: dict) -> list:
+    """O `skills_com_scripts` que a linha da ficha leva (1.7.11, lote S1) para cada skill do candidato com scripts na
+    forma do kit: SHA-256 do `SKILL.md` e de cada script, modo `sessao` (o único aberto) e, se a skill tem o
+    `requirements.lock` com a linha `# rodas: <pasta>`, as dependências (lock, SHA-256, rodas, Python 3.12 e a contagem
+    de pacotes). É sugestão: o titular decide na ficha, e o kit recusa o que não bate com o disco (aberturas_scripts)."""
+    shas, saida = {a["caminho"]: a["sha256"] for a in arquivos}, {}
+    for rel in sorted(shas):
+        partes = rel.split("/")
+        if len(partes) == 4 and rel.endswith(".py") and SCRIPTS.problema_do_caminho(partes) is None:
+            item = saida.setdefault(partes[1], {"skill": partes[1], "scripts": [], "skill_md_sha256":
+                                                shas.get(f"skills/{partes[1]}/SKILL.md")})
+            item["scripts"].append({"nome": partes[3][:-3].replace("_", "-"), "caminho": rel, "sha256": shas[rel],
+                                    "modo": "sessao"})
+    for skill, item in saida.items():
+        lock = f"skills/{skill}/requirements.lock"
+        rodas = re.search(r"(?m)^# rodas: (\S+)$", textos.get(lock, ""))
+        if lock in shas and rodas:
+            item["dependencias"] = {"lock": lock, "lock_sha256": shas[lock], "rodas": rodas.group(1), "python": "3.12",
+                                    "pacotes": len(SCRIPTS.ler_lock(textos[lock].encode("utf-8"))[1])}
+    return list(saida.values())
 
 
 def _do_kit(erro: dict) -> str:
@@ -850,15 +936,17 @@ def _do_kit(erro: dict) -> str:
     return f"{_exibir(rel or campo)}: {_exibir(motivo)} (regra do kit, aberturas_plugins.conferir_pasta_do_plugin)"
 
 
-def _regra_do_kit(pasta: Path, nome: str, res: dict) -> None:
+def _regra_do_kit(pasta: Path, nome: str, res: dict, com_scripts: bool = False) -> None:
     """A última conferência do candidato no disco: o validador do kit (aberturas_plugins.conferir_pasta_do_plugin),
     que é a regra do `abertura preparar`, da ferramenta do titular e do preparo do host (emenda E4: esta ferramenta da
     sessão pode ser mais estrita, nunca mais frouxa; integração, item I12). Só depois que as regras daqui aceitaram
     (nada de nome forte chega a ser lido): erro do kit recusa, e o manifesto que ele calcula, lendo os bytes de novo,
-    tem de ser o daqui (um arquivo trocado no intervalo recusa)."""
+    tem de ser o daqui (um arquivo trocado no intervalo recusa). Com `com_scripts`, o kit confere o candidato com a
+    sugestão `skills_com_scripts_para_a_ficha`, como confere a ficha (lote S1); sem, todo `.py` e todo lock recusam."""
     if not res["conforme"]:
         return
-    kit = KIT.conferir_pasta_do_plugin(pasta, nome)
+    kit = (KIT.conferir_pasta_do_plugin(pasta, nome, res["skills_com_scripts_para_a_ficha"]) if com_scripts
+           else KIT.conferir_pasta_do_plugin(pasta, nome))
     motivos = [_do_kit(e) for e in kit["erros"]]
     if not motivos and kit["manifesto_sha256"] != res["manifesto_sha256"]:
         motivos.append("o candidato mudou durante a conferência (o manifesto calculado pelo kit difere do daqui): "
@@ -869,13 +957,59 @@ def _regra_do_kit(pasta: Path, nome: str, res: dict) -> None:
         res.update(conforme=False, motivos=motivos, manifesto=None, manifesto_sha256=None)
 
 
-def _examinar(pasta: Path, nome: str, projeto: str | None) -> tuple[dict, dict, list]:
+def _negadas_do_registro(pasta: Path) -> tuple[set, set] | None:
+    """Os nomes de skill (`aninhadas_negadas`) e de agente (`agentes_negados`, esquema /2) negados no registro da raiz
+    (`registry/projetos-host.json`, de todos os projetos), em minúsculas, para o candidato em
+    `<raiz>/projects/<p>/plugins-candidatos/`; None se o registro não está lá, é ligação, passa de 256 KiB ou não está na
+    forma (a sessão pode não o ler: o preparo do titular confere)."""
+    if _projeto_do_caminho(pasta) is None:
+        return None
+    raiz = pasta.parents[3]
+    try:
+        if GRAVACAO.com_ligacao(raiz, REGISTRO) or not os.path.lexists(raiz / REGISTRO):
+            return None
+        fd = COPIA.abrir_comum(raiz / REGISTRO, raiz)
+        try:
+            bruto = os.read(fd, (256 << 10) + 1)
+        finally:
+            os.close(fd)
+        projetos = json.loads(bruto.decode("utf-8"))["projetos"] if len(bruto) <= 256 << 10 else None
+        return ({n.casefold() for p in projetos.values() for n in p["aninhadas_negadas"] if isinstance(n, str)},
+                {n.casefold() for p in projetos.values() for n in (p.get("agentes_negados") if isinstance(
+                    p.get("agentes_negados"), list) else ()) if isinstance(n, str)})
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
+        return None
+
+
+def _avisos_do_registro(pasta: Path, componentes: list) -> list:
+    """Aviso da skill do candidato cujo nome (o da pasta ou o `name`) está nas skills negadas do registro e do agente cujo
+    nome (o `name` ou o do arquivo) está nos agentes negados (`Agent(<nome>)` no perfil): a negação do nome simples vale
+    também para `<plugin>:<nome>` e a ficha não abre exceção nela (DESENHO §4.4); o preparo recusa, e a saída é renomear no
+    candidato. Não diz de qual projeto vem a negação."""
+    negadas = _negadas_do_registro(pasta)
+    if not negadas:
+        return []
+    skills, agentes = negadas
+    achados = sorted({n for c in componentes if c["tipo"] == "skill" for n in (c["nome"], c["arquivo"].split("/")[1])
+                      if isinstance(n, str) and n.casefold() in skills})
+    ruins = sorted({n for c in componentes if c["tipo"] == "agente" for n in (c["nome"], c["arquivo"].split("/")[1][:-3])
+                    if isinstance(n, str) and n.casefold() in agentes})
+    return [f"skills/{_exibir(n)}: o nome {_exibir(n)!r} está nas skills negadas do registro da fundação: a negação não "
+            "tem exceção na ficha e o preparo recusa; renomeie a skill no candidato (por exemplo, <projeto>-<nome>)"
+            for n in achados] + [
+        f"agents/{_exibir(n)}: o nome {_exibir(n)!r} está nos agentes negados do registro da fundação (Agent no perfil): a "
+        "negação não tem exceção na ficha e o preparo recusa; renomeie o agente no candidato e na ficha (por exemplo, "
+        "<projeto>-<nome>)" for n in ruins]
+
+
+def _examinar(pasta: Path, nome: str, projeto: str | None, com_scripts: bool = False) -> tuple[dict, dict, list]:
     """O candidato no disco: as regras daqui (o bit de execução, salvo numa montagem 9p ou drvfs sem metadata, emenda
     E9; o conteúdo de executável, em todo sistema) e, por último, a regra do kit."""
     _exigir_pasta(pasta)
     arquivos, pastas, achados = _varrer(pasta, bit_de_execucao=not _sem_prova_do_bit(pasta))
-    res, textos, lista = _avaliar(nome, projeto, arquivos, pastas, achados, pasta)
-    _regra_do_kit(pasta, nome, res)
+    res, textos, lista = _avaliar(nome, projeto, arquivos, pastas, achados, pasta, com_scripts=com_scripts)
+    _regra_do_kit(pasta, nome, res, com_scripts)
+    res["avisos"] += _avisos_do_registro(pasta, res["componentes"])
     return res, textos, lista
 
 
@@ -928,16 +1062,17 @@ def _dentro_da_sessao(pasta) -> None:
                                 f"{_exibir(da_sessao)} (o caminho real de {_exibir(pasta)} fica fora)")
 
 
-def conferir(pasta, projeto: str | None = None) -> dict:
+def conferir(pasta, projeto: str | None = None, com_scripts: bool = False) -> dict:
     """A conferência inteira do candidato (forma, regras, tetos, manifesto e componentes); não grava nada. O projeto
-    vem de `projeto` ou do caminho (`projects/<p>/plugins-candidatos/`) e prende o nome a `<p>-<nome>`."""
+    vem de `projeto` ou do caminho (`projects/<p>/plugins-candidatos/`) e prende o nome a `<p>-<nome>`. `com_scripts`:
+    aceita o `.py` e o lock das skills (lote S1)."""
     pasta = Path(os.path.abspath(pasta))
     _dentro_da_sessao(pasta)
     do_caminho = _projeto_do_caminho(pasta)
     if projeto and do_caminho and projeto != do_caminho:
         raise CandidatoRecusado(f"o candidato fica em projects/{do_caminho}, não em projects/{projeto}")
     _sessao(projeto or do_caminho)
-    return _examinar(pasta, pasta.name, projeto or do_caminho)[0]
+    return _examinar(pasta, pasta.name, projeto or do_caminho, com_scripts)[0]
 
 
 # --- montar ----------------------------------------------------------------------------------------------------------
@@ -999,7 +1134,7 @@ def _apagar_sem_seguir(caminho: Path) -> None:
         pass
 
 
-def montar(raiz, projeto: str, nome: str, origem, descricao: str | None = None) -> dict:
+def montar(raiz, projeto: str, nome: str, origem, descricao: str | None = None, com_scripts: bool = False) -> dict:
     """Monta `projects/<projeto>/plugins-candidatos/<projeto>-<nome>/` a partir de `origem` (ver o módulo)."""
     raiz = Path(os.path.abspath(raiz))
     _sessao(projeto, raiz)
@@ -1037,7 +1172,7 @@ def montar(raiz, projeto: str, nome: str, origem, descricao: str | None = None) 
                           "aberturas assinada pelo titular)")
     gerado = (json.dumps({"name": plugin, "description": texto}, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     previa, _textos, _lista = _avaliar(plugin, projeto, arquivos, [".claude-plugin", *pastas], achados, origem,
-                                       {".claude-plugin/plugin.json": gerado})
+                                       {".claude-plugin/plugin.json": gerado}, com_scripts)
     if not previa["conforme"]:
         raise CandidatoRecusado(previa["motivos"])
     esperado = {a["caminho"]: a["sha256"] for a in previa["manifesto"]["arquivos"]}
@@ -1054,7 +1189,7 @@ def montar(raiz, projeto: str, nome: str, origem, descricao: str | None = None) 
         GRAVACAO.criar(temp / ".claude-plugin" / "plugin.json", gerado)
         if os.name != "nt":
             os.chmod(temp / ".claude-plugin" / "plugin.json", 0o444)
-        res = _examinar(temp, plugin, projeto)[0]
+        res = _examinar(temp, plugin, projeto, com_scripts)[0]
         if not res["conforme"]:  # na cópia valem também o bit de execução e a regra do kit (integração, item I12)
             raise CandidatoRecusado(["a conferência do candidato montado recusou (nada ficou no destino)",
                                      *res["motivos"]])
@@ -1081,17 +1216,125 @@ def montar(raiz, projeto: str, nome: str, origem, descricao: str | None = None) 
         avisos.append("a origem fica em data/ (dado): vira instrução só depois da revisão do titular, da ficha "
                       "assinada e do canário")
     script, sha = Path(__file__).resolve(), res["manifesto_sha256"]
-    python = "python" if os.name == "nt" else "python3"
+    python, opcao = "python" if os.name == "nt" else "python3", " --com-scripts" if com_scripts else ""
     revisao = pasta_p / "outputs" / "plugins" / nome / "REVISAO.md"
     return {"schema_version": ESQUEMA, "feito": "montar", "candidato": str(destino), "nome": plugin,
             "origem": rel_origem, "arquivos": res["arquivos"], "bytes": res["bytes"], "manifesto_sha256": sha,
             "componentes": res["componentes"], "nao_copiados": nao_copiados, "avisos": avisos + res["avisos"],
             "ficha": {"nome": plugin, "origem": f"{CANDIDATOS}/{plugin}", "manifesto_sha256": sha},
-            "proximos_passos": [f'{python} "{script}" conferir --pasta "{destino}"',
-                                f'{python} "{script}" revisar --pasta "{destino}" --saida "{revisao}"',
+            "agentes_para_a_ficha": res["agentes_para_a_ficha"],
+            "skills_com_scripts_para_a_ficha": res["skills_com_scripts_para_a_ficha"],
+            "proximos_passos": [f'{python} "{script}" conferir --pasta "{destino}"{opcao}',
+                                f'{python} "{script}" revisar --pasta "{destino}" --saida "{revisao}"{opcao}',
                                 "o titular revisa o REVISAO.md; se aceitar, a ficha de aberturas lista a entrada de "
                                 "'ficha' e ele a assina pela ferramenta fixa dele; o preparo dele instala o plugin "
                                 "só depois do canário"]}
+
+
+# --- travar ----------------------------------------------------------------------------------------------------------
+def _roda(nome: str) -> tuple[str, str] | None:
+    """(pacote normalizado, versão) do nome de uma roda (PEP 427: `dist-versão[-build]-python-abi-plataforma.whl`), ou
+    None se o nome não tem essa forma. A versão vem do nome, como o desenho manda (DESENHO §3.2)."""
+    partes = nome[:-4].split("-") if nome.endswith(".whl") else []
+    if len(partes) not in (5, 6) or not all(re.fullmatch(r"[A-Za-z0-9_.!+]+", p) for p in partes):
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.]*", partes[0]) or not re.fullmatch(r"[0-9][A-Za-z0-9_.!+]*", partes[1]):
+        return None
+    return re.sub(r"[-_.]+", "-", partes[0]).lower(), partes[1]
+
+
+def _pasta_das_rodas(projeto_dir: Path, rodas) -> tuple[Path, str]:
+    """A pasta das rodas (relativa à pasta do projeto, ou absoluta dentro dela) e o caminho dela na ficha: fora de data/
+    e das pastas protegidas, fora do candidato, sem ligação no caminho e sem a pasta do projeto inteira."""
+    alvo = Path(os.path.abspath(rodas if Path(rodas).is_absolute() else projeto_dir / rodas))
+    if not alvo.is_relative_to(projeto_dir) or alvo == projeto_dir:
+        raise CandidatoRecusado(f"--rodas {_exibir(alvo)}: fica fora da pasta do projeto {projeto_dir}")
+    rel = alvo.relative_to(projeto_dir).as_posix()
+    motivo = FICHA.problema_da_origem(rel) or ("as rodas ficam fora de plugins-candidatos/: dentro dele entrariam no "
+                                               "manifesto" if rel.split("/")[0].casefold() == CANDIDATOS else None)
+    if motivo:
+        raise CandidatoRecusado(f"--rodas {_exibir(rel)}: {motivo}")
+    if GRAVACAO.com_ligacao(projeto_dir, rel) or not alvo.is_dir():
+        raise CandidatoRecusado(f"--rodas {_exibir(rel)}: não é uma pasta do projeto, ou o caminho passa por ligação")
+    return alvo, rel
+
+
+def travar(pasta, skill: str, rodas) -> dict:
+    """Grava `skills/<skill>/requirements.lock` no candidato a partir das rodas (`.whl`) de uma pasta do projeto (lote
+    S1; DESENHO §3.2): só arquivo comum, sem ligação, de nome de roda válido (`--only-binary` implícito: código-fonte
+    rodaria na instalação), até TETO_RODAS; o SHA-256 de cada uma sai da leitura conferida (`copia_segura`), a versão sai
+    do nome, e várias rodas do mesmo pacote e versão (outras plataformas) dividem a linha. O lock começa com
+    `# rodas: <pasta>` (a ficha a leva em `dependencias.rodas`) e passa pela forma do kit antes de ser gravado. Nada é
+    baixado, instalado nem executado. Candidato fora de `projects/<p>/plugins-candidatos/`, skill sem SKILL.md ou rodas
+    fora do projeto: `CandidatoRecusado`."""
+    pasta = Path(os.path.abspath(pasta))
+    _dentro_da_sessao(pasta)
+    projeto = _projeto_do_caminho(pasta)
+    if projeto is None:
+        raise CandidatoRecusado("travar só para candidato em projects/<p>/plugins-candidatos/")
+    _sessao(projeto)
+    _exigir_pasta(pasta)
+    projeto_dir = pasta.parent.parent
+    if not SCRIPTS.NOME_DA_SKILL.fullmatch(str(skill)) or not os.path.isfile(pasta / "skills" / skill / "SKILL.md") \
+            or GRAVACAO.com_ligacao(projeto_dir, f"{CANDIDATOS}/{pasta.name}/skills/{skill}"):
+        raise CandidatoRecusado(f"--skill {_exibir(skill)}: não é uma skill do candidato (skills/<skill>/SKILL.md, nome "
+                                "em minúsculas, números e hífen, sem ligação no caminho)")
+    try:
+        if not any(n.endswith(".py") for n in os.listdir(pasta / "skills" / skill / "scripts")):
+            raise OSError
+    except OSError:
+        raise CandidatoRecusado(f"--skill {skill}: sem skills/{skill}/scripts/*.py no candidato (monte com --com-scripts "
+                                "antes: o lock sem script não tem item na ficha)") from None
+    alvo, rel = _pasta_das_rodas(projeto_dir, rodas)
+    _dentro_da_sessao(alvo)
+    motivos, achados, total = [], {}, 0
+    with os.scandir(alvo) as it:
+        entradas = sorted(it, key=lambda e: e.name)
+    if not entradas or len(entradas) > TETO_RODAS["rodas"]:
+        raise CandidatoRecusado(f"--rodas {_exibir(rel)}: de 1 a {TETO_RODAS['rodas']} rodas (.whl)")
+    for e in entradas:
+        try:
+            st = os.lstat(alvo / e.name)  # não o DirEntry.stat: no Windows ele não traz o número de nomes
+        except OSError as exc:
+            motivos.append(f"{_exibir(e.name)}: não deu para examinar ({exc.strerror or exc})")
+            continue
+        dist_versao = _roda(e.name)
+        if COPIA.e_ligacao(st) or not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+            motivos.append(f"{_exibir(e.name)}: só arquivo comum de um nome só (sem ligação, pasta nem vínculo físico)")
+        elif dist_versao is None:
+            motivos.append(f"{_exibir(e.name)}: só rodas (.whl com nome de roda válido): código-fonte rodaria na "
+                           "instalação (use pip download --only-binary=:all:)")
+        elif st.st_size > TETO_RODAS["bytes_roda"] or (total := total + st.st_size) > TETO_RODAS["total"]:
+            motivos.append(f"{_exibir(e.name)}: passa do teto de bytes das rodas")
+        else:
+            try:
+                sha = COPIA.hash_conferido(alvo / e.name, alvo)["sha256"]
+            except OSError as exc:  # CopiaRecusada (troca entre o exame e a abertura) ou leitura
+                motivos.append(f"{_exibir(e.name)}: {exc}")
+                continue
+            nome, versao = dist_versao
+            if achados.setdefault(nome, (versao, set()))[0] != versao:
+                motivos.append(f"{_exibir(e.name)}: duas versões de {nome} na pasta ({achados[nome][0]} e {versao})")
+            achados[nome][1].add(sha)
+    if motivos:
+        raise CandidatoRecusado(motivos)
+    texto = f"# rodas: {rel}\n" + "".join(
+        f"{nome}=={versao}" + "".join(f" \\\n    --hash=sha256:{h}" for h in sorted(hashes)) + "\n"
+        for nome, (versao, hashes) in sorted(achados.items()))
+    lock = f"skills/{skill}/requirements.lock"
+    if problemas := SCRIPTS.ler_lock(texto.encode("utf-8"))[0]:
+        raise CandidatoRecusado([f"{lock}: {m}" for m in problemas])
+    try:
+        GRAVACAO.publicar(pasta / lock, texto.encode("utf-8"))
+    except OSError as exc:
+        raise CandidatoRecusado(f"{lock}: não gravado ({exc}); se ele existe e é somente leitura, apague-o (é do "
+                                "candidato) e rode de novo") from None
+    python, script = "python" if os.name == "nt" else "python3", Path(__file__).resolve()
+    return {"schema_version": ESQUEMA, "feito": "travar", "lock": f"{pasta.name}/{lock}", "pacotes": len(achados),
+            "rodas": len(entradas), "rodas_pasta": rel, "lock_sha256": hashlib.sha256(texto.encode("utf-8")).hexdigest(),
+            "proximos_passos": [f'{python} "{script}" conferir --pasta "{pasta}" --com-scripts',
+                                "o lock muda o manifesto: a ficha de aberturas leva o manifesto_sha256 e o "
+                                "skills_com_scripts novos (a linha pronta sai do conferir)"]}
 
 
 # --- revisar ---------------------------------------------------------------------------------------------------------
@@ -1152,13 +1395,97 @@ def _lista_de_trechos(itens: list, vazio: str) -> list:
     return linhas + ([f"- (e mais {len(itens) - LIMITE_DE_MARCAS})"] if len(itens) > LIMITE_DE_MARCAS else [])
 
 
-def revisar(pasta) -> tuple[str, dict]:
+def _marcas_do_script(texto: str) -> dict:
+    """O que a árvore sintática do script mostra (lote S1), sem importar nem executar nada: os módulos que ele importa e
+    quantas chamadas de eval/exec/compile, de importação dinâmica, de programa externo (os.system, os.popen, os.exec*,
+    os.spawn*) e de escrita de arquivo (open para escrever, Path.write_text, os.remove, shutil...). São marcas: nada é
+    julgado. Sintaxe ilegível ou funda demais: {"ilegivel": True}."""
+    try:
+        arvore = ast.parse(texto)
+    except (SyntaxError, ValueError, RecursionError, MemoryError, OverflowError, SystemError):
+        return {"ilegivel": True}
+    importa, n = set(), dict.fromkeys(("eval", "dinamica", "programa", "escrita"), 0)
+    for no in ast.walk(arvore):
+        if isinstance(no, ast.Import):
+            importa.update(a.name.split(".")[0] for a in no.names)
+        elif isinstance(no, ast.ImportFrom):
+            importa.add("." * no.level + (no.module or "").split(".")[0])
+        elif isinstance(no, ast.Call):
+            f = no.func
+            nome = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
+            dono = f.value.id if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) else ""
+            modos = [a.value for a in [*no.args, *(k.value for k in no.keywords if k.arg == "mode")]
+                     if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            if nome in ("eval", "exec", "compile") and not dono:
+                n["eval"] += 1
+            elif nome in ("__import__", "import_module"):
+                n["dinamica"] += 1
+            elif dono == "os" and (nome in ("system", "popen") or nome.startswith(("exec", "spawn"))):
+                n["programa"] += 1
+            elif (nome == "open" and any(re.fullmatch(r"[rwxabt+]{1,4}", x) and set(x) & set("wax+") for x in modos)) \
+                    or nome in ESCREVE_PATH or dono == "shutil" or (dono == "os" and nome in ESCREVE_OS):
+                n["escrita"] += 1
+    return {"importa": sorted(importa), **n}
+
+
+def _secao_codigo(sugestao: list, textos: dict, lista: list) -> list:
+    """A seção "Código que roda" do REVISAO.md (lote S1): por script, o tamanho, o SHA-256, o modo sugerido, o que ele
+    importa, as marcas da árvore sintática (`_marcas_do_script`), os domínios e os caminhos que o texto cita e a
+    recomendação por código (sem marca de rede: candidato ao modo `caixa`); por skill, a lista de pacotes do lock com a
+    versão e o aviso fixo. Todo texto do candidato entra entre crases (`_codigo`). Só lê o que a conferência já leu."""
+    if not sugestao:
+        return []
+    fixo = ("Estes scripts são PROGRAMAS: no modo `sessao` rodam com a mesma autoridade dos comandos da sessão (lêem e "
+            "gravam o que eles alcançam, com a raiz em /mnt/e também fora do projeto, e usam a rede da ficha). A "
+            "fundação confere que é o arquivo assinado, não o que ele faz. As marcas vêm da árvore sintática do "
+            "script, sem importar nem executar, e não julgam: o titular lê o código.")
+    m, tamanhos = ["", "### Código que roda", "", f"> {fixo}", ""], {a["caminho"]: a for a in lista}
+    fora = [rx for categoria, rx in PADROES if categoria == "fora"]
+    for skill in sugestao:
+        for sc in skill["scripts"]:
+            rel, texto = sc["caminho"], textos.get(sc["caminho"], "")
+            marcas, linhas = _marcas_do_script(texto), texto.split("\n")
+            hosts = sorted({h for linha in linhas for h in _hosts(linha)})
+            citados = [(i, _trecho(linha)) for i, linha in enumerate(linhas, 1) if any(rx.search(linha) for rx in fora)]
+            rede = sorted(set(marcas.get("importa", ())) & REDE_PY)
+            m += [f"- {_codigo(rel)} — {len(linhas)} linhas, {tamanhos[rel]['bytes']} bytes, SHA-256 "
+                  f"`{sc['sha256'][:16]}…`, modo sugerido `{sc['modo']}`"]
+            if marcas.get("ilegivel"):
+                m.append("  - a sintaxe não foi lida (ilegível ou funda demais): leia o arquivo inteiro")
+            else:
+                programas = [_codigo(x) for x in sorted(set(marcas["importa"]) & EXEC_PY)]
+                programas += [f"{marcas['programa']} chamada(s) os.system, os.popen, os.exec* ou os.spawn*"] * bool(
+                    marcas["programa"])
+                achados = [f"{rotulo}: {valor}" for rotulo, valor in (
+                    ("rede", ", ".join(_codigo(x) for x in rede)), ("executa programas", ", ".join(programas)),
+                    ("eval/exec/compile", marcas["eval"] or ""), ("importação dinâmica", marcas["dinamica"] or ""),
+                    ("escreve arquivos", f"{marcas['escrita']} chamada(s)" if marcas["escrita"] else "")) if valor]
+                importados = ", ".join(_codigo(x) for x in marcas["importa"]) or "nada"
+                m += [f"  - importa: {importados}", "  - marcas: " + ("; ".join(achados) or "nenhuma")]
+            citados = ", ".join(f"{_codigo(trecho)} (linha {i})" for i, trecho in citados[:5]) or "nenhum"
+            m += ["  - domínios citados: " + (", ".join(_codigo(h) for h in hosts) or "nenhum"),
+                  f"  - caminhos citados: {citados}",
+                  "  - recomendação: " + ("tem marca de rede ou domínio: modo `sessao`, com a rede da ficha" if rede or hosts
+                                           else "sem marca de rede: candidato ao modo `caixa` (sem rede), quando o lote S4 "
+                                                "existir")]
+        dep = skill.get("dependencias")
+        pacotes = re.findall(r"(?m)^([A-Za-z0-9][A-Za-z0-9._-]*(?:\[[a-z0-9,_-]+\])?==[A-Za-z0-9.+!_-]+)",
+                             textos.get(dep["lock"], "")) if dep else []
+        if dep:
+            m += ["", f"#### Pacotes do requirements.lock da skill {_codigo(skill['skill'])} ({dep['pacotes']})", "",
+                  "> Estes pacotes rodam junto com o script; o hash prova que são os baixados, não que são seguros.", "",
+                  *(f"- {_codigo(p)}" for p in pacotes[:LIMITE_DE_MARCAS]),
+                  *([f"- (e mais {len(pacotes) - LIMITE_DE_MARCAS})"] if len(pacotes) > LIMITE_DE_MARCAS else [])]
+    return m
+
+
+def revisar(pasta, com_scripts: bool = False) -> tuple[str, dict]:
     """(Markdown do esqueleto da revisão, resultado da conferência) do candidato; só lê."""
     pasta = Path(os.path.abspath(pasta))
     _dentro_da_sessao(pasta)
     projeto = _projeto_do_caminho(pasta)
     _sessao(projeto)
-    res, textos, lista = _examinar(pasta, pasta.name, projeto)
+    res, textos, lista = _examinar(pasta, pasta.name, projeto, com_scripts)
     trechos, dominios, ferramentas, invisiveis = _marcas(textos)
     nome, sha = _md(res["nome"]), res["manifesto_sha256"]
     exibida = f"projects/{projeto}/{CANDIDATOS}/{res['nome']}" if projeto else res["pasta"]  # sem o caminho da máquina
@@ -1191,9 +1518,12 @@ def revisar(pasta) -> tuple[str, dict]:
     if invisiveis:
         m += ["", "### Caracteres invisíveis (podem esconder texto)",
               *(f"- `{_md(rel)}`: {q}" for rel, q in sorted(invisiveis.items()))]
+    sugestao = res["skills_com_scripts_para_a_ficha"]
     m += ["", "## 2. Scripts e comandos", "",
-          "O plugin não leva script nem executável (a conferência recusa). Comandos citados no texto, que uma skill "
-          "pode pedir para rodar:", *_lista_de_trechos(trechos["comando"], "nenhum comando citado"), "",
+          ("O plugin leva scripts Python de skills (--com-scripts): leia cada um em \"Código que roda\", abaixo dos "
+           "comandos. " if sugestao else "O plugin não leva script nem executável (a conferência recusa). ")
+          + "Comandos citados no texto, que uma skill pode pedir para rodar:",
+          *_lista_de_trechos(trechos["comando"], "nenhum comando citado"), *_secao_codigo(sugestao, textos, lista), "",
           "## 3. Rede", "",
           "O plugin não abre rede: um domínio só vale se o titular o puser na ficha (`rede.dominios` e, para o "
           "WebFetch, `webfetch.dominios`).", ""]
@@ -1218,6 +1548,12 @@ def revisar(pasta) -> tuple[str, dict]:
           "- [ ] Aceito listar na ficha de aberturas: `" + _md(json.dumps(
               {"nome": res["nome"], "origem": f"{CANDIDATOS}/{res['nome']}", "manifesto_sha256": sha},
               ensure_ascii=False)) + "`" if sha else "- [ ] (o candidato está recusado: nada a listar na ficha)",
+          *(["- [ ] Aceito abrir estes agentes (campo `agentes` do plugin na ficha; confira as ferramentas e o modelo de "
+             "cada um): `" + _md(json.dumps(res["agentes_para_a_ficha"], ensure_ascii=False)) + "`"]
+            if res["agentes_para_a_ficha"] else []),
+          *(["- [ ] Li o código de cada script (\"Código que roda\") e aceito abri-los (campo `skills_com_scripts` do "
+             "plugin na ficha; confira o modo, o SHA-256 de cada script e dependencias.rodas): `"
+             + _md(json.dumps(sugestao, ensure_ascii=False)) + "`"] if sugestao else []),
           "", "Observações do titular:", ""]
     return "\n".join(m) + "\n", res
 
@@ -1293,19 +1629,27 @@ def main(argv: list | None = None) -> int:
     r = sub.add_parser("revisar", allow_abbrev=False, help="esqueleto da revisão do titular")
     r.add_argument("--pasta", required=True)
     r.add_argument("--saida")
+    for filho in (m, c, r):
+        filho.add_argument("--com-scripts", action="store_true", help="aceita o .py e o lock das skills (lote S1)")
+    t = sub.add_parser("travar", allow_abbrev=False, help="grava o requirements.lock da skill a partir das rodas (.whl)")
+    for opcao in ("--pasta", "--skill", "--rodas"):
+        t.add_argument(opcao, required=True)
     args = ap.parse_args(argv)
     try:
         if args.acao == "montar":
-            res = montar(args.raiz, args.projeto, args.nome, args.origem, args.descricao)
+            res = montar(args.raiz, args.projeto, args.nome, args.origem, args.descricao, args.com_scripts)
             print(json.dumps(res, ensure_ascii=False, indent=1))
             return 0
+        if args.acao == "travar":
+            print(json.dumps(travar(args.pasta, args.skill, args.rodas), ensure_ascii=False, indent=1))
+            return 0
         if args.acao == "conferir":
-            res = conferir(args.pasta, args.projeto)
+            res = conferir(args.pasta, args.projeto, args.com_scripts)
             print(json.dumps(res, ensure_ascii=False, indent=1))
             return 0 if res["conforme"] else 2
         if args.saida:
             destino_da_revisao(args.pasta, args.saida)  # recusa antes de ler o candidato
-        texto, res = revisar(args.pasta)
+        texto, res = revisar(args.pasta, args.com_scripts)
         if not args.saida:
             sys.stdout.write(texto)
             return 0

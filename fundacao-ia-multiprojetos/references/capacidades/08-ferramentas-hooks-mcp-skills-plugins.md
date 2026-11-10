@@ -179,10 +179,11 @@ no WSL2); ver `../seguranca-isolamento.md` §5 e `../fluxo-a-implantar.md` §Hos
 |---|---|---|---|
 | `guarda_caminho.py` | PreToolUse `Edit\|Write\|MultiEdit\|NotebookEdit\|mcp__.*` | Ubuntu e Windows | escrita só no projeto; MCP só da lista |
 | `guarda_identidade.py` | PreToolUse `Bash\|PowerShell` | Ubuntu e Windows | troca de identidade; comando que cite outro projeto; comando recursivo conhecido (`rg`, `grep -r`, `find`, `ls -R`, `tree`, `du`, `cp -r`, `tar`, `zip`, `rsync`, `Get-ChildItem -Recurse` e afins) sobre `projects/`, a raiz ou acima; comando acima de 16 KiB |
-| `guarda_ferramentas.py` | PreToolUse `*` | só Ubuntu | só as ferramentas de `FUNDACAO_FERRAMENTAS`, a lista do `--tools` |
+| `guarda_ferramentas.py` | PreToolUse `*` | só Ubuntu | só as ferramentas de `FUNDACAO_FERRAMENTAS`, a lista do `--tools`; desde a 1.7.11, também os agentes de arquivo, as skills e as ferramentas MCP que a ficha abriu, e as três travas do evento de subagente (abaixo) |
 | `guarda_rede.py` | PreToolUse `WebFetch\|WebSearch` | Ubuntu e Windows | WebFetch só para domínio da ficha; WebSearch só com a ficha |
 | `guarda_leitura.py` | PreToolUse `Read\|Grep\|Glob`, em grupo separado do de `mcp__.*` | Ubuntu e Windows | leitura de outro projeto e de `state/`; no Ubuntu, `/mnt/wslg/` e o filtro do Grep com barra invertida |
 | `sinais_sessao.py` | SessionStart `compact` e a linha de status | Ubuntu e Windows | lembra a retomada depois da compactação |
+| `regras_codigo.py` | SessionStart `startup\|resume\|clear\|compact` e SubagentStart (prazo de 3 s, sem bloquear) | só Ubuntu: o lançador o liga com o campo `regras_codigo` do projeto; no Windows nada liga o campo, então ele só é copiado para a raiz e não é registrado no perfil | entrega um texto fixo, o §1 de `references/codigo-enxuto.md`; sem o campo, não escreve nada. **Desligado por padrão**: a rodada P8 de 09/11/2026 mediu diff menor e nenhum ganho de tokens em tarefa pequena (`codigo-enxuto.md` §6) |
 | `aviso_copia.py` | SessionStart `startup\|resume` (prazo de 5 s, sem bloquear) | só Windows | lembra a cópia semanal |
 
 Os hooks decidem só pelo `tool_name` exato: matcher mais largo não amplia nada. Eles leem do `env` do perfil
@@ -194,6 +195,21 @@ perfil gerado pelo preparo põe `FUNDACAO_RAIZ`. Os hooks mudaram de conteúdo n
 rode o preparo da máquina, que os recopia para `<raiz>/.claude/hooks`, e depois o do Ubuntu, que confere os da raiz
 contra os da skill e refaz os hashes da área. O que cada um nega, os falsos positivos declarados e os limites:
 `../seguranca-isolamento.md` §8.2. São guarda-corpos, não barreira do sistema.
+
+**Hooks da 1.7.11** [Decisão; 1.7.11; lotes A1, L2 e P3]. O `guarda_ferramentas.py` ganhou quatro coisas, todas por
+variável do `env` do perfil que o preparo gera da ficha assinada, sem ler arquivo: (1) `FUNDACAO_AGENTES`
+(`<plugin>:<agente>=Ferramenta|Ferramenta,...`) abre na ferramenta Agent o tipo de cada agente de arquivo da ficha;
+(2) três travas para o evento que traz `agent_id` ou `agent_type` (na sessão principal não valem): o `agent_type` tem
+de ser um embutido ou um agente da ficha, e qualquer outro valor nega toda ferramenta (o subagente nasceu por um
+caminho que a ficha não abriu); o agente de arquivo só usa as ferramentas dele; e o `cwd` do evento, só como texto, tem
+de ficar em `projects/<p>` ou no temp do projeto; (3) `FUNDACAO_SKILLS` (`<plugin>:<skill>`): com ela no ambiente, a
+ferramenta Skill só passa com o nome exato, o que fecha a skill embutida e a de plugin embutido (o perfil sem ficha
+válida a leva com `-`, e a ficha sem skill também: nenhuma skill abre); (4)
+`FUNDACAO_MCP_FERRAMENTAS`: a ferramenta MCP só passa com o nome completo `mcp__<servidor>__<ferramenta>` na lista da
+ficha (§3). Lista malformada falha fechada só no que é novo. O `regras_codigo.py` entra só no Ubuntu e só com o campo
+`regras_codigo` do projeto. O que o 2.1.302 manda como `agent_type` em cada caminho de subagente, a forma da entrada
+da Skill no hook, se o hook `agent.spawn` de um plugin escapa ao guarda e quem preenche `projectAgentsElsewhere`
+**não foram medidos** (M-A1 a M-A6 e M-S6 do canário, `../seguranca-isolamento.md` §8.7): a trava nega o que não reconhece.
 
 ## 3. MCP (R34)
 Cliente (inicia e pede) · servidor (oferece *tools*, *resources*, *prompts*) · host [Livro p60].
@@ -252,14 +268,27 @@ Pendente: registrar o servidor no host (Claude Code `claude mcp add`; Codex
 `[mcp_servers.<nome>]`) altera a configuração do usuário e exige decisão dele; depois,
 prove o disparo pelo host com a mesma negativa entre projetos.
 
-**MCP na sessão de projeto: MCP de terceiro só na 1.7.11** [Decisão; 1.7.10]. Servidor MCP local roda fora do
-sandbox, com o acesso total do usuário (documentação de 31/10/2026: `../fontes-verificadas.md`); por isso só abre na
-1.7.11, com a jaula. Na 1.7.10, a sessão do projeto no Ubuntu carrega só o `mcp.json` da área do titular, que é
-sempre `{"mcpServers": {}}`, com `--strict-mcp-config`; `FUNDACAO_MCP_PERMITIDAS` fica vazia, e o
-`guarda_ferramentas.py` nega toda ferramenta `mcp__`; a seção `mcp` da ficha de aberturas é recusada ("1.7.11"); o
-lançador não abre com `.mcp.json` no projeto; e o perfil desliga os conectores do claude.ai
-(`disableClaudeAiConnectors`). O servidor MCP do kit (`fundacao/mcp_servidor.py`) não inicia numa sessão de projeto
-travada: ali a sessão usa `python -m fundacao ...`, que vai ao porteiro (`../seguranca-isolamento.md` §2).
+**MCP na sessão de projeto** [Decisão; 1.7.10 e 1.7.11]. Servidor MCP **local** roda fora do sandbox, com o acesso total
+do usuário (documentação de 31/10/2026: `../fontes-verificadas.md`), e continua fechado: a seção `mcp` da ficha recusa
+comando, argumentos, variáveis e cabeçalhos. Sem a seção, vale o desenho da 1.7.10: a sessão carrega só o `mcp.json` da
+área do titular, sempre `{"mcpServers": {}}`, com `--strict-mcp-config`; `FUNDACAO_MCP_PERMITIDAS` e
+`FUNDACAO_MCP_FERRAMENTAS` ficam vazias, o `guarda_ferramentas.py` nega toda ferramenta `mcp__` e o perfil desliga os
+conectores do claude.ai (`disableClaudeAiConnectors`).
+
+**MCP do escritório, com todas as ferramentas** [Decisão; DECISAO-010 item 2, revista pela DECISAO-011 de 08/11/2026]. A
+seção `mcp` da ficha abre **um** servidor, o conector remoto da conta do titular (CRM, base de conhecimento, acervo de
+peças e Banco Nacional de Precedentes), com a lista nominal de **todas** as ferramentas dele no campo `ferramentas`
+(até 32; sem curinga), as de consulta e as que criam, atualizam, salvam, propõem, confirmam e cancelam operações no
+servidor. A tela de assinatura mostra em separado as que gravam: o nome decide (o que não tem nome claro de consulta
+conta como "grava"), e o nome não prova o que a ferramenta faz. Não há processo local, então ele não entra na jaula; a
+barreira é a lista positiva de nomes completos (o hook, o `permissions.deny` e o `--disallowedTools` que o preparo
+gera). Como o lançador não passa `--strict-mcp-config` nesse caso, todos os conectores da conta carregam, e só os da
+lista passam. O nome antigo do campo (`consulta`) é recusado. Risco aceito: a sessão pode criar, mudar e apagar dados
+do escritório, inclusive de outros clientes que o conector entregar; um texto malicioso pode tentar levá-la a gravar;
+no modo sem perguntas a gravação não pede confirmação. **Não medido** (M3 a M5 do canário): os conectores da conta na
+CLI fixada e o efeito do `--strict-mcp-config`, o MCP por URL com OAuth, e o hook que nega MCP com o modo sem perguntas
+ligado. O servidor MCP do kit (`fundacao/mcp_servidor.py`) não inicia numa sessão de projeto travada: ali a sessão usa
+`python -m fundacao ...`, que vai ao porteiro (`../seguranca-isolamento.md` §2).
 
 ## 4. Skills (R35)
 Fatos conferidos [Verificado 2026-10-18]: padrão Agent Skills — `name` 1–64 caracteres
@@ -299,6 +328,40 @@ negação. Na sessão do Ubuntu, com `--setting-sources local`, as skills, os ag
 `.claude/` em subpasta do projeto, não a desta pasta: §5). O caminho para levar uma skill a um projeto é o plugin
 candidato (§5).
 
+**Agentes de arquivo pela ficha** [Decisão; 1.7.11; DECISAO-010 item 6; lotes A1 a A3]. Agente só vem de `agents/<nome>.md`
+de um plugin da ficha, instalado pelo preparo em `/etc/fundacao-ia/projetos/<p>/plugins/<plugin>/` (dono root) e chamado
+como `<plugin>:<nome>`; os `.claude/agents` do projeto, de `data/`, do usuário e das managed settings seguem fechados.
+O item de `plugins[]` ganha `agentes` (`nome`, `sha256` do arquivo, `ferramentas` e `modelo`): até 10 por plugin e 20 na
+ficha; de 1 a 10 ferramentas dentre `Read`, `Grep`, `Glob`, `Edit`, `Write`, `TodoWrite` e `Bash` (`WebFetch` só com a
+seção `webfetch`, `WebSearch` só com a busca aberta; nunca `Agent`, `Skill`, `NotebookEdit` nem MCP); o cabeçalho do
+arquivo tem de dizer o mesmo, com `tools` obrigatório (sem ele o subagente herdaria todas as ferramentas da sessão).
+O plugin com `agentes` ou `skills_com_scripts` tem de se chamar `<projeto>-<nome>` (erro, não aviso). O preparo grava
+`FUNDACAO_AGENTES` e `FUNDACAO_SKILLS` no perfil, e o guarda aplica as travas do §2. A conferência lê a forma, não o
+texto das instruções do agente (é o que o titular lê no `REVISAO.md`); um agente com `Bash` tem a autoridade da sessão
+(prefira agentes de redação sem `Bash`).
+
+**Skills com scripts, presas por hash** [Decisão; 1.7.11; DECISAO-010 item 6; lotes S1 a S3]. A ficha lista em
+`skills_com_scripts` a skill, o SHA-256 do `SKILL.md` e, por script, o nome, o caminho exato
+`skills/<skill>/scripts/<arquivo>.py`, o SHA-256 e o modo (`sessao`; o `caixa` fica para a 1.7.12). Só vale `.py`, sem
+`#!` e sem bit de execução; todo `.py` do plugin tem de estar listado, e um a mais, a menos ou fora do lugar recusa o
+plugin inteiro (shell, Node, binário e `.pyc` seguem recusados). Dependências: `requirements.lock` dentro da skill, com
+`nome==versão` e `--hash=sha256:` em cada linha (sem opção, URL ou caminho; até 300 pacotes), a pasta das rodas que o
+titular baixou com um Python limpo (a sessão não baixa) e o número de pacotes, que a tela da assinatura mostra. Na
+sessão: `plugin_candidato.py montar --com-scripts`, `travar --skill <s> --rodas <pasta>` (grava o lock a partir das
+rodas), `conferir --com-scripts` e `revisar --com-scripts` (a seção "Código que roda" do `REVISAO.md`, que marca o que
+cada script importa e cita). No preparo do titular (sudo): as rodas vão para a área root pela cópia conferida, a venv é
+montada de dono root, sem rede (`pip install --no-index --only-binary=:all: --require-hashes`), e o interpretador e a
+árvore da venv entram no `hashes.json`. O script roda só pelo executor `fundacao-skill-<p> <plugin>:<skill> <script>
+[-- args]`, que reconfere o script, a venv, o interpretador e a pasta atual a cada execução (falha fechada, código 2) e
+grava `projects/<p>/outputs/skills/registro.jsonl`. **Limites que ficam**: no modo `sessao` o script tem a autoridade
+dos comandos da sessão, e o executor prova a integridade do que roda, não o que ele faz; a sessão ainda pode rodar
+qualquer código por fora dele; a venv é confiada no primeiro uso (o pip não gera saída idêntica byte a byte); o hash das
+rodas prova que são as baixadas, não que são seguras, e um `.pth` delas roda a cada partida do interpretador; a trava de
+projeto do executor é lógica com a raiz em `/mnt/e`. Skill da ficha tem de ter nome novo: o registro de negações só
+cresce, e a negação do nome simples não tem exceção (o preparo recusa com o comando para renomear). Perfis feitos antes
+da 1.7.11 falham a conferência até o preparo do titular refazê-los. **Não medido**: M-S1 a M-S7 e M-A1 a M-A6 do canário
+(`../seguranca-isolamento.md` §8.7).
+
 ## 5. Plugins (R36)
 Fatos conferidos [Verificado 2026-10-18]: Claude Code — `.claude-plugin/plugin.json`
 (só `name` obrigatório); `claude plugin validate` é a checagem autoritativa (`--strict`
@@ -336,7 +399,7 @@ guarda-corpo: um candidato montado à mão passa por esse a mais no caminho conf
    origem dentro de `projects/<p>/`, copia para `projects/<p>/plugins-candidatos/<p>-<n>/`, que não pode existir. A
    origem é uma skill avulsa (com `SKILL.md`) ou uma árvore com `skills/`, `agents/` e `commands/` (uma
    `.claude/` ou um plugin); da raiz dela vem só a licença. Hooks, MCP, configuração e scripts ficam de fora,
-   listados em `nao_copiados`, com aviso de "1.7.11". Origem trazida pelo `scripts/importar.py` precisa ter sido
+   listados em `nao_copiados`, com aviso de "1.7.11" (o `.py` e o lock de skill só entram com `--com-scripts`, §4). Origem trazida pelo `scripts/importar.py` precisa ter sido
    importada com `--sem-neutralizar-extensoes`: sem essa opção, `.claude/skills`, `.claude/agents` e
    `.claude/commands` ficam no `EXTENSOES-NEUTRALIZADAS.zip`, e o `montar` não acha componente.
 2. **Conferir**: `python <skill>/scripts/plugin_candidato.py conferir --pasta <candidato>` dá código 0 se conforme
@@ -488,6 +551,43 @@ recusados: conforme na sessão implica sem erro no kit, o mesmo `manifesto_sha25
 - o kit do Windows (a ferramenta do titular e a `abertura preparar` ali) não confere o conteúdo; a sessão o confere em
   todo sistema, e o instalador do Ubuntu, com a raiz num DrvFs sem `metadata`, também. Um candidato mudado depois da
   conferência da sessão pode passar na assinatura do Windows e cair no instalador: falha fechada.
+
+### Plugin entregue pela skill: `codigo-enxuto`
+[Decisão; ponytail, P2 e P3 — ideias e textos do ponytail (MIT), traduzidos e adaptados; `AVISOS-DE-TERCEIROS.md`.] A skill
+traz um plugin pronto, só em Markdown, em `assets/plugins/codigo-enxuto/`: as skills `enxuto`, `enxuto-revisao`,
+`enxuto-auditoria` e `enxuto-dividas`, o `plugin.json` e o `LICENSE` com os dois avisos de licença. No pacote, as skills
+se chamam `SKILL.modelo.md`: o pacote tem um único `SKILL.md` (CEN-11, que também protege o envio do zip ao claude.ai), e
+o Markdown entra na varredura de injeção. Ele não abre a forma: `python <skill>/scripts/plugin_codigo_enxuto.py montar
+--raiz <raiz> --projeto <p>` copia as skills com o nome `SKILL.md` e o `LICENSE` para uma origem nova em
+`projects/<p>/outputs/plugins/codigo-enxuto/origem/` (sem seguir ligação, só dentro do projeto, lista fixa de arquivos),
+chama o `montar` do item 1 e apaga a origem; o `conferir` aceita o candidato `<p>-codigo-enxuto` como qualquer outro, que
+segue o caminho de sempre: revisão, ficha assinada, canário e preparo. A parte do ponytail que roda código não entra como plugin: os hooks dele são
+JavaScript, gravam estado no perfil do usuário e rodam fora do sandbox, e hook, `userConfig`, mods, `.js` e `.mcp.json`
+de plugin continuam recusados (o código ainda traz a marca "1.7.11"). O que valia dos hooks, injetar um texto fixo,
+é o `assets/hooks/regras_codigo.py` da fundação (§2), ligado pelo campo `regras_codigo` do `projeto.json`. A prova
+negativa e o `montar` de uma árvore no formato do ponytail (`hooks/` e `scripts/` em `nao_copiados`) estão em
+`scripts/tests/test_plugin_codigo_enxuto.py`, que prova também que o script de montagem recusa nome fora da lista e ligação. A regra, a revisão, as dívidas e a medição:
+`references/codigo-enxuto.md`.
+
+### Jaula do Criador: navegador e Codex (1.7.11)
+[Decisão; DECISAO-010 itens 3 e 4; desenho da jaula; camadas, rede e limites: `../seguranca-isolamento.md` §8.7.] O
+navegador e o Codex rodam programas na máquina e guardam logins, então só abrem pela jaula (bubblewrap que começa vazia,
+outro usuário do Linux, proxy de lista), com a seção na ficha assinada, o canário da jaula aprovado e o preparo do
+titular. **Navegador** (seção `navegador`: `dominios`, `logins` e `modos`): perfil novo e só do projeto; o titular entra
+nos sites por uma janela dele (`abrir-navegador-<p> login <site>`); os modos são `sessao`, `login` e `captcha`; o
+navegador é o Chromium do Playwright 1.64.1 (revisão 1248), instalado do arquivo de travas `jaula-navegador.lock`, com
+as quatro rodas fixadas pelo SHA-256 do PyPI e a árvore do Chromium em confiança no primeiro uso (o Playwright não
+publica o hash do navegador); o invólucro `chromium-sem-disfarce` impõe "sem disfarce" e desliga o ECH, que o proxy recusa.
+**Codex** (seção `outras_llm`: o provedor `openai-codex` pela conta do ChatGPT, os modos `exec` e `titular`, o teto de
+chamadas por dia e o R55 com plano e data da conferência, válida por 90 dias): binário `rust-v0.166.0` fixado em
+`pins-codex.json` por tamanho e SHA-256 (a assinatura sigstore não é verificada na instalação), `CODEX_HOME` privado,
+`config.toml` imposto com `--strict-config` e rede só para `chatgpt.com`, `auth.openai.com` e `api.openai.com` (fonte e
+data: `../fontes-verificadas.md`). Com a conta do ChatGPT só a janela do titular (`titular`) abre: o Codex da sessão (`exec`)
+fica fechado no preparo e na entrada fixa, porque um comando que ele rodasse a pedido da sessão leria o login do `CODEX_HOME`;
+para a sessão usar o Codex, a decisão é do titular: a chave de API do projeto, com teto de gasto. **Não medido** (M6 e M7): o sandbox do Chromium, o Wayland, `/sys` e o limite de
+memória virtual na jaula; o sandbox próprio do Codex dentro da jaula (a sonda `sandbox_codex` do canário da jaula mede;
+se não abrir, `features.use_legacy_landlock` é a alternativa a medir), a rede dos comandos dele e os domínios que ele de
+fato pede. Até lá valem as opções mais seguras (sandbox do Codex ligado, `workspace-write` sem rede).
 
 ## 6. Quando usar o quê [3.0 R4.16]
 Instrução permanente → AGENTS.md/CLAUDE.md · procedimento repetível → skill · contexto

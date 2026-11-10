@@ -21,6 +21,9 @@
   fazer.
 - Mostra a versão do Claude Code fixado e lembra que o banco não abre pelos dois lados ao mesmo tempo: feche antes as
   sessões do Windows que operam a fundação.
+- A sessão abre no modo normal, com as perguntas de permissão. Para ligar o modo sem perguntas, aperte Shift+Tab até a
+  barra de baixo mostrar "bypass permissions on". Risco: ligado, a sessão roda os comandos sem mostrá-los antes. As
+  negações, os hooks e o sandbox continuam valendo.
 - A sessão nasce na pasta do projeto, com a identidade `sessao-<projeto>`, presa a ele, e com o pedido de ler o
   `INSTRUCOES.md` e esta RETOMADA. A SKILL.md é lida pelo Bash, com `cat`, na cópia conferida que o pedido cita: a
   ferramenta Read alcança só a pasta do projeto. O banco da fundação só pelo porteiro, com `python3 -m fundacao`

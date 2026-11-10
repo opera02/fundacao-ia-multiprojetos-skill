@@ -283,7 +283,7 @@ def _cobre(linhas: list[tuple[str, dict]], conhecido: dict) -> bool:
 
 
 # ------------------------------------------------------------------ backup
-def create_backup(root: Path, dest: Path, label: str) -> dict:
+def create_backup(root: Path, dest: Path, label: str, *, cifrada: bool = False) -> dict:
     root, dest = Path(os.path.abspath(root)), Path(os.path.abspath(dest))
     if dest.exists() and any(dest.iterdir()):
         raise FileExistsError("destino de backup não vazio: não substitua uma referência anterior")
@@ -318,7 +318,7 @@ def create_backup(root: Path, dest: Path, label: str) -> dict:
     # atômica): nada é gravado no destino nem através de ligação nele, e cópia pela metade não aparece.
     pasta = preparo.criar_preparo(dest)
     with limpeza.contada(pasta, dest.parent):  # na falha, o que sobrar do preparo vai contado com o erro (1.7.10)
-        manifest = _montar_copia(root, pasta, label, extras, retiradas)
+        manifest = _montar_copia(root, pasta, label, extras, retiradas, cifrada)
         # Âncora (#8): o hash do manifesto, que confere cada arquivo e o banco, sai da pasta da cópia.
         ancora = sha256_file(pasta / "manifest.json")
         substituido = preparo.promover(pasta, dest)  # destino vazio criado antes: trocado (R177-KIT-05)
@@ -340,8 +340,8 @@ def create_backup(root: Path, dest: Path, label: str) -> dict:
     return resultado
 
 
-def _montar_copia(root: Path, pasta: Path, label: str, extras: list[str], retiradas: dict) -> dict:
-    """Banco, arquivos e manifest.json da cópia, gravados na pasta de preparo (#12); devolve o manifesto."""
+def _montar_copia(root: Path, pasta: Path, label: str, extras: list[str], retiradas: dict, cifrada: bool = False) -> dict:
+    """Banco, arquivos e manifest.json da cópia no preparo (#12); `cifrada`: será cifrada depois (1.7.11)."""
     src_db = root / "state" / "state.sqlite"
     files = []
     if src_db.exists():
@@ -376,7 +376,7 @@ def _montar_copia(root: Path, pasta: Path, label: str, extras: list[str], retira
         # informado precisa ter a mesma identidade e alcançar pelo menos este ponto.
         "retiradas": retiradas,
         "excluded": sorted(EXCLUDE_NAMES | EXCLUDE_PARTS - {".git"}), "git": regra.relatorio_git(),
-        "credentials": regra.texto_credenciais(), "segredos_incluidos": regra.segredos,
+        "credentials": regra.texto_credenciais(cifrada), "segredos_incluidos": regra.segredos,
         "registros_incluidos": extras,
     }
     if ligacoes:

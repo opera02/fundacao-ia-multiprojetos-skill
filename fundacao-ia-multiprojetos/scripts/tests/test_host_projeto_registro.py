@@ -46,7 +46,7 @@ class Registro(unittest.TestCase):
 
     def test_ausente_e_o_registro_vazio(self):
         self.assertEqual(self.m.ler_projetos_host(self.raiz),
-                         {"schema_version": "fundacao.projetos_host/1", "projetos": {}})
+                         {"schema_version": "fundacao.projetos_host/2", "projetos": {}})  # 1.7.11: o /2 traz agentes_negados
 
     def test_grava_no_esquema_em_lf_e_so_cresce(self):
         self.m.registrar_projeto(self.raiz, "caso-real", [str(self.origem)], negar=["squad-a"])
@@ -57,7 +57,7 @@ class Registro(unittest.TestCase):
         dados = json.loads(bruto.decode("utf-8"))
         self.assertEqual(set(dados), {"schema_version", "projetos"})
         item = dados["projetos"]["caso-real"]
-        self.assertEqual(set(item), {"origens", "somente_leitura", "aninhadas_negadas"})
+        self.assertEqual(set(item), {"origens", "somente_leitura", "aninhadas_negadas", "agentes_negados"})
         self.assertEqual(len(item["origens"]), 2)
         self.assertEqual(item["aninhadas_negadas"], ["squad-a", "squad-b"])
         self.assertEqual(self.m.ler_projetos_host(self.raiz), dados)
@@ -84,7 +84,7 @@ class Registro(unittest.TestCase):
         relativo = json.loads(bom)
         relativo["projetos"]["caso-real"]["origens"] = ["relativo/pasta"]
         for nome, texto in (("chave a mais", json.dumps({**json.loads(bom), "extra": 1})),
-                            ("outro esquema", bom.replace("fundacao.projetos_host/1", "fundacao.projetos_host/2")),
+                            ("outro esquema", bom.replace("fundacao.projetos_host/2", "fundacao.projetos_host/3")),
                             ("caminho relativo", json.dumps(relativo)),
                             ("grande demais", json.dumps({"x": "y" * (300 * 1024)}))):
             with self.subTest(nome):
@@ -163,10 +163,10 @@ class NegacoesForaDoRegistro(unittest.TestCase):
             "E:" + B + "Origem Casos",  # o nome que só começa igual não é coberto
             "F:" + B + "Solta", "F:" + B + "Solta"], ["squad-a", "squad-b", "squad-solta", "squad-solta"])
         self.assertEqual(fora, {"somente_leitura": ["E:" + B + "Origem Casos", "F:" + B + "Solta"],
-                                "negar_skill": ["squad-solta"]})
+                                "negar_skill": ["squad-solta"], "negar_agente": []})
         vazio = {"schema_version": "fundacao.projetos_host/1", "projetos": {}}
         self.assertEqual(m.fora_do_registro(vazio, ["D:" + B + "x"], ["s"]),
-                         {"somente_leitura": ["D:" + B + "x"], "negar_skill": ["s"]})
+                         {"somente_leitura": ["D:" + B + "x"], "negar_skill": ["s"], "negar_agente": []})
 
     def test_linha_de_comando(self):
         base = Path(tempfile.mkdtemp(prefix="fora-do-registro-1710-")).resolve()
@@ -178,7 +178,8 @@ class NegacoesForaDoRegistro(unittest.TestCase):
             r = rodar("fora-do-registro", "--raiz", raiz, "--somente-leitura", "E:" + B + "Origem Caso",
                       "--somente-leitura", "G:" + B + "Nova", "--negar-skill", "squad-b", "--negar-skill", "squad-c")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertEqual(json.loads(r.stdout), {"somente_leitura": ["G:" + B + "Nova"], "negar_skill": ["squad-c"]})
+            self.assertEqual(json.loads(r.stdout), {"somente_leitura": ["G:" + B + "Nova"], "negar_skill": ["squad-c"],
+                                                  "negar_agente": []})
             (raiz / "registry" / "projetos-host.json").write_text('{"schema_version": "outro"}', encoding="utf-8")
             r = rodar("fora-do-registro", "--raiz", raiz, "--somente-leitura", "G:" + B + "Nova")
             self.assertEqual(r.returncode, 2, r.stdout + r.stderr)  # registro fora do esquema: nada sai

@@ -451,12 +451,15 @@ class TestArgvDoBubblewrap(unittest.TestCase):
 
 
 class TestBubblewrapDeVerdade(unittest.TestCase):
-    """Só onde o bubblewrap abre um sandbox (Linux/WSL com o preparo do host); no Windows, pulados."""
+    """Só onde o bubblewrap abre um sandbox (Linux/WSL com o preparo do host); no Windows, pulados. Na CI
+    (FUNDACAO_CI_EXIGE_BWRAP=1), falham em vez de pular (revisão de segurança da 1.7.10, CI-F6)."""
 
     def setUp(self):
         ex = carregar("execucao_isolada")
         caminho, motivo = ex.sondar_bwrap()
         if not caminho:
+            if os.environ.get("FUNDACAO_CI_EXIGE_BWRAP") == "1":
+                self.fail(f"bubblewrap não abre um sandbox aqui, e a CI o exige (FUNDACAO_CI_EXIGE_BWRAP=1): {motivo}")
             self.skipTest(f"bubblewrap não abre um sandbox aqui: {motivo}")
         self.base = pasta_temporaria(self, "g1-bwrap-")
         self.raiz = self.base / "raiz"

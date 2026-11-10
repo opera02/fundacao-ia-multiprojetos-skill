@@ -32,6 +32,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from apoio import ENV, SCRIPTS
 
@@ -75,6 +76,23 @@ def manifesto_de(raiz: Path, saida: Path) -> Path:
     if r.returncode != 0:
         raise AssertionError(r.stderr)
     return saida
+
+
+def visivel_no_sandbox(ex, programa: str) -> bool:
+    """O programa cai numa montagem só leitura do sandbox (o mesmo teste que o plano isolado faz)."""
+    real = os.path.realpath(programa)
+    return any(ex._dentro(real, os.path.realpath(m[1])) for m in ex.montagens_do_sistema() if m[0] == "ro-bind")
+
+
+def escolher_python(ex, bwrap, candidatos=None) -> tuple[str, list]:
+    """(programa, modo) dos casos que rodam Python: com o bubblewrap, um Python que o sandbox enxerga (o que roda este
+    teste, se estiver sob /usr; senão o do sistema, /usr/bin/python3); sem ele, ou sem Python assim, este Python sem
+    isolamento e com o motivo. O Python da CI do GitHub fica em /opt/hostedtoolcache, fora de /usr: a caixa de
+    isolamento o recusa, como deve, e o teste de B03 (a cópia conferida a cada caso) não é sobre isso."""
+    for candidato in (candidatos or (sys.executable, "/usr/bin/python3")) if bwrap else ():
+        if os.path.isfile(candidato) and visivel_no_sandbox(ex, candidato):
+            return candidato, []
+    return sys.executable, list(SEM_ISOLAMENTO)
 
 
 class TestB01PoliticaNula(unittest.TestCase):
@@ -293,12 +311,13 @@ TROCADO = ("import pathlib, sys\n"
 
 
 class TestB03ConferidaACadaCaso(unittest.TestCase):
-    """No bubblewrap onde ele abre um sandbox (WSL); fora dele, sem isolamento, com o motivo: o mesmo teste nos dois."""
+    """No bubblewrap onde ele abre um sandbox (WSL, Ubuntu da CI) e há um Python que o sandbox enxerga; fora dele, sem
+    isolamento, com o motivo: o mesmo teste nos dois."""
 
     def setUp(self):
         self.ex = carregar("execucao_isolada")
         bwrap, _motivo = self.ex.sondar_bwrap()
-        self.modo = [] if bwrap else list(SEM_ISOLAMENTO)
+        self.python, self.modo = escolher_python(self.ex, bwrap)
         self.base = pasta(self, "r177b-b03-")
         self.copia = self.base / "raiz" / "projects" / "p" / "copia"
         (self.copia / "entradas").mkdir(parents=True)
@@ -313,7 +332,7 @@ class TestB03ConferidaACadaCaso(unittest.TestCase):
     def gravar_trocando_no_primeiro_caso(self, trocar) -> subprocess.CompletedProcess:
         """Plano e `gravar` com três casos; durante o primeiro, `trocar()` muda a cópia por fora."""
         args = ["--entradas", self.copia / "entradas" / "*.json", "--copia", self.copia, "--manifesto", self.manifesto,
-                "--ensaio", self.ensaio, *self.modo, "--", sys.executable, self.app, "{entrada}", "{ensaio}"]
+                "--ensaio", self.ensaio, *self.modo, "--", self.python, self.app, "{entrada}", "{ensaio}"]
         p = cli("plano", *args)
         self.assertEqual(p.returncode, 0, p.stderr)
         dados = json.loads(p.stdout)
@@ -385,7 +404,7 @@ class TestB03ConferidaACadaCaso(unittest.TestCase):
                             encoding="utf-8")
         manifesto_de(self.copia, self.manifesto)
         args = ["--entradas", self.copia / "entradas" / "*.json", "--copia", self.copia, "--manifesto", self.manifesto,
-                "--pasta-saida", self.copia / "saida", *self.modo, "--", sys.executable, programa, "{entrada}"]
+                "--pasta-saida", self.copia / "saida", *self.modo, "--", self.python, programa, "{entrada}"]
         p = cli("plano", *args)
         self.assertEqual(p.returncode, 0, p.stderr)
         dados = json.loads(p.stdout)
@@ -395,6 +414,53 @@ class TestB03ConferidaACadaCaso(unittest.TestCase):
         self.assertEqual(g.returncode, 0, g.stdout + g.stderr)
         casos = json.loads(self.golden.read_text(encoding="utf-8"))["casos"]
         self.assertEqual([sorted(c["efeitos"]["escritos"]) for c in casos], [["a.txt"], ["b.txt"], ["c.txt"]])
+
+
+class TestPythonQueOSandboxEnxerga(unittest.TestCase):
+    """O Python da CI do Ubuntu (/opt/hostedtoolcache) fica fora de /usr: sem o WSL, com montagens de mentira."""
+
+    def setUp(self):
+        self.ex = carregar("execucao_isolada")
+        self.base = pasta(self, "r177b-b03-py-")
+        self.usr = self.base / "usr"  # o "/usr" do sandbox de mentira: só ele é montado só leitura
+        self.dentro = self.usr / "bin" / "python3"
+        self.fora = self.base / "opt" / "hostedtoolcache" / "Python" / "3.12.10" / "x64" / "bin" / "python"
+        for programa in (self.dentro, self.fora):
+            programa.parent.mkdir(parents=True)
+            programa.write_bytes(b"python ficticio\n")
+        so_leitura = [["ro-bind", str(self.usr), str(self.usr)]]
+        montagens = mock.patch.object(self.ex, "montagens_do_sistema", lambda: so_leitura)
+        montagens.start()
+        self.addCleanup(montagens.stop)
+
+    def plano(self, programa):
+        raiz = self.base / "raiz"
+        (raiz / "state").mkdir(parents=True, exist_ok=True)
+        (raiz / "state" / "state.sqlite").write_bytes(b"")
+        copia = raiz / "projects" / "p" / "copia"
+        copia.mkdir(parents=True, exist_ok=True)
+        (copia / "app.py").write_text("print('ok')\n", encoding="utf-8")
+        manifesto = manifesto_de(copia, self.base / "manifesto.json")
+        return self.ex.montar_plano("gravar", [str(programa), str(copia / "app.py")], copia=copia, manifesto=manifesto,
+                                    cwd=None, entradas=[], gravavel=("ensaio", raiz / "projects" / "p" / "ensaio"),
+                                    limites=self.ex.limites(30), variaveis=[], sem_isolamento=None, bwrap=BWRAP)
+
+    def test_o_plano_isolado_recusa_o_python_de_fora_e_aceita_o_do_sistema(self):
+        with self.assertRaises(self.ex.Recusa) as ctx:
+            self.plano(self.fora)
+        self.assertIn("fica fora do que o sandbox vê", str(ctx.exception))
+        self.assertEqual(self.plano(self.dentro)["isolamento"], "bwrap")
+
+    def test_com_o_bwrap_o_teste_troca_o_python_de_fora_pelo_do_sistema(self):
+        self.assertFalse(visivel_no_sandbox(self.ex, str(self.fora)))
+        self.assertTrue(visivel_no_sandbox(self.ex, str(self.dentro)))
+        self.assertEqual(escolher_python(self.ex, BWRAP, (str(self.fora), str(self.dentro))), (str(self.dentro), []))
+        self.assertEqual(escolher_python(self.ex, BWRAP, (str(self.dentro), str(self.fora))), (str(self.dentro), []))
+
+    def test_sem_python_que_o_sandbox_enxergue_ou_sem_bwrap_roda_sem_isolamento_com_o_motivo(self):
+        self.assertEqual(escolher_python(self.ex, BWRAP, (str(self.fora), str(self.usr / "nao-existe"))),
+                         (sys.executable, list(SEM_ISOLAMENTO)))
+        self.assertEqual(escolher_python(self.ex, None, (str(self.dentro),)), (sys.executable, list(SEM_ISOLAMENTO)))
 
 
 if __name__ == "__main__":

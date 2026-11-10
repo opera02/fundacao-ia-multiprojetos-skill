@@ -101,10 +101,15 @@ KIT = AQUI.parent / "fundacao-kit"
 # cada Markdown saíram do aberturas_plugins.py para o aberturas_markdown.py, que entra aqui com ele). Também os módulos
 # de que a regra depende (revisão da integração, rodada 2): o manutencao.py, de onde saem as listas de nome forte e de
 # pasta de segredo (NOMES_DE_SEGREDO, PASTAS_DE_SEGREDO), e o contracts.py, que o aberturas_plugins importa; um kit da
-# raiz com outras listas aplicaria, no abertura preparar, outra regra de segredo sem aviso.
+# raiz com outras listas aplicaria, no abertura preparar, outra regra de segredo sem aviso. Os irmãos do
+# aberturas_regras (domínios e curinga, agentes e scripts dos plugins, mcp, navegador e outras_llm; 1.7.11) entram pelo
+# mesmo
+# motivo.
 VALIDADOR = ("fundacao/core/aberturas.py", "fundacao/core/aberturas_regras.py", "fundacao/core/aberturas_plugins.py",
-             "fundacao/core/aberturas_disco.py", "fundacao/core/aberturas_markdown.py", "fundacao/core/manutencao.py",
-             "fundacao/core/contracts.py")
+             "fundacao/core/aberturas_dominios.py", "fundacao/core/aberturas_agentes.py",
+             "fundacao/core/aberturas_scripts.py",
+             "fundacao/core/aberturas_mcp.py", "fundacao/core/aberturas_jaula.py", "fundacao/core/aberturas_disco.py",
+             "fundacao/core/aberturas_markdown.py", "fundacao/core/manutencao.py", "fundacao/core/contracts.py")
 PRAZO_DA_ASSINATURA = 600  # segundos: o titular digita a senha da chave
 # A cópia protegida (os caminhos de core/aberturas.FERRAMENTA_WINDOWS e FERRAMENTA_POSIX, conferidos iguais por teste).
 COPIA_PROTEGIDA = {"nt": r"C:\ProgramData\FundacaoIA\ferramentas", "posix": "/usr/local/lib/fundacao-ia"}
@@ -129,7 +134,8 @@ AMBIENTE_DO_KEYGEN = {"nt": ("SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "USERPROFILE
                       "posix": ("HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR")}
 ESPERA_FINAL = "Tecle Enter para terminar (a janela aberta só para a ferramenta fecha em seguida). "
 # Aceite de risco do canário (1.7.10.1): os nomes do preparo do host (assets/host/preparo_host.py), com teste de
-# igualdade; a forma de caminho do relatório é a mesma conta do preparo (_forma_do_relatorio).
+# igualdade; a estrutura do relatório e a forma de caminho dele vêm da regra única do kit desta cópia
+# (fundacao/core/canario.py, `regra_do_canario`), a mesma que o portão do preparo carrega (1.7.11).
 ESQUEMA_ACEITE = "fundacao.aceite_risco_canario/1"
 ACEITE_NOME = "aceite-risco-canario.json"
 PASTA_DO_ACEITE = "risco"
@@ -405,6 +411,8 @@ def texto_da_sessao(texto: str) -> list[str]:
     return saida
 
 
+SECOES_DA_JAULA = ("mcp", "navegador", "outras_llm")  # 1.7.11, L1: lidas e validadas pelo kit, ainda não aplicadas
+
 def _mostrar_ficha(escrever, projeto: str, versao: int, ficha: dict, avisos: list, anterior: dict,
                    k: SimpleNamespace, aviso_da_copia: str | None = None) -> None:
     """A tela antes da pergunta: primeiro o texto da sessão, cortado e marcado; depois, até a pergunta, só texto fixo
@@ -419,8 +427,17 @@ def _mostrar_ficha(escrever, projeto: str, versao: int, ficha: dict, avisos: lis
             escrever(linha)
     escrever("---- Daqui até a pergunta, só texto fixo desta ferramenta ----")
     escrever(f"O que a v{versao} de {projeto} abre:")
-    for i, item in enumerate(k.regras.descrever(ficha), 1):
+    abertas = k.regras.descrever(ficha)
+    for i, item in enumerate((a for a in abertas if not a.get("grava")), 1):
         escrever(f"  {i}. {item['texto']}")
+    gravam = [a for a in abertas if a.get("grava")]
+    if gravam:  # DECISAO-011: as ferramentas que gravam no servidor externo, em separado, com o risco, antes da pergunta
+        escrever("ATENÇÃO, FERRAMENTAS QUE GRAVAM FORA DESTA MÁQUINA (a sessão poderá criar, mudar e apagar dados do "
+                 "escritório; confira a lista antes de assinar):")
+        for item in gravam:
+            escrever(f"  * {item['texto']}")
+    for site in (ficha.get("navegador") or {}).get("logins", []):  # a ficha já foi validada: sites são domínios exatos
+        escrever(f"  Para entrar em {site}, rode: abrir-navegador-{projeto} login {site}")
     agora = set(k.regras.itens(ficha))
     antes = set(k.regras.itens(anterior["ficha"])) if anterior["valida"] else set()
     escrever("Comparada com " + (f"a v{anterior['versao']} já assinada:" if anterior["valida"]
@@ -433,6 +450,10 @@ def _mostrar_ficha(escrever, projeto: str, versao: int, ficha: dict, avisos: lis
         escrever(f"  Aviso ({aviso.get('dominio') or aviso['campo']}): {aviso['motivo']}")
     if aviso_da_copia:
         escrever("Atenção: " + aviso_da_copia)
+    if any(ficha.get(secao) for secao in SECOES_DA_JAULA):
+        escrever("Nota: as seções mcp, navegador e outras_llm só passam a valer quando a versão da fundação que as aplica "
+                 "(a jaula) estiver instalada pelo preparo do host, com o canário aprovado; até lá, assinar esta ficha "
+                 "não abre nada nelas. O perfil copiado do navegador do Windows continua fechado.")
     escrever("Importante: " + k.aberturas.HONESTIDADE + " Exceção desde a 1.7.10.1: com o canário reprovado, esta ficha "
              "também vale se houver o seu aceite de risco vigente deste projeto para o relatório instalado "
              "(aceitar-risco; quem confere é o preparo, e o relatório dele diz se ela vale sob o aceite); sem ele, nada "
@@ -577,52 +598,68 @@ def verificar_ficha(raiz, projeto: str, *, versao: int | None = None, saida=None
 
 
 # ------------------------------------------------------------------ aceite de risco do canário (1.7.10.1)
+_CANARIO: dict = {}
+
+
+def regra_do_canario():
+    """A regra única do relatório do canário, `fundacao/core/canario.py` do kit DESTA cópia (a mesma que o portão do
+    preparo do host carrega: 1.7.11, junção do lote B, N1 e item 4). Por isso o aceite de risco só é montado para um
+    relatório que o portão sabe aplicar. Carregada pelo caminho, dos bytes lidos sem seguir ligação (na cópia protegida,
+    `conferir_copia` já conferiu o SHA-256 dele com o hashes.json), e nunca a da raiz. Sem ela: Recusa."""
+    caminho = KIT / "fundacao" / "core" / "canario.py"
+    chave = str(caminho)
+    if chave not in _CANARIO:
+        try:
+            dados = _ler_da_copia(caminho, 1 << 20)
+        except OSError as exc:
+            raise Recusa(f"o kit desta cópia não tem fundacao/core/canario.py legível (a regra do relatório do "
+                         f"canário): {exc}") from None
+        escopo = {"__name__": "_fundacao_titular_canario", "__file__": chave}
+        sys.dont_write_bytecode = True
+        try:
+            exec(compile(dados, chave, "exec"), escopo)  # noqa: S102 - o kit da própria cópia, conferido
+        except Exception as exc:  # noqa: BLE001 - módulo que não carrega: recusa com o motivo, sem traceback
+            raise Recusa(f"o canario.py do kit desta cópia não carregou ({type(exc).__name__}: {exc})") from None
+        if not all(n in escopo for n in ("estrutura", "sondas_ausentes", "forma_do_relatorio", "SONDAS_DO_CANARIO")):
+            raise Recusa("o canario.py do kit desta cópia não tem a regra do relatório do canário")
+        modulo = SimpleNamespace(**{k: v for k, v in escopo.items() if not k.startswith("__")})
+        _CANARIO[chave] = modulo
+    return _CANARIO[chave]
+
+
 def forma_do_relatorio(relatorio: dict) -> str | None:
-    """A forma de caminho que o relatório prova ('ext4' ou 'drvfs:/mnt/<x>'), pela mesma conta do preparo do host
-    (preparo_host._forma_do_relatorio, com teste de igualdade); outra: None."""
-    forma, fs = relatorio.get("forma"), relatorio.get("sistema_de_arquivos")
-    if not isinstance(forma, str) or not isinstance(fs, str):
-        return None
-    if forma == "ext4":
-        return "ext4" if fs == "ext4" else None
-    m = re.match(r"^drvfs:(/mnt/[a-z]/[^\n\r\0]*)$", forma)
-    n = re.match(r"^/mnt/([a-z])(?:/|$)", posixpath.normpath(m.group(1))) if m and fs in FS_DRVFS else None
-    return f"drvfs:/mnt/{n.group(1)}" if n else None
+    """A forma de caminho que o relatório prova ('ext4' ou 'drvfs:/mnt/<x>'), pela conta única do kit
+    (`canario.forma_do_relatorio`, a mesma do preparo do host); outra: None."""
+    return regra_do_canario().forma_do_relatorio(relatorio)
 
 
 def resumo_do_relatorio(relatorio, bruto: bytes) -> dict:
     """O `canario` do aceite: do relatório real do ensaio (`fundacao.ensaio_isolamento/1`, não simulado), do Claude
-    Code com versão e SHA-256, numa forma de caminho que o canário prova (a mesma no topo e na conclusão) e que NÃO
-    aprova (conclusão false ou null: aprovado, o aceite não é preciso). Dos itens, só os ids na forma [a-z0-9_], por
-    veredito, e os itens em que o canário apareceu (vazamento medido). Fora disso: Recusa."""
-    if not isinstance(relatorio, dict) or relatorio.get("schema_version") != ESQUEMA_CANARIO:
-        raise Recusa(f"o arquivo não é um relatório do canário ({ESQUEMA_CANARIO})")
-    if relatorio.get("simulado") is not False:
-        raise Recusa("relatório de simulação: só o ensaio real conta")
-    claude = relatorio.get("claude") if isinstance(relatorio.get("claude"), dict) else {}
-    versao, sha = claude.get("versao"), claude.get("sha256")
-    if not (isinstance(versao, str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", versao) and isinstance(sha, str)
-            and re.fullmatch(r"[0-9a-f]{64}", sha)):
-        raise Recusa("relatório sem a versão e o SHA-256 do Claude Code que o canário rodou")
-    conclusao = relatorio.get("conclusao") if isinstance(relatorio.get("conclusao"), dict) else {}
-    confina = conclusao.get("confina_comandos", 0)
+    Code com versão e SHA-256, numa forma de caminho que o canário prova (a mesma no topo e na conclusão), com os itens
+    e o perfil, o sandbox e o temp que o portão do preparo exige (`canario.estrutura`, a mesma regra: o relatório que o
+    portão nunca aplica não recebe aceite) e que NÃO aprova (conclusão false ou null: aprovado, o aceite não é
+    preciso). Dos itens, só os ids na forma [a-z0-9_], por veredito, e os itens em que o canário apareceu (vazamento
+    medido). As sondas de um ensaio anterior que faltam (`sondas_ausentes`) entram em `nao_medido`. Fora disso: Recusa."""
+    regra = regra_do_canario()
+    motivo = regra.estrutura(relatorio)
+    if motivo:
+        raise Recusa(motivo)
+    confina = relatorio["conclusao"]["confina_comandos"]
     if confina is True:
         raise Recusa("o canário aprovou (confina_comandos: true): o aceite de risco não é preciso; instale o relatório "
                      "com o preparar-wsl.sh --canario")
-    if confina is not False and confina is not None:
-        raise Recusa("relatório sem a conclusão do ensaio (conclusao.confina_comandos: false ou null)")
+    claude = relatorio["claude"]
+    versao, sha = claude["versao"], claude["sha256"]
     forma = forma_do_relatorio(relatorio)
-    if forma is None or conclusao.get("forma", relatorio.get("forma")) != relatorio.get("forma"):
-        raise Recusa("relatório com uma forma de caminho que o canário não prova (só ext4 e drvfs:/mnt/<x>)")
-    itens = [i for i in (relatorio.get("itens") if isinstance(relatorio.get("itens"), list) else [])
-             if isinstance(i, dict) and isinstance(i.get("id"), str) and ITEM_DO_CANARIO.fullmatch(i["id"])]
+    itens = [i for i in relatorio["itens"] if ITEM_DO_CANARIO.fullmatch(i["id"])]
 
     def ids(condicao) -> list[str]:
         return sorted({i["id"] for i in itens if condicao(i)})[:50]
     return {"relatorio_sha256": hashlib.sha256(bruto).hexdigest(), "claude_versao": versao, "claude_sha256": sha,
             "forma": forma, "confina_comandos": confina, "data": str(relatorio.get("data") or "")[:40],
             "falhou": ids(lambda i: i.get("veredito") == "falhou"),
-            "nao_medido": ids(lambda i: i.get("veredito") == "nao_medido"),
+            "nao_medido": sorted({*ids(lambda i: i.get("veredito") == "nao_medido"),
+                                  *regra.sondas_ausentes(relatorio)})[:50],
             "vazou": ids(lambda i: isinstance(i.get("canario"), dict) and (i["canario"].get("apareceu") is True or
                                                                            i["canario"].get("na_transcricao") is True))}
 
@@ -812,6 +849,101 @@ def aceitar_risco(raiz, projeto: str, canario, *, vigencia_ate: str | None = Non
         raise Recusa(str(exc)) from None
 
 
+# ------------------------------------------------------------------ cópia cifrada: o lado do titular (1.7.11, lote 4)
+# Três comandos que rodam no terminal do titular, com a chave privada e a senha dele (a senha vai na janela do pinentry do
+# gpg, nunca por aqui). O trabalho está no kit desta cópia (fundacao/core/titular_copia.py), que entra no hashes.json da
+# cópia protegida e é conferido antes de ser importado; aqui só a conferência da cópia, os avisos e a tela.
+AVISO_FORA_DA_COPIA_CHAVE = ("esta cópia da ferramenta não está na área protegida ({base}): uma sessão do Windows ou um "
+                             "comando de sessão com a raiz em /mnt/e consegue alterá-la, e uma cópia alterada pode pedir a "
+                             "sua senha por conta própria. Digite a senha só se VOCÊ rodou este comando, agora.")
+
+
+def kit_copia() -> SimpleNamespace:
+    """Os módulos do kit desta cópia para o lado do titular da cópia cifrada, nunca os da raiz."""
+    if str(KIT) not in sys.path:
+        sys.path.insert(0, str(KIT))
+    from fundacao.core import cifra_copia, contracts, titular_copia
+    if not Path(titular_copia.__file__).resolve().is_relative_to(KIT.resolve()):
+        raise Recusa("o kit carregado não é o desta skill: rode com python -I -B -S, fora da pasta da raiz")
+    return SimpleNamespace(titular=titular_copia, cifra=cifra_copia, contracts=contracts)
+
+
+def _abrir_copia_cifrada(escrever) -> SimpleNamespace:
+    copia = conferir_copia()  # antes de importar o kit
+    if not copia["protegida"]:
+        escrever("AVISO: " + AVISO_FORA_DA_COPIA_CHAVE.format(base=COPIA_PROTEGIDA["nt" if os.name == "nt" else "posix"]))
+    return kit_copia()
+
+
+def _livro_da_raiz(raiz) -> Path | None:
+    livro = Path(os.path.abspath(raiz)) / "state" / "copias.jsonl" if raiz else None
+    return livro if livro is not None and livro.is_file() else None
+
+
+def preparar_chave_copia(raiz, guardar_em, *, casa=None, publica=None, saida=None, extras_gpg=()) -> int:
+    """`preparar-chave-copia`: cria a chave da cópia (senha pedida pelo gpg), grava a pública para o `preparar-maquina.ps1
+    -ChaveDaCopia` e a cópia protegida da privada em `guardar_em`. 0 feita; 2 recusada (nada deixado)."""
+    saida = saida or sys.stdout
+    escrever = lambda texto="": saida.write(texto + "\n")  # noqa: E731
+    k = _abrir_copia_cifrada(escrever)
+    escrever("Vou criar a chave da cópia de segurança. O gpg abre uma janela e pede a SENHA NOVA, duas vezes, e uma terceira "
+             "para exportar a cópia protegida. Invente seis palavras sem relação entre si; só você as sabe.")
+    try:
+        r = k.titular.preparar_chave(guardar_em, casa=casa, publica=publica, raiz=raiz, extras_gpg=tuple(extras_gpg))
+    except k.contracts.FundacaoError as exc:
+        raise Recusa(str(exc)) from None
+    escrever(json.dumps(r, ensure_ascii=False, indent=2))
+    escrever(f"Impressão digital da chave: {r['impressao_digital']}")
+    for passo in r["proximos_passos"]:
+        escrever("  - " + passo)
+    return 0
+
+
+def conferir_copia_cifrada(origem, *, raiz=None, sha256_manifesto=None, casa=None, saida=None, extras_gpg=(),
+                           registro=None) -> int:
+    """`conferir-copia`: confere com a senha o CONTEÚDO de uma cópia cifrada (arquivos e banco) sem gravar nada, e registra
+    o resultado para o `backup situacao`. 0 conferiu; 2 não conferiu."""
+    saida = saida or sys.stdout
+    escrever = lambda texto="": saida.write(texto + "\n")  # noqa: E731
+    k = _abrir_copia_cifrada(escrever)
+    escrever("Vou conferir o conteúdo da cópia cifrada. O gpg abre uma janela e pede a sua senha uma vez.")
+    try:
+        r = k.titular.conferir_conteudo(origem, casa or k.titular.chaveiro_padrao(), sha256_manifesto=sha256_manifesto,
+                                        livro=_livro_da_raiz(raiz), extras_gpg=tuple(extras_gpg), registro=registro)
+    except k.contracts.FundacaoError as exc:
+        raise Recusa(str(exc)) from None
+    escrever(f"Impressão digital da chave desta cópia: {r['impressao_digital']} (compare com a do seu papel)")
+    if r["ok"]:
+        escrever(f"conteúdo conferido: {r['arquivos']} arquivos, banco {r['banco']}")
+        return 0
+    escrever("NÃO CONFEREU: " + str(r.get("motivo")))
+    return 2
+
+
+def decifrar_copia_cifrada(origem, destino, *, raiz=None, sha256_manifesto=None, casa=None, saida=None, extras_gpg=(),
+                           aceitar_sem_ancora: bool = False) -> int:
+    """`decifrar-copia`: decifra uma cópia cifrada, parte por parte, para a pasta nova `destino` (uma cópia comum, em claro),
+    só depois de conferir a âncora e as partes. A âncora é o `sha256_manifesto` que o titular digita (o do papel); o livro
+    da raiz só confere em segundo lugar; sem o código, recusa (ou `aceitar_sem_ancora`). 0 decifrada; 2 recusada (nada deixado
+    no destino)."""
+    saida = saida or sys.stdout
+    escrever = lambda texto="": saida.write(texto + "\n")  # noqa: E731
+    k = _abrir_copia_cifrada(escrever)
+    try:  # a âncora é o código que o titular guardou fora; o livro da raiz (a sessão grava nele) só serve de 2ª conferência
+        k.titular.exigir_ancora_do_titular(sha256_manifesto, aceitar_sem_ancora)
+    except k.contracts.FundacaoError as exc:
+        raise Recusa(str(exc)) from None
+    escrever("Vou decifrar a cópia. O gpg abre uma janela e pede a sua senha. A pasta de destino terá os dados EM CLARO: "
+             "depois da restauração, apague-a (o apagar é seu).")
+    try:
+        r = k.titular.decifrar(origem, destino, casa or k.titular.chaveiro_padrao(), sha256_manifesto=sha256_manifesto,
+                               livro=_livro_da_raiz(raiz), extras_gpg=tuple(extras_gpg), aceitar_sem_ancora=aceitar_sem_ancora)
+    except k.contracts.FundacaoError as exc:
+        raise Recusa(str(exc)) from None
+    escrever(json.dumps(r, ensure_ascii=False, indent=2))
+    return 0
+
+
 def construir_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fundacao_titular.py", allow_abbrev=False,
                                 description="Ferramenta fixa do titular: assina e confere a ficha de aberturas e "
@@ -828,6 +960,22 @@ def construir_parser() -> argparse.ArgumentParser:
             a.add_argument("--versao", type=int, help="padrão: a maior preparada (assinar) ou a em vigor (verificar)")
         if nome != "verificar-ficha":
             a.add_argument("--chave", help="chave privada do titular (padrão: ~/.ssh/fundacao_titular)")
+    # 1.7.11, lote 4: a cópia de segurança cifrada (o lado do titular; a senha vai na janela do gpg)
+    c = sub.add_parser("preparar-chave-copia", allow_abbrev=False)
+    c.add_argument("--raiz", required=True, help="raiz da fundação (a chave privada protegida não pode ficar dentro dela)")
+    c.add_argument("--guardar-em", required=True, help="pasta, fora da raiz e do disco das cópias, da chave privada protegida")
+    c.add_argument("--casa", help="chaveiro dedicado (padrão: %%APPDATA%%/FundacaoIA/gnupg-copia; até ~85 caracteres)")
+    c.add_argument("--publica", help="onde gravar a chave pública (padrão: %%LOCALAPPDATA%%/FundacaoIA/chave-da-copia.asc)")
+    for nome in ("conferir-copia", "decifrar-copia"):
+        c = sub.add_parser(nome, allow_abbrev=False)
+        c.add_argument("--origem", required=True, help="pasta da cópia cifrada")
+        c.add_argument("--raiz", help="raiz da fundação, só para achar o livro de cópias (2ª conferência; no decifrar, nunca a âncora)")
+        c.add_argument("--sha256-manifesto", help="a âncora da cópia (o código que o `backup criar` devolveu e você guardou fora"
+                                                  "; obrigatório no decifrar-copia, salvo --aceitar-sem-ancora)")
+        c.add_argument("--casa", help="chaveiro da chave da cópia (padrão: %%APPDATA%%/FundacaoIA/gnupg-copia)")
+        if nome == "decifrar-copia":
+            c.add_argument("--destino", required=True, help="pasta NOVA para a cópia decifrada (dados em claro)")
+            c.add_argument("--aceitar-sem-ancora", action="store_true", help="decifra mesmo sem âncora conferida (de caso pensado)")
     return p
 
 
@@ -863,6 +1011,13 @@ def main(argv: list[str] | None = None) -> int:
 
 def _rodar(args) -> int:
     try:
+        if args.acao == "preparar-chave-copia":
+            return preparar_chave_copia(args.raiz, args.guardar_em, casa=args.casa, publica=args.publica)
+        if args.acao == "conferir-copia":
+            return conferir_copia_cifrada(args.origem, raiz=args.raiz, sha256_manifesto=args.sha256_manifesto, casa=args.casa)
+        if args.acao == "decifrar-copia":
+            return decifrar_copia_cifrada(args.origem, args.destino, raiz=args.raiz, sha256_manifesto=args.sha256_manifesto,
+                                          casa=args.casa, aceitar_sem_ancora=args.aceitar_sem_ancora)
         if args.acao == "assinar-ficha":
             return assinar_ficha(args.raiz, args.projeto, versao=args.versao, chave=args.chave)
         if args.acao == "aceitar-risco":

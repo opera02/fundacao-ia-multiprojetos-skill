@@ -163,6 +163,57 @@ class TestCopiaSegura(unittest.TestCase):
             self.mod.copiar_conferindo(origem, self.saida / "x.txt")
         self.assertFalse(os.path.lexists(self.saida / "x.txt"))
 
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "O_NOFOLLOW") and os.open in os.supports_dir_fd,
+                         "L: a gravação por descritor de pasta (dir_fd) é do POSIX")
+    def test_destino_por_descritor_de_pasta_nao_segue_a_pasta_trocada_depois_de_aberta(self):
+        """F2 (revisão de segurança da 1.7.11): com `pasta_fd`, o temporário e a renomeação são relativos ao descritor da pasta;
+        trocar a pasta por ligação depois da abertura não muda onde o arquivo cai, e uma ligação no caminho nem abre."""
+        origem = self.escrever("a.txt", b"dados")
+        (self.saida / "d").mkdir()
+        fora = self.base / "fora"
+        fora.mkdir()
+        fd = self.mod.descer_pastas(self.saida, ["d"])
+        try:
+            real = self.base / "d-real"
+            os.rename(self.saida / "d", real)                       # a sessão troca a pasta por uma ligação...
+            os.symlink(fora, self.saida / "d", target_is_directory=True)
+            res = self.mod.copiar_conferindo(origem, "a.txt", dentro_de=self.proj, pasta_fd=fd, modo=0o644)
+            with self.assertRaises(self.mod.CopiaRecusada):          # e o destino que já existe segue recusado
+                self.mod.copiar_conferindo(origem, "a.txt", dentro_de=self.proj, pasta_fd=fd)
+        finally:
+            os.close(fd)
+        self.assertEqual((res["bytes"], (real / "a.txt").read_bytes()), (5, b"dados"))
+        self.assertEqual(list(fora.iterdir()), [])                   # ...e nada cai do outro lado
+        self.assertEqual([p.name for p in real.iterdir()], ["a.txt"])  # nem sobra de temporário
+        for caminho in (["d"], ["d", "x"]):                          # pela ligação, nem abre (O_NOFOLLOW)
+            with self.assertRaises(OSError):
+                self.mod.descer_pastas(self.saida, caminho)
+        with self.assertRaises(FileExistsError):                     # ultima_nova: a pasta tem de nascer agora
+            self.mod.descer_pastas(self.base, ["d-real"], ultima_nova=True)
+        novo = self.mod.descer_pastas(self.base, ["n1", "n2"], criar=True, ultima_nova=True)
+        os.close(novo)
+        self.assertTrue((self.base / "n1" / "n2").is_dir())
+        for ruim in ("", ".", "..", "a/b"):
+            with self.assertRaises(self.mod.CopiaRecusada):
+                self.mod.descer_pastas(self.base, [ruim])
+
+    @unittest.skipUnless(os.name == "posix" and hasattr(os, "fchmod"), "L: o modo pelo descritor aberto é do POSIX")
+    def test_modo_aplicado_pelo_descritor_e_nao_pelo_nome(self):
+        """Observação do F2 (3ª passada): o modo vai por `os.fchmod` no descritor do temporário; o `chmod` por nome (que seguiria
+        uma ligação posta no lugar do temporário) não é chamado, com ou sem `pasta_fd`."""
+        origem = self.escrever("m.txt", b"dados")
+        fd = self.mod.descer_pastas(self.saida, [])
+        try:
+            with mock.patch.object(self.mod.os, "chmod", side_effect=AssertionError("chmod por nome")), \
+                    mock.patch.object(self.mod.os, "fchmod", wraps=os.fchmod) as fch:
+                self.mod.copiar_conferindo(origem, "m1.txt", pasta_fd=fd, modo=0o640)
+                self.mod.copiar_conferindo(origem, self.saida / "m2.txt", modo=0o640)
+        finally:
+            os.close(fd)
+        self.assertEqual(fch.call_count, 2)
+        for nome in ("m1.txt", "m2.txt"):
+            self.assertEqual(stat.S_IMODE(os.lstat(self.saida / nome).st_mode), 0o640)
+
     def test_linha_de_comando(self):
         dados = b"pela linha de comando\n"
         origem = self.escrever("cli.txt", dados)

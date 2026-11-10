@@ -35,6 +35,13 @@ fixos (DESENHO-1.7.10 §4; contratos do lote 2, §5 e §6). Nesta ordem:
     projeto vira aviso, com o projeto e a pasta, e segue com o Edit negado (-SomenteLeituraAusente: quando o disco
     voltar, já está protegida); a do próprio projeto para o preparo dele (código 2, nada alterado), com a pasta na
     mensagem. Caminho só do Ubuntu (fora de /mnt/<x>) não cabe no perfil do Windows: aviso;
+ 3b. confere as skills e os agentes aninhados em projects\<projeto> (preparo_host.py aninhadas-fora-do-registro,
+    com os tetos do instrucoes_aninhadas.py) com as negações acumuladas do registro (lote A3, 1.7.11): cada nome que
+    falta sai nos avisos com o comando pronto do registrar-projeto; nome fora do padrão vai para a neutralização, com
+    o aviso; inventário parcial é aviso, não recusa. Com -RegistrarAninhadas, soma os nomes que faltam ao registro
+    na mesma rodada (o registro só cresce; na simulação só diz o que somaria) e o perfil já sai com eles; o projeto
+    que ainda não está no registro (sem origem) com nome a negar é recusado (código 2), com o comando pronto do
+    registrar-projeto --origem, como no instalar-projeto;
  4. roda o preparar-maquina.ps1 com -SomenteLeitura e com -Backups e -BackupsAusente (as pastas conferidas no passo
     1; ou com -SemBackups) e repassa -Simular, -SemUAC, -TrocarChave, -Python, -Chave, -Ancora e -Ferramentas (a cópia
     protegida da ferramenta do titular, que ele grava no mesmo UAC da âncora quando o Python é instalado para todos os
@@ -56,8 +63,9 @@ Honestidade (contratos do lote 2, §0): com a raiz em /mnt/<x>, o isolamento ent
 canário passar; nenhuma abertura vale sem o canário no checklist do projeto e sem a ficha assinada.
 
 Códigos: 0 pronto · 1 parou ou há conflito (veja o relatório) · 2 uso incorreto (nada alterado; também sem -Backups
-nem -SemBackups, ou com -SemBackups e uma cópia registrada, com o comando pronto) · 3 falta um passo do titular (o UAC
-da âncora) · 4 o Ubuntu está ligado (nada alterado).
+nem -SemBackups, ou com -SemBackups e uma cópia registrada, com o comando pronto; e rodado de dentro de
+<raiz>\projects\, como o preparar-maquina.ps1: revisão de segurança da 1.7.10, CI-F1) · 3 falta um passo do titular (o
+UAC da âncora) · 4 o Ubuntu está ligado (nada alterado).
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File preparar-projeto.ps1 -Raiz "D:\IA\fundacao" -Titular titular -Projeto juridico-lab -Backups "E:\Backups-IA" -Simular
@@ -89,6 +97,7 @@ param(
     [string] $ClaudeSha256,
     [int] $Versao = 0,
     [switch] $AssinarFicha,
+    [switch] $RegistrarAninhadas,
     [switch] $Simular,
     [switch] $SemUAC,
     [switch] $TrocarProjeto,
@@ -117,9 +126,11 @@ function Test-NaLista([string[]] $Linhas, [string] $Nome) {
 }
 
 function Get-DistribuicoesLigadas {
-    # Só consulta (wsl.exe -l --running -q não liga a distribuição); sem wsl.exe ou com erro, nenhuma ligada.
-    $wsl = Join-Path $env:SystemRoot 'System32\wsl.exe'
-    if (-not (Test-Path -LiteralPath $wsl -PathType Leaf)) { return @() }
+    # Só consulta (wsl.exe -l --running -q não liga a distribuição); sem wsl.exe ou com erro, nenhuma ligada. A pasta do
+    # sistema pela API, não pelo $env:SystemRoot, que um perfil do PowerShell troca (revisão de segurança da 1.7.10,
+    # CI-F3).
+    $wsl = [IO.Path]::Combine([Environment]::SystemDirectory, 'wsl.exe')
+    if (-not [IO.File]::Exists($wsl)) { return @() }
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $wsl
@@ -206,8 +217,15 @@ function Invoke-PrepararProjeto {
         titular = $Titular; projeto = $Projeto; projeto_windows = $ProjetoWindows; ubuntu = $null; registro = $null
         somente_leitura = @(); somente_leitura_ausente = @(); backups = @(); backups_ausentes = @()
         sem_backups = [bool]$SemBackups; ultima_copia = $null; preparar_maquina = $null; assinatura = $null
-        proximo_passo = $null; comando_pronto = $null; pasta_sugerida = $null
+        proximo_passo = $null; comando_pronto = $null; pasta_sugerida = $null; aninhadas = $null
         avisos = (New-Object System.Collections.ArrayList); codigo = $null; mensagem = $null }
+    # Revisão de segurança da 1.7.10, CI-F1: como o preparar-maquina.ps1 (as funções dele, num escopo próprio), este
+    # script não roda de dentro de <raiz>\projects\: no modo real, de projects\ de qualquer fundação; na simulação,
+    # contra a fundação que o contém. Antes de tudo: nada é lido nem gravado.
+    $recusa = & { param($m, $pasta, $r, $s) . $m
+        $f = Get-FundacaoQueContem $pasta
+        if ($f -and (-not $s -or (Test-MesmaPasta $f $r))) { Get-RecusaDeProjects $f 'preparar-projeto.ps1' } } $MAQUINA $PSScriptRoot $Raiz $sim
+    if ($recusa) { return (Complete-Projeto $rel 2 ([string]$recusa)) }
     if (-not $Raiz -or -not $Titular -or -not $Projeto) { return (Complete-Projeto $rel 2 'informe -Raiz, -Titular e -Projeto') }
     if (-not ($Titular -cmatch $ID_TITULAR)) { return (Complete-Projeto $rel 2 "titular inválido: $Titular") }
     if (-not (Test-Projeto $Projeto)) { return (Complete-Projeto $rel 2 "projeto inválido: $Projeto (1 a 40 letras minúsculas, dígitos ou -, sem - nas pontas nem --)") }
@@ -217,7 +235,7 @@ function Invoke-PrepararProjeto {
     }
     if ($Versao -lt 0) { return (Complete-Projeto $rel 2 "versão inválida: $Versao") }
     if (-not (Test-Path -LiteralPath $Raiz -PathType Container)) { return (Complete-Projeto $rel 2 "a raiz não existe: $Raiz") }
-    $raizCheia = (Resolve-Path -LiteralPath $Raiz).Path.TrimEnd([char]92)
+    $raizCheia = (Microsoft.PowerShell.Management\Resolve-Path -LiteralPath $Raiz).Path.TrimEnd([char]92)
     $rel.raiz = $raizCheia
     if (-not (Test-Path -LiteralPath (Join-Path $raizCheia ('projects\' + $Projeto)) -PathType Container)) {
         return (Complete-Projeto $rel 2 "o projeto $Projeto não existe em $raizCheia")
@@ -268,11 +286,30 @@ function Invoke-PrepararProjeto {
         if (-not $sim) { return (Complete-Projeto $rel 4 ($msg + ' (nada foi alterado)')) }
         [void]$rel.avisos.Add($msg)
     }
+    # As skills e os agentes aninhados do projeto que o registro não nega (lote A3): antes de ler o registro, para que o
+    # -RegistrarAninhadas já conte na leitura abaixo. Falha ou resposta estranha é aviso (a conferência é do titular).
+    $argsAninhadas = @('aninhadas-fora-do-registro', '--raiz', $raizCheia, '--projeto', $Projeto)
+    if ($RegistrarAninhadas) { $argsAninhadas += '--registrar'; if ($sim) { $argsAninhadas += '--simular' } }
+    $rAn = & { param($m, $exe, $a) . $m; Invoke-Ajudante $exe $a } $MAQUINA $py $argsAninhadas
+    if ($rAn.Codigo -eq 0) {
+        try {
+            $an = $rAn.Saida | Microsoft.PowerShell.Utility\ConvertFrom-Json
+            $rel.aninhadas = $an
+            foreach ($aviso in @($an.avisos)) { [void]$rel.avisos.Add([string]$aviso) }
+        } catch { [void]$rel.avisos.Add('skills e agentes aninhados NÃO conferidos: resposta do ajudante fora da forma') }
+    } elseif ($RegistrarAninhadas -and (($rAn.Saida + $rAn.Erro) -match 'registrar-projeto')) {
+        # Lote S2 (A3): como o instalar-projeto, o projeto fora do registro com nome a negar não entra só com os nomes
+        $motivo = ($rAn.Saida + $rAn.Erro).Trim()
+        try { $motivo = [string]($rAn.Saida | Microsoft.PowerShell.Utility\ConvertFrom-Json).erro } catch { }
+        return (Complete-Projeto $rel 2 ($motivo + ' (nada foi alterado)'))
+    } else {
+        [void]$rel.avisos.Add('skills e agentes aninhados do projeto NÃO conferidos: ' + ($rAn.Saida + $rAn.Erro).Trim())
+    }
     $r = & { param($m, $exe, $a) . $m; Invoke-Ajudante $exe $a } $MAQUINA $py @('ler-projetos-host', '--raiz', $raizCheia)
     if ($r.Codigo -ne 0) {
         return (Complete-Projeto $rel 2 ('registry\projetos-host.json ilegível ou fora do esquema: ' + ($r.Saida + $r.Erro).Trim()))
     }
-    $reg = $r.Saida | ConvertFrom-Json
+    $reg = $r.Saida | Microsoft.PowerShell.Utility\ConvertFrom-Json  # CI-F3: o cmdlet, não uma função do perfil
     $projetos = @()
     if ($reg.projetos) { $projetos = @($reg.projetos.PSObject.Properties) }
     $doProjeto = @($projetos | Where-Object { $_.Name -ceq $Projeto })
@@ -370,9 +407,13 @@ function Invoke-PrepararProjeto {
     if ($ClaudeVersao) { $versaoClaude = $ClaudeVersao }
     $hashClaude = '<hash do manifesto assinado>'
     if ($ClaudeSha256) { $hashClaude = $ClaudeSha256 }
-    $rel.proximo_passo = 'bash "' + (ConvertTo-CaminhoWsl $SKILL_PROJETO) + '/assets/host/wsl/preparar-wsl.sh" --raiz "' +
+    # O bash do passo do Ubuntu sem o ambiente do terminal (funções exportadas, BASH_ENV, PATH): revisão de segurança da
+    # 1.7.10, CI-F3 (o preparar-wsl.sh também recusa as funções exportadas e o BASH_ENV que vir).
+    $rel.proximo_passo = '/usr/bin/env -i HOME="$HOME" PATH=/usr/bin:/bin /usr/bin/bash --noprofile --norc "' +
+        (ConvertTo-CaminhoWsl $SKILL_PROJETO) + '/assets/host/wsl/preparar-wsl.sh" --raiz "' +
         (ConvertTo-CaminhoWsl $raizCheia) + '" --projeto ' + $Projeto + ' --titular ' + $Titular + ' --perfil-windows "' +
-        (ConvertTo-CaminhoWsl $env:USERPROFILE) + '" --claude-versao ' + $versaoClaude + ' --claude-sha256 ' + $hashClaude
+        (ConvertTo-CaminhoWsl ([Environment]::GetFolderPath('UserProfile'))) + '" --claude-versao ' + $versaoClaude +
+        ' --claude-sha256 ' + $hashClaude
     if ($codigoMaquina -eq 3) {
         return (Complete-Projeto $rel 3 'tudo feito no Windows, menos a âncora, que espera a confirmação de administrador (UAC); depois, o passo do Ubuntu')
     }

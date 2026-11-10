@@ -693,8 +693,8 @@ def instrucoes_do_repositorio(destino: Path, rel: str) -> tuple[dict, list[str]]
     try:
         res = INSTRUCOES.listar(destino, git_da_raiz_confiavel=True)
     except (OSError, ValueError) as exc:
-        return ({"encontrados": None, "completo": False, "contagem": {}, "itens": {}, "negar_skills": [],
-                 "nomes_fora_do_padrao": [], "ligacoes_nao_seguidas": 0, "nao_lidos": 0, "erro": type(exc).__name__,
+        return ({"encontrados": None, "completo": False, "contagem": {}, "itens": {},
+                 "negar_skills": [], "negar_agentes": [], "nomes_fora_do_padrao": [], "ligacoes_nao_seguidas": 0, "nao_lidos": 0, "erro": type(exc).__name__,
                  "codex": CODEX_NA_RAIZ},
                 [f"a conferência das instruções aninhadas não rodou ({type(exc).__name__}): "
                  f"{conferir_de_novo(destino)} antes de abrir uma sessão ali"])
@@ -702,7 +702,8 @@ def instrucoes_do_repositorio(destino: Path, rel: str) -> tuple[dict, list[str]]
     resumo = {"encontrados": res["encontrados"], "completo": res["completo"],
               "contagem": {tipo: len(caminhos) for tipo, caminhos in itens.items()},
               "itens": {tipo: caminhos[:TETO_CITADOS] for tipo, caminhos in itens.items()},
-              "negar_skills": res["sugestoes"]["negar_skills"], "nomes_fora_do_padrao": res["nomes_fora_do_padrao"],
+              "negar_skills": res["sugestoes"]["negar_skills"],
+              "negar_agentes": res["sugestoes"]["negar_agentes"], "nomes_fora_do_padrao": res["nomes_fora_do_padrao"],
               "ligacoes_nao_seguidas": len(res["ligacoes_nao_seguidas"]), "nao_lidos": len(res["nao_lidos"]),
               "codex": CODEX_NA_RAIZ}
     avisos = []
@@ -717,6 +718,9 @@ def instrucoes_do_repositorio(destino: Path, rel: str) -> tuple[dict, list[str]]
         if resumo["negar_skills"]:
             aviso += ("; negue as skills dele no preparo do host: --negar-skill "
                       + " --negar-skill ".join(resumo["negar_skills"]))
+        if resumo["negar_agentes"]:
+            aviso += ("; negue os agentes dele: --negar-agente "
+                      + " --negar-agente ".join(resumo["negar_agentes"]))
         avisos.append(aviso)
     if res["nomes_fora_do_padrao"]:  # FLUXB-F3, revisão 2
         pastas = sorted({_mostrado(i["pasta"]) for i in res["nomes_fora_do_padrao"]})

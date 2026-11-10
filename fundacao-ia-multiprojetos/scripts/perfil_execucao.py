@@ -18,12 +18,14 @@ O perfil (`fundacao.perfil_execucao/1`, dentro de `projects/<P>/` de uma fundaç
 (código NÃO preso, por decisão do titular) ou `ferramentas-de-terceiros` (código preso pelo manifesto, inclusive a
 venv) —, os modelos de argv (marcadores `{caminho}`, `{caminhos}` no fim e `{saida}`, só para caminhos do projeto), as
 montagens (árvore de trabalho ou código e alvos só leitura, uma pasta de saída gravável; a raiz nunca; nenhuma passa
-por pasta ou nome de segredo), a rede (negada: a lista de domínios fica com a jaula do porteiro), o ambiente, os
-limites e a validade. O lançador confere o SHA-256 do perfil, a validade, o argv contra os modelos e, no segundo tipo,
-o manifesto antes e depois; roda pela mesma caixa bubblewrap, com os caminhos de segredo das árvores montadas
-escondidos (fora do código preso, os nomes fortes e as pastas de segredo; dentro dele, só os nomes fortes; as
-negações por caminho do perfil do host ainda não chegam à caixa), e registra cada execução em
-`projects/<P>/outputs/execucao/registro.jsonl` (argv, código, duração e SHA-256 das saídas).
+por pasta ou nome de segredo), a rede (negada; a rede da caixa pela jaula do porteiro, com a lista de domínios da
+ficha de aberturas, fica para a 1.7.11), o ambiente, os limites e a validade. O lançador confere o SHA-256 do perfil,
+a validade, o argv contra os modelos e, no segundo tipo, o manifesto antes e depois; roda pela mesma caixa bubblewrap,
+com os caminhos de segredo das árvores montadas escondidos (fora do código preso, os nomes fortes e as pastas de
+segredo; dentro dele, só os nomes fortes; as negações por caminho do perfil do host ainda não chegam à caixa), e
+registra cada execução em `projects/<P>/outputs/execucao/registro.jsonl` (argv, código, duração e SHA-256 das saídas).
+A pasta de saída e o registro, na pasta do projeto que a sessão grava, são criados e abertos descendo da pasta do
+projeto por descritor, sem atravessar ligação, no Linux (revisão de segurança da 1.7.10, FLUXB-F2).
 
 Integração da 1.7.10 (pacote INTEG-FLUXOB do lote 2; contratos do lote 2, §3; pendências do FLUXOB-B):
 - máscaras pela regra única (`regras_de_segredo.py`, NFKC e sem caixa): dentro do código preso (a raiz do código de
@@ -120,9 +122,10 @@ SOLTO_NA_FOLHA = ("ATENÇÃO: o manifesto não prende {itens}; a caixa vê vazio
                   "__pycache__ (PYTHONPYCACHEPREFIX) e cada ligação aponta para o sistema, para um arquivo preso ou "
                   "para uma pasta do código preso fora do que o manifesto não prende, conferida antes e depois de cada "
                   "execução; qualquer outra coisa fora do manifesto (o arquivo especial também) recusa a execução")
-SEM_CAIXA_PARA_O_PERFIL = (
-    "recusado: o perfil de execução só roda no bubblewrap, e ele não abre aqui ({motivo}). No Ubuntu (WSL), quem roda "
-    "é o porteiro da sessão (fora do sandbox do Claude Code) ou o titular no terminal; no Windows não há caixa")
+SEM_CAIXA_PARA_O_PERFIL = (  # revisão de segurança da 1.7.10, FLUXB-F5: o rodar pelo porteiro é da 1.7.11
+    "recusado: o perfil de execução só roda no bubblewrap, e ele não abre aqui ({motivo}). No Ubuntu (WSL), se a "
+    "caixa não abrir dentro do sandbox da sessão, o titular roda o mesmo comando no terminal dele; a operação rodar do "
+    "porteiro fica para a 1.7.11. No Windows não há caixa")
 
 
 def _rel_do_perfil(valor, campo: str, *, ponto: bool = False) -> str:
@@ -244,9 +247,9 @@ def _ambiente_do_perfil(tipo: str, ambiente) -> dict:
     for nome, valor in ambiente.items():
         if not NOME_DE_VARIAVEL.match(nome) or not isinstance(valor, str) or "\0" in valor or len(valor) > 4096:
             raise Recusa(f"perfil: ambiente {nome!r}: nome ou valor inválido")
-        if any(s in nome.upper() for s in NOMES_DE_SEGREDO):
-            raise Recusa(f"perfil: ambiente {nome}: nome de segredo não passa ao código executado (segredo vai pelo "
-                         "porteiro, na operação executar)")
+        if any(s in nome.upper() for s in NOMES_DE_SEGREDO):  # FLUXB-F5: a operação executar é da 1.7.11
+            raise Recusa(f"perfil: ambiente {nome}: nome de segredo não passa ao código executado (segredo pelo "
+                         "porteiro, na operação executar, fica para a 1.7.11)")
         if nome.upper().startswith("FUNDACAO_") or nome.upper() in RESERVADAS:
             raise Recusa(f"perfil: ambiente {nome}: reservado ao lançador")
         if tipo == FERRAMENTAS_DE_TERCEIROS and CODIGO.carrega_codigo(nome):
@@ -324,8 +327,9 @@ def ler_perfil(arquivo, sha256_aprovado: str | None, *, projeto: str | None = No
         raise Recusa(f"perfil vencido em {validade.isoformat()}: nada foi executado; peça um perfil novo ao titular")
     rede = dados.get("rede", {"dominios": []})
     if not isinstance(rede, dict) or set(rede) - {"dominios"} or rede.get("dominios", []) != []:
-        raise Recusa("perfil: a caixa roda sem rede; a lista de domínios fica com a jaula do porteiro (desenho §8.1), "
-                     "pela ficha de aberturas")
+        # FLUXB-F5: a seção rede da ficha vale para os comandos da sessão; a da caixa, pela jaula, é da 1.7.11.
+        raise Recusa("perfil: a caixa roda sem rede; a seção rede da ficha de aberturas vale para os comandos da "
+                     "sessão, e a rede da caixa, pela jaula do porteiro (desenho §8.1), fica para a 1.7.11")
     return {"arquivo": str(arquivo), "sha256": sha, "pasta_projeto": str(pasta), "projeto": pasta.name,
             "perfil_id": dados["perfil_id"], "tipo": dados["tipo"], "motivo": dados["motivo"].strip(),
             "validade": validade.isoformat(), "modelos": _modelos_do_perfil(dados["modelos"]),
@@ -777,7 +781,7 @@ def plano_do_perfil(perfil: dict, argv: list[str], *, bwrap: str | None = None) 
         raise Recusa(f"a pasta de saída {saida} contém uma árvore só leitura, que deixaria de ser só leitura")
     if raiz_codigo and _dentro(saida, raiz_codigo):
         raise Recusa(f"a pasta de saída {saida} fica dentro do código preso {raiz_codigo}: use uma pasta fora dele")
-    GRAVACAO.pasta_sem_ligacao(Path(pasta), perfil["montagens"]["saida"])
+    _criar_pasta(pasta, perfil["montagens"]["saida"])  # sem atravessar ligação (FLUXB-F2)
     _montavel(saida)
     if not os.path.isdir(cwd) or not any(_dentro(cwd, p) for p in [*leitura, saida]):
         raise Recusa(f"a pasta de trabalho {cwd} não existe ou fica fora das montagens do perfil")
@@ -978,6 +982,81 @@ def _destino_do_registro(perfil: dict, registro) -> Path:
     return destino
 
 
+# Revisão de segurança da 1.7.10, FLUXB-F2: a pasta de saída e o registro ficam na pasta do projeto, que a sessão grava,
+# e o rodar pode ser do titular; pelo caminho, uma pasta acima trocada por ligação entre a conferência e a gravação
+# levava a linha do registro (ou a pasta nova) para outro projeto. No POSIX, desce-se por descritor, como o Gravador do
+# importar.py; no Windows (sem dir_fd, e sem caixa: o rodar não roda lá), pelo caminho conferido do gravacao_segura.py.
+_POR_DESCRITOR = (os.name == "posix" and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and {os.open, os.mkdir} <= os.supports_dir_fd)
+_PASTA = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+
+
+def _descer(pasta_projeto: str, rel: str) -> int:
+    """POSIX: o descritor da pasta `rel` do projeto, aberta parte a parte a partir da pasta do projeto, cada uma com
+    O_NOFOLLOW e O_DIRECTORY pelo descritor da de cima, criando a que falta pelo mesmo descritor: uma pasta do caminho
+    trocada por ligação, antes ou durante, não é atravessada (GravacaoRecusada)."""
+    fd = os.open(pasta_projeto, _PASTA)
+    try:
+        for parte in [p for p in rel.split("/") if p]:
+            try:
+                novo = os.open(parte, _PASTA, dir_fd=fd)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(parte, 0o755, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                novo = os.open(parte, _PASTA, dir_fd=fd)
+            os.close(fd)
+            fd = novo
+        return fd
+    except BaseException as exc:
+        os.close(fd)
+        if isinstance(exc, OSError) and not isinstance(exc, GRAVACAO.GravacaoRecusada):
+            raise GRAVACAO.GravacaoRecusada(f"{rel} passa por ligação (link simbólico ou junção) ou por algo que não é "
+                                            f"pasta ({exc.strerror}): nada foi gravado") from None
+        raise
+
+
+def _criar_pasta(pasta_projeto: str, rel: str) -> None:
+    """A pasta `rel` do projeto, criada se falta, sem atravessar ligação (FLUXB-F2)."""
+    if _POR_DESCRITOR:
+        os.close(_descer(pasta_projeto, rel))
+    else:
+        GRAVACAO.pasta_sem_ligacao(Path(pasta_projeto), rel)
+
+
+def _anexar_ao_registro(pasta_projeto: str, destino: Path, dados: bytes) -> None:
+    """Acrescenta `dados` ao fim do registro das execuções (FLUXB-F2). POSIX: a pasta dele pelo descritor (`_descer`) e
+    o arquivo aberto nela com O_NOFOLLOW e O_NONBLOCK (um FIFO no lugar dele não prende o rodar), conferido arquivo
+    comum com um nome só antes de gravar; no Windows, `gravacao_segura.anexar` pelo caminho."""
+    mae, _, nome = destino.relative_to(pasta_projeto).as_posix().rpartition("/")
+    if not _POR_DESCRITOR:
+        GRAVACAO.pasta_sem_ligacao(Path(pasta_projeto), mae)
+        GRAVACAO.anexar(destino, dados)
+        return
+    fd_pasta = _descer(pasta_projeto, mae)
+    try:
+        try:
+            fd = os.open(nome, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                         0o666, dir_fd=fd_pasta)
+        except OSError as exc:
+            raise GRAVACAO.GravacaoRecusada(f"{nome}: é ligação, pasta ou arquivo especial ({exc.strerror}); nada foi "
+                                            "gravado nele") from None
+        try:
+            aberto = os.fstat(fd)
+            if not stat.S_ISREG(aberto.st_mode) or aberto.st_nlink != 1:
+                raise GRAVACAO.GravacaoRecusada(f"{nome}: não é arquivo comum ou tem vínculo físico; nada foi gravado "
+                                                "nele")
+            vista = memoryview(dados)
+            while vista:
+                vista = vista[os.write(fd, vista):]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    finally:
+        os.close(fd_pasta)
+
+
 def projeto_do_lancador(projeto: str | None) -> str:
     """O projeto em que o `rodar` vale: o do lançador (`FUNDACAO_PROJECT`, posto pelo lançador da sessão, ou
     `FUNDACAO_PROJETO_TRAVADO`, o do porteiro), com que o `--projeto` tem de concordar; sem nenhum deles, o `--projeto`
@@ -1036,10 +1115,9 @@ def rodar_perfil(arquivo, sha256_aprovado: str, argv: list[str], *, projeto: str
              "stderr_sha256": hashlib.sha256(resultado["stderr"]).hexdigest(), "stderr_bytes": len(resultado["stderr"]),
              "mascaras": len(plano["mascaras"]), "conferencia_depois": depois}
     codigo = 0 if resultado["codigo"] == 0 else 1
-    try:
-        GRAVACAO.pasta_sem_ligacao(Path(perfil["pasta_projeto"]),
-                                   destino.parent.relative_to(perfil["pasta_projeto"]).as_posix())
-        GRAVACAO.anexar(destino, (json.dumps(linha, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
+    try:  # descendo por descritor, sem atravessar ligação (FLUXB-F2)
+        _anexar_ao_registro(perfil["pasta_projeto"], destino,
+                            (json.dumps(linha, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
         registrado = str(destino)
     except OSError as exc:
         registrado, codigo = f"falhou: {exc}", 3

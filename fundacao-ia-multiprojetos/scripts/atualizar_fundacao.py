@@ -64,6 +64,14 @@ Aplicar na fundação viva com dados reais (1.7.10; a raiz passou a ter cerca de
 - a limpeza do ensaio e do código conferido é contada (arquivos, pastas, ligações e bytes que sobraram, com os erros) e
   vai para o registro; no Windows, a marca somente leitura sai só dentro da pasta criada pelo próprio atualizador; a
   ligação sai como ligação, sem tocar o destino; antes, `shutil.rmtree(..., ignore_errors=True)` escondia a sobra;
+- cópia cifrada (1.7.11, lote 5 do desenho DESENHO-COPIA-CIFRADA-1.7.11): com a chave pública da cópia instalada e protegida
+  na âncora (core/politica_cifra.py, decidida pelo kit da skill), as cópias ANTES e DEPOIS saem CIFRADAS no disco das
+  cópias. A ANTES nasce em claro num preparo local (disco interno, fora da raiz e do disco das cópias) pelo código da
+  raiz, é verificada, e o kit da skill a cifra para `--backups`; o ensaio restaura DESSE preparo local, que é apagado
+  (limpeza contada) logo depois; a DEPOIS é o `criar` cifrado do kit novo (core/copia_cifrada.py). O padrão de
+  `--pasta-ensaio` passa a ser local: com a chave instalada, um ensaio no disco das cópias deixaria uma raiz restaurada em
+  claro lá, e recusa. `--sem-cifra "<motivo>"` mantém as cópias em claro, com o motivo no registro. Chave instalada e
+  não protegida recusa no `checar`, antes de qualquer cópia. Raiz na pasta temporária (os testes) fica em claro;
 - se a cópia ANTES falha na promoção (código 2 com E_ARQUIVO ou E_PROMOCAO, ou WinError 5 — o kit da raiz pode não
   tentar de novo), a sobra do preparo é contada (sem apagar: ela tem os dados da fundação), o destino é conferido
   ausente e a cópia é tentada de novo UMA vez, com rótulo novo; as duas tentativas vão para o registro;
@@ -104,6 +112,43 @@ IGNORAR = {"__pycache__", ".pytest_cache"}
 VARIAVEL_IDENTIDADE = "FUNDACAO_" + "PRINCIPAL"
 TEMPO = 3600
 TEMPO_INVENTARIO = 120  # inventário do host: informativo, roda depois do registro (R177-VAL-04)
+MOTIVO_CLARO_LOCAL = "atualizador: cópia em claro no preparo local, cifrada logo em seguida"
+# Programas do kit da skill (python_isolado; sem banco): a decisão de cifrar e a cópia cifrada (core/politica_cifra.py,
+# core/backup_cifrado.py e core/copia_cifrada.py). Os argumentos vêm só deste script.
+DECIDIR = """import json
+from fundacao.core import politica_cifra
+from fundacao.core.contracts import FundacaoError
+try:
+    d = politica_cifra.decidir(sys.argv[1] or None)
+except FundacaoError as exc:
+    print(json.dumps({"recusa": str(exc)}))
+    sys.exit(1)
+print(json.dumps({"modo": d["modo"], "chave": str(d["chave"]) if d.get("chave") else None, "sem_cifra": d.get("sem_cifra"),
+                  "preparo_base": str(politica_cifra.pasta_de_dados() / "FundacaoIA" / "preparo-copias")}))
+"""
+CIFRAR = """import json
+from pathlib import Path
+from fundacao.core import backup_cifrado, copia_cifrada, manutencao
+from fundacao.core.contracts import FundacaoError
+modo, raiz, destino, rotulo, chave, extra = (sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4],
+                                             Path(sys.argv[5]), Path(sys.argv[6]))
+try:
+    if modo == "converter":
+        res = backup_cifrado.cifrar_copia(extra, destino, chave, label=rotulo, livro=raiz / "state" / "copias.jsonl")
+    else:
+        res = copia_cifrada.criar_cifrada(raiz, destino, rotulo, chave, preparo_local=extra)
+    ver = backup_cifrado.verificar_cifrada(destino, sha256_manifesto=res["sha256_manifesto"],
+                                           destinatario_esperado=res["destinatario"]["principal"])
+    if not ver["ok"]:
+        raise FundacaoError("a cópia cifrada não passou na conferência sem senha")
+    manutencao.registrar_copia(raiz, rotulo=rotulo, criada_em=res["created_at"], destino=str(destino), cifrada=True)
+except Exception as exc:
+    print(json.dumps({"erro": {"tipo": type(exc).__name__, "mensagem": str(exc)[:600]}}))
+    sys.exit(1)
+print(json.dumps({"sha256_manifesto": res["sha256_manifesto"], "sha256_manifesto_interno": res["sha256_manifesto_interno"],
+                  "destinatario": res["destinatario"]["principal"], "partes": len(res["partes"]),
+                  "arquivos": len(res["files"]) if "files" in res else res["arquivos"], "created_at": res["created_at"]}))
+"""
 AREAS_DE_CODIGO = conferido.AREAS_DE_CODIGO  # fundacao/, templates/, tests/
 RETIRADAS = "tests/testes_retirados.json"  # no kit novo: ID do teste retirado de propósito -> versão e motivo
 NAO_LIBERADA = Path("state") / "restauracao-nao-liberada.json"  # marca do kit (backup.MARCA_NAO_LIBERADA)
@@ -700,8 +745,36 @@ def _codigo_conferido(raiz: Path, conferidos: dict, destino: Path) -> Path:
     return destino
 
 
+def decisao_da_cifra(raiz: Path, sem_cifra: str | None = None) -> dict:
+    """Se as cópias saem cifradas: {"modo": "cifrada" | "claro", "chave", "preparo_base", "sem_cifra"}, decidido pelo kit
+    da skill (a chave pública na âncora protegida, core/politica_cifra.py). Chave instalada e não protegida recusa (sem
+    cópia nenhuma, nem em claro). Raiz na pasta temporária (os testes) fica em claro, como o WSL em `sem_wsl`."""
+    if em_pasta_temporaria(raiz):
+        return {"modo": "claro", "motivo": "raiz de ensaio na pasta temporária"}
+    code, dados, erro = rodar(conferido.python_isolado(KIT, DECIDIR, sem_cifra or ""), cwd=raiz, timeout=300)
+    if isinstance(dados, dict) and dados.get("recusa"):
+        raise Parada("checar", str(dados["recusa"]) + "; nada foi alterado")
+    if code != 0 or not isinstance(dados, dict) or dados.get("modo") not in ("cifrada", "claro"):
+        raise Parada("checar", "não foi possível decidir se as cópias saem cifradas; nada foi alterado", erro=erro,
+                     saida=dados)
+    return dados
+
+
+def _kit_cifra(raiz: Path, modo: str, destino: Path, rotulo: str, cifra: dict, extra: Path, prazo: int) -> dict:
+    """Roda o programa CIFRAR do kit da skill: `converter` (cifra a cópia em claro `extra`) ou `criar` (cópia cifrada da
+    raiz com o preparo local `extra`). Devolve o resumo da cópia cifrada, já conferida sem senha."""
+    code, dados, erro = rodar(conferido.python_isolado(KIT, CIFRAR, modo, raiz, destino, rotulo, cifra["chave"], extra),
+                              cwd=raiz, timeout=prazo)
+    if code != 0 or not isinstance(dados, dict) or "erro" in dados:
+        raise Parada("backup", "a cópia cifrada " + rotulo + " falhou (nenhuma cópia cifrada foi promovida)",
+                     erro=(dados or {}).get("erro") if isinstance(dados, dict) else erro, stderr=erro)
+    return {"pasta": str(destino), "rotulo": rotulo, "sha256_manifesto": dados["sha256_manifesto"], "ancora_pelo_kit": True,
+            "arquivos": dados["arquivos"], "cifrada": True, "sha256_manifesto_interno": dados["sha256_manifesto_interno"],
+            "destinatario": dados["destinatario"], "partes": dados["partes"]}
+
+
 def _backup(codigo: Path, raiz: Path, destino: Path, rotulo: str, prazo: int = TEMPO,
-            tentar_de_novo: bool = False) -> dict:
+            tentar_de_novo: bool = False, sem_cifra: str | None = None) -> dict:
     """`backup criar` + `backup verificar` com o código de `codigo` (cópia conferida do código da raiz ANTES; o kit da
     skill DEPOIS); a âncora vem do kit ou é calculada aqui. Com `tentar_de_novo` (a cópia ANTES, feita pelo código da
     raiz, que pode não repetir a renomeação final), a falha na promoção conta a sobra do preparo, confere que o destino
@@ -709,7 +782,7 @@ def _backup(codigo: Path, raiz: Path, destino: Path, rotulo: str, prazo: int = T
     tentativas = []
     while True:
         code, dados, erro = fundacao(codigo, raiz, "backup", "criar", "--destino", str(destino), "--rotulo", rotulo,
-                                     prazo=prazo)
+                                     *(["--sem-cifra", sem_cifra] if sem_cifra else []), prazo=prazo)
         tentativas.append({"rotulo": rotulo, "destino": str(destino), "codigo": code})
         if code == 0 and isinstance(dados, dict):
             break
@@ -826,7 +899,7 @@ def _dentro_da_raiz(caminho: Path, raiz: Path) -> bool:
     return False
 
 
-def _base_do_ensaio(raiz: Path, backups: Path, pasta: Path | None) -> Path:
+def _base_do_ensaio(raiz: Path, backups: Path, pasta: Path | None, cifra: dict | None = None) -> Path:
     """Onde a cópia de ensaio nasce (uma pasta nova dentro dela): `--pasta-ensaio` ou, por padrão, a pasta das cópias
     (`--backups`), no disco das cópias. Dentro da raiz, recusa: a cópia da fundação cairia nela mesma. A pasta das
     cópias também, com ou sem --pasta-ensaio (revisão de segurança da 1.7.10, KIT-F7, correções da revisão 1): a cópia
@@ -836,7 +909,17 @@ def _base_do_ensaio(raiz: Path, backups: Path, pasta: Path | None) -> Path:
         raise Parada("checar", "a pasta das cópias (--backups: " + str(backups) + ") fica dentro da raiz da fundação: "
                      "use uma pasta fora dela, que só o titular altera (de preferência em outro disco); nada foi "
                      "alterado")
-    base = Path(os.path.abspath(pasta if pasta is not None else backups))
+    cifrada = bool(cifra) and cifra.get("modo") == "cifrada"
+    if cifrada:  # 1.7.11: o preparo local e o ensaio ficam no disco local, nunca no disco das cópias
+        local = Path(os.path.abspath(cifra["preparo_base"]))
+        if _dentro_da_raiz(local, raiz) or _dentro_da_raiz(local, backups) or _dentro_da_raiz(backups, local):
+            raise Parada("checar", "o preparo local das cópias cifradas (" + str(local) + ") fica dentro da raiz ou "
+                         "dentro/sobre a pasta das cópias: ele tem de ser local e separado; nada foi alterado")
+    base = Path(os.path.abspath(pasta if pasta is not None else (cifra["preparo_base"] if cifrada else backups)))
+    if cifrada and _dentro_da_raiz(base, backups):
+        raise Parada("checar", "com a chave da cópia instalada o ensaio não nasce no disco das cópias (" + str(base) + "): "
+                     "a raiz restaurada ficaria em claro nele; use o padrão (disco local) ou --sem-cifra \"<motivo>\"; "
+                     "nada foi alterado")
     if _dentro_da_raiz(base, raiz):
         raise Parada("checar", "a pasta do ensaio (" + str(base) + ") fica dentro da raiz da fundação: use a pasta das "
                      "cópias (--backups) ou outra fora dela; nada foi alterado")
@@ -1016,14 +1099,15 @@ def _so_instrucoes(raiz: Path, pre: dict, carimbo: str) -> dict:
 
 
 def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False, pasta_ensaio: Path | None = None,
-            prazo: int | None = None) -> dict:
+            prazo: int | None = None, sem_cifra: str | None = None, cifra: dict | None = None) -> dict:
     raiz, backups = Path(raiz).resolve(), Path(backups).resolve()
     wsl = sem_wsl("checar", raiz)  # antes de começar: o `checar` já abre o banco (somente leitura)
     carimbo = agora()
     pre, conferidos = _inspecionar(raiz)
     if not pre["pode_aplicar"]:
         raise Parada("checar", "; ".join(pre["motivos"]), checar=pre)
-    base_do_ensaio = _base_do_ensaio(raiz, backups, pasta_ensaio)
+    cifra = cifra or ({"modo": "claro"} if pre["nada_a_fazer"] else decisao_da_cifra(raiz, sem_cifra))
+    base_do_ensaio = _base_do_ensaio(raiz, backups, pasta_ensaio, cifra)
     estimativa = None if pre["nada_a_fazer"] else estimar(raiz)
     if estimativa:
         prazo = prazo or max(TEMPO, 3 * max(estimativa["segundos"].values()))
@@ -1035,7 +1119,7 @@ def aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool = False,
         if pre["nada_a_fazer"]:
             res = _so_instrucoes(raiz, pre, carimbo)
         else:
-            extras = {"wsl": wsl, "trava": trava, "estimativa": estimativa, "prazo_por_etapa": prazo}
+            extras = {"wsl": wsl, "trava": trava, "estimativa": estimativa, "prazo_por_etapa": prazo, "cifra": cifra}
             res = _aplicar(raiz, backups, padrao, manter_ensaio, base_do_ensaio, prazo, pre, conferidos, carimbo,
                            extras)
     except Parada as p:
@@ -1057,13 +1141,22 @@ def _aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool, base_d
                 "kit_antes": antiga, "kit_da_skill": nova, "identidade": pre["identidade"],
                 "mudancas": pre["mudancas"], "user_version_antes": pre["user_version"], **extras}
     limpeza = registro["limpeza"] = {}
-    codigo = Path(tempfile.mkdtemp(prefix="codigo-conferido-"))
+    codigo, cifra = Path(tempfile.mkdtemp(prefix="codigo-conferido-")), extras["cifra"]
+    cifrada, local = cifra["modo"] == "cifrada", None
     try:
         antes = _codigo_conferido(raiz, conferidos, codigo / "antes")  # o código ANTES roda só desta cópia
         rotulo = "antes-kit-" + nova + "-" + carimbo
-        registro["antes"] = _backup(antes, raiz, backups / rotulo, rotulo, prazo, tentar_de_novo=True)
-        registro["ensaio"] = _ensaio(raiz, antes, conferidos, registro["antes"], padrao, manter_ensaio,
-                                     base_do_ensaio, prazo, limpeza)
+        if cifrada:  # em claro no preparo local (o código da raiz), cifrada para o disco das cópias (o kit da skill)
+            flag = MOTIVO_CLARO_LOCAL if (antes / "fundacao" / "core" / "politica_cifra.py").is_file() else None
+            local = _backup(antes, raiz, Path(cifra["preparo_base"]) / rotulo, rotulo, prazo, tentar_de_novo=True,
+                            sem_cifra=flag)
+            registro["antes"] = {**_kit_cifra(raiz, "converter", backups / local["rotulo"], local["rotulo"], cifra,
+                                              Path(local["pasta"]), prazo), "copia_local": local}
+        else:
+            registro["antes"] = local = _backup(antes, raiz, backups / rotulo, rotulo, prazo, tentar_de_novo=True)
+        registro["ensaio"] = _ensaio(raiz, antes, conferidos, local, padrao, manter_ensaio, base_do_ensaio, prazo, limpeza)
+        if cifrada:  # a cópia em claro do preparo local sai já: o que fica no disco das cópias é só a cifrada
+            limpeza["preparo_local"] = limpar(Path(local["pasta"]))
         _conferir_antes_da_promocao(raiz)
         promo = _promover(raiz, registro)  # instalador e `__pycache__` (R177-ATU-02); interrompida: R177C-B-04
         promo.update(_init_e_cadeia(raiz, "promocao"))
@@ -1071,8 +1164,14 @@ def _aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool, base_d
         registro["instrucoes_raiz"] = _instrucoes_raiz(raiz, carimbo)  # antes da cópia DEPOIS, que as leva
         registro["politica_de_backup"] = politica_de_backup(raiz)  # idem: a cópia DEPOIS já leva as áreas novas
         rotulo = "depois-kit-" + nova + "-" + carimbo
-        registro["depois"] = _backup(KIT, raiz, backups / rotulo, rotulo, prazo)
+        if cifrada:
+            registro["depois"] = _kit_cifra(raiz, "criar", backups / rotulo, rotulo, cifra,
+                                            Path(cifra["preparo_base"]) / rotulo, prazo)
+        else:
+            registro["depois"] = _backup(KIT, raiz, backups / rotulo, rotulo, prazo)
     except Parada as p:
+        if cifrada and local and "preparo_local" not in limpeza:  # a cópia em claro do preparo local não fica
+            limpeza["preparo_local"] = limpar(Path(local["pasta"]))
         limpeza["codigo"] = limpar(codigo)  # antes do registro: a contagem vai junto
         registro["falha"] = {"etapa": p.etapa, "motivo": p.motivo, **p.detalhes}
         nome = "falha-atualizacao-kit-" + nova + "-" + carimbo + ".json"
@@ -1097,8 +1196,10 @@ def _aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool, base_d
         raise Parada("registro", "a fundação foi atualizada, mas " + p.motivo + "; sem registro não há `desfazer`: a "
                      "volta é a cópia ANTES numa pasta nova (C9)", copia_antes=registro["antes"]["pasta"])
     host = _inventario_host(raiz)
-    ensaio = registro["ensaio"]
+    ensaio, cifrada = registro["ensaio"], cifra["modo"] == "cifrada"
     resumo = ["Fundação atualizada do kit " + str(antiga) + " para " + str(registro["kit_depois"]) + ".",
+              *(["As cópias ANTES e DEPOIS estão CIFRADAS para a chave do titular (só ele as abre, com a senha); "
+                 "a cópia em claro do preparo local foi apagada."] if cifrada else []),
               "Cópia de segurança ANTES: " + registro["antes"]["pasta"] + " (âncora "
               + registro["antes"]["sha256_manifesto"][:12] + "...).",
               "Ensaio numa cópia restaurada: " + str(ensaio["suite_na_copia_atualizada"]["total"])
@@ -1116,6 +1217,8 @@ def _aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool, base_d
         resumo.append("A cópia ANTES falhou na promoção e foi refeita com o rótulo " + registro["antes"]["rotulo"]
                       + "; a sobra do preparo da primeira tentativa (contada no registro) tem os dados da fundação: "
                       "apague-a pela Lixeira, com o OK do titular.")
+    if cifra.get("sem_cifra"):
+        resumo.append("Atenção: as cópias saíram em CLARO por --sem-cifra (motivo: " + cifra["sem_cifra"] + ").")
     resumo += _resumo_limpeza(registro["limpeza"])
     resumo += _resumo_instrucoes(raiz, registro["instrucoes_raiz"]) + _resumo_politica(registro["politica_de_backup"])
     resumo += _resumo_host(raiz, host)
@@ -1127,7 +1230,8 @@ def _aplicar(raiz: Path, backups: Path, padrao: str, manter_ensaio: bool, base_d
 def _resumo_limpeza(limpeza: dict) -> list:
     """Sobra do ensaio ou do código conferido, que antes passava em silêncio: tem os dados da fundação."""
     linhas = []
-    for nome, rotulo in (("ensaio", "da cópia de ensaio"), ("codigo", "da cópia conferida do código")):
+    for nome, rotulo in (("ensaio", "da cópia de ensaio"), ("codigo", "da cópia conferida do código"),
+                         ("preparo_local", "da cópia em claro do preparo local")):
         res = limpeza.get(nome) or {}
         if res.get("mantida"):
             linhas.append("A cópia de ensaio ficou em " + res["mantida"] + " (--manter-ensaio): ela tem os dados da "
@@ -1154,8 +1258,10 @@ def main(argv: list | None = None) -> int:
     a.add_argument("--manter-ensaio", action="store_true",
                    help="não apaga a cópia de ensaio (ela tem os dados da fundação; apague-a depois de examinar)")
     a.add_argument("--pasta-ensaio", type=Path, default=None,
-                   help="onde nasce a pasta nova do ensaio (padrão: a de --backups, no disco das cópias; nunca dentro "
-                        "da raiz)")
+                   help="onde nasce a pasta nova do ensaio (padrão: a de --backups; com a chave da cópia instalada, o "
+                        "preparo local, no disco interno, e nunca o disco das cópias; nunca dentro da raiz)")
+    a.add_argument("--sem-cifra", metavar="MOTIVO", default=None,
+                   help="grava as cópias em claro mesmo com a chave da cópia instalada (o motivo vai no registro)")
     a.add_argument("--prazo", type=int, default=None,
                    help="segundos por subprocesso longo (cópia, verificação, restauração e suíte); padrão: o maior "
                         "entre 3600 e três vezes a maior etapa estimada")
@@ -1173,7 +1279,7 @@ def main(argv: list | None = None) -> int:
             if args.prazo is not None and args.prazo < 60:
                 ap.error("--prazo deve ter pelo menos 60 segundos")
             res = aplicar(args.raiz, args.backups, args.padrao_testes, args.manter_ensaio, args.pasta_ensaio,
-                          args.prazo)
+                          args.prazo, args.sem_cifra)
         else:
             res = desfazer(args.registro, args.aceitar_banco_migrado)
     except Parada as p:

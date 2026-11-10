@@ -308,7 +308,7 @@ def codigo_seguro(raiz: Path) -> bool:
     politica = raiz / "registry/route_policy.json"
     if estado_caminho(politica) == "presente":
         try:
-            local = json.loads(RETOMADA.ler_contido(politica, politica.parent, TETO_ENTRADA))
+            local = json.loads(RETOMADA.ler_contido(politica, Path(os.path.realpath(politica.parent)), TETO_ENTRADA))
             distribuida = json.loads((KIT / "registry/route_policy.json").read_text(encoding="utf-8"))
             if local["task_routes"]["sigiloso"] != distribuida["task_routes"]["sigiloso"]:
                 return False
@@ -362,7 +362,9 @@ def host_seguro(raiz: Path, perfil: Path, avisos: list | None = None) -> bool:
         if estado_caminho(arquivo) == "ausente":
             continue
         try:
-            bruto = RETOMADA.ler_contido(arquivo, arquivo.parent, TETO_ENTRADA)
+            # A pasta real, como nas outras leituras: o ler_contido compara com o realpath do arquivo, e um caminho
+            # com nome curto 8.3 (RUNNER~1 no runner do Windows) ou com ligação na pasta de cima não coincidiria.
+            bruto = RETOMADA.ler_contido(arquivo, Path(os.path.realpath(arquivo.parent)), TETO_ENTRADA)
             dados = json.loads(bruto)
         except (OSError, ValueError, RecursionError):
             return False

@@ -102,3 +102,53 @@ SOFTWARE.
   delegação de `references/capacidades/02-agentes-subagentes.md`).
 - Propostas aproveitadas: 1 (inventário dos plugins do host: hooks, MCP e skills de cada plugin), 3 (memória
   automática do host), 4 (avaliações repetidas: pass@k e pass^k) e 5 (passagem do trabalho delegado)
+
+## ponytail
+
+- Projeto: github.com/DietrichGebert/ponytail
+- Commit analisado: `96608e0` (29/10/2026, v5.3.3); análise de 08/11/2026, implementada na 1.7.11
+- Licença: MIT (aviso de copyright e texto abaixo)
+- Nomes no texto: ponytail
+- Aproveitamento: trecho
+- Trechos, traduzidos e adaptados: `references/codigo-enxuto.md` traz a regra de `skills/ponytail/SKILL.md` (§1, com
+  três linhas da fundação) e o formato da revisão, da auditoria e do livro de dívidas; as quatro skills de
+  `assets/plugins/codigo-enxuto/skills/` (`enxuto`, `enxuto-revisao`, `enxuto-auditoria` e `enxuto-dividas`) vêm de
+  `ponytail`, `ponytail-review`, `ponytail-audit` e `ponytail-debt`; o texto fixo de `assets/hooks/regras_codigo.py` é
+  o do §1 da referência. O plugin `codigo-enxuto` é instalado sozinho e leva da raiz só o `LICENSE`, que traz os dois
+  avisos (o da skill e o do ponytail).
+- Ideias, sem trecho: o mapa do código (`scripts/mapa_codigo.py`), a conferência de chamadores em aberto
+  (`scripts/chamadores_abertos.py`) e o método de medição dos benchmarks (§6 da referência), rotulados "ponytail, P4",
+  "ponytail, P5" e "ponytail, P8". O código da skill é Python próprio; o do ponytail é JavaScript e TypeScript. Ficaram
+  de fora, por conflito com as regras da fundação: os níveis lite e ultra, o estado gravado no perfil, a faixa de custo
+  com envio por webhook e a leitura das transcrições de todos os projetos, a linha de status, o `ponytail-gain` (números
+  alheios) e o código dos benchmarks.
+- Propostas aproveitadas: P1 (referência de código enxuto), P2 (plugin só em Markdown), P3 (hook de texto fixo), P4
+  (mapa do código), P5 (chamadores em aberto), P6 (este registro), P7 (ligação no host) e P8 (rodada comparável)
+- Atribuição: regra, revisão, auditoria e dívidas traduzidas e adaptadas do ponytail (github.com/DietrichGebert/ponytail,
+  commit 96608e0, MIT).
+
+Aviso de copyright e licença, como estão no arquivo LICENSE do ponytail no commit analisado:
+
+```text
+MIT License
+
+Copyright (c) 2026 DietrichGebert
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

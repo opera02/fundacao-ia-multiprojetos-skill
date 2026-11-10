@@ -32,10 +32,20 @@ AVISO_DO_CANARIO = ("o canário mede a carga aninhada numa subpasta (aninhado/.c
                     "não esta pasta")
 
 
+_SONDAS: dict = {}
+
+
 def relatorio(forma="ext4", fs="ext4", **mudancas) -> dict:
-    """Relatório de ensaio montado à mão (as peças puras não medem nada)."""
+    """Relatório de ensaio montado à mão (as peças puras não medem nada), completo como o do ensaio real: revisão de
+    segurança da 1.7.10, CAN-1, o portão recalcula a conclusão pelos itens (as sondas de SONDAS_DO_CANARIO, cada uma
+    de comando com `passou`), o perfil gerado, o sandbox ligado e o temp do lançador."""
+    if not _SONDAS:
+        _SONDAS.update(carregar_preparo().SONDAS_DO_CANARIO)
+    itens = [{"id": ident, "classe": classe, "veredito": "nao_medido" if classe == "informativo" else "passou"}
+             for ident, classe in _SONDAS.items()]
     base = {"schema_version": "fundacao.ensaio_isolamento/1", "data": "2026-10-31T12:00:00Z", "simulado": False,
             "forma": forma, "sistema_de_arquivos": fs, "claude": {"versao": "2.1.302", "sha256": SHA_CLAUDE},
+            "sandbox_ligado": True, "perfil": {"gerado": True}, "temp": {"do_lancador": True}, "itens": itens,
             "conclusao": {"forma": forma, "sistema_de_arquivos": fs, "confina_comandos": True, "motivo": "ensaio"}}
     base.update(mudancas)
     return base
@@ -290,10 +300,15 @@ class PortaoNoPreparo(unittest.TestCase):
 
     def test_instalar_canario_recusa_o_que_nao_e_relatorio_real_e_nao_grava(self):
         """Só o que não é relatório real do ensaio é recusado. Desde a 1.7.10.1 (pedido do titular de 02/11/2026,
-        DECISAO-007), o relatório real que não prova o confinamento vai como revogação: ver o teste abaixo."""
+        DECISAO-007), o relatório real que não prova o confinamento vai como revogação: ver o teste abaixo. Revisão de
+        segurança da 1.7.10, CAN-2: o relatório REAL com false ou null também vai como revogação
+        (test_seguranca_1710_canario.py); a conclusão sem o sistema de arquivos não é de um relatório real."""
         casos = {"simulação": {"simulado": True},
                  "outro esquema": {"schema_version": "fundacao.ensaio_isolamento_simulado/1"},
-                 "sem a conclusão": {"conclusao": {"forma": None}}}
+                 "sem a conclusão": {"conclusao": {"forma": None}},
+                 "comandos não confinados, conclusão sem o sistema de arquivos": {
+                     "conclusao": {"forma": "ext4", "confina_comandos": False,
+                                   "motivo": "leitura_outro_projeto falhou"}}}
         for nome, mudancas in casos.items():
             with self.subTest(nome):
                 r = instalar_canario(self.skill, self.base, relatorio_de_canario(self.m, self.raiz, self.claude,
@@ -310,9 +325,14 @@ class PortaoNoPreparo(unittest.TestCase):
         self.assertTrue(self.instalar()["canario"]["aprovado"])
         for confina in (False, None):
             with self.subTest(confina=confina):
-                forma = relatorio_de_canario(self.m, self.raiz, self.claude)["forma"]
-                ruim = relatorio_de_canario(self.m, self.raiz, self.claude, conclusao={
-                    "forma": forma, "confina_comandos": confina, "motivo": "leitura_outro_projeto falhou"},
+                bom = relatorio_de_canario(self.m, self.raiz, self.claude)
+                # formato real (1.7.11): a conclusão traz a forma e o sistema de arquivos medidos, e o item de comando
+                # que não passou (falhou, ou não medido) explica o false ou o null
+                itens = [{**i, "veredito": "falhou" if confina is False else "nao_medido"}
+                         if i["id"] == "leitura_outro_projeto" else i for i in bom["itens"]]
+                ruim = relatorio_de_canario(self.m, self.raiz, self.claude, itens=itens, conclusao={
+                    "forma": bom["forma"], "sistema_de_arquivos": bom["sistema_de_arquivos"],
+                    "confina_comandos": confina, "motivo": "leitura_outro_projeto falhou"},
                     data=f"2026-11-02T00:00:0{int(confina is None)}Z")
                 r = instalar_canario(self.skill, self.base, ruim)
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -366,6 +386,273 @@ class PortaoNoPreparo(unittest.TestCase):
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
                 self.assertEqual(json.loads(saida.read_text(encoding="utf-8"))["sandbox"]["network"]["allowedDomains"],
                                  ["pypi.org"] if aprovado else [])
+
+
+# ------------------------------------------------------------------------------- canário da jaula (1.7.11, lote L4)
+# `instalar-canario-jaula` (titular, com sudo): confere as respostas do modo `canario` da entrada fixa, UMA por modo (e por
+# variante da janela), e grava o `canario-instalado.json` que o portão da entrada fixa lê (DESENHO-JAULA §3.4). Sem aceite
+# de risco no lugar: o modo que reprova não abre. Roda em qualquer sistema (pasta de ensaio, sem root).
+import subprocess as _subprocess  # noqa: E402
+
+from apoio import ENV as _ENV, SKILL as _SKILL  # noqa: E402
+from test_host_projeto_area import guardar_resposta_do_canario  # noqa: E402
+
+COMO_E_VARIANTE = {"navegador": ("navegador", None), "janela-login": ("navegador-janela", "login"),
+                   "janela-captcha": ("navegador-janela", "captcha"), "codex-exec": ("codex-exec", None),
+                   "codex-titular": ("codex-titular", None)}
+
+
+class CanarioDaJaula(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.m = carregar_preparo()
+        cls.pj = cls.m.preparo_jaula()
+        cls.j = cls.pj.jaula()
+
+    def setUp(self):
+        self.base = Path(tempfile.mkdtemp(prefix="canario-jaula-teste-")).resolve()
+        self.caminhos = self.pj.caminhos_de_ensaio(self.base / "jaula-ensaio", self.base / "area")
+        programas = Path(self.caminhos.programas)
+        programas.mkdir(parents=True)
+        (programas / "jaula-entrar").write_bytes(b"entrada fixa de ensaio\n")
+        (programas / "proxy_lista.py").write_bytes(b"proxy de ensaio\n")
+        Path(self.caminhos.bwrap).write_bytes(b"bwrap de ensaio\n")
+        self.cfg = self.j.Config(programas=self.caminhos.programas, estado=self.caminhos.estado, etc=self.caminhos.etc,
+                                 bwrap=self.caminhos.bwrap, usuario=None)
+        self.atuais = self.j.hashes_da_instalacao(self.cfg)
+        self.destino = Path(self.caminhos.etc) / "jaula" / "canario-instalado.json"
+        self.numero = 0
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def resposta(self, quem="navegador", reprovar=(), tirar=(), hashes="atuais", extras=(), ok=None, **mudancas) -> dict:
+        """A resposta do modo canario como a entrada fixa a devolve (esquema fundacao.resposta_jaula/1)."""
+        como, variante = COMO_E_VARIANTE[quem]
+        itens = [{"id": i, "aprovado": i not in reprovar, "motivo": "ensaio", "informativo": False}
+                 for i in self.pj.ids_do_canario(como) if i not in tirar] + [dict(e) for e in extras]
+        rel = {"schema_version": self.j.ESQUEMA_RELATORIO, "modo": "canario", "como": como,
+               "gerado_em": "2026-11-08T10:00:00-0300", "itens": itens, "aprovado": not reprovar}
+        self.numero += 1   # um id por resposta: a jaula guarda UMA copia por id (F3)
+        resp = {"schema_version": self.j.ESQUEMA_RESPOSTA, "modo": "canario", "id": f"canario-ensaio-{self.numero}",
+                "projeto": "caso-real", "ok": (not reprovar) if ok is None else ok, "como": como, "relatorio": rel,
+                "hashes": self.atuais if hashes == "atuais" else hashes}
+        if variante:
+            resp["variante"] = variante
+        resp.update(mudancas)
+        return resp
+
+    def arquivo(self, resp, nome="resposta.json", guardar=True) -> Path:
+        """O arquivo que o titular guarda (a saida da entrada fixa). `guardar`: a jaula tambem guardou a mesma resposta no seu
+        estado (F3); sem ele, o arquivo e de origem desconhecida (forjado ou editado)."""
+        caminho = self.base / nome
+        dados = json.dumps(resp).encode("utf-8")
+        caminho.write_bytes(dados)
+        if guardar and isinstance(resp, dict) and "projeto" in resp and "id" in resp:
+            guardar_resposta_do_canario(self.caminhos, dados)
+        return caminho
+
+    def instalar(self, *respostas, **kw):
+        arquivos = [self.arquivo(r, f"resposta-{i}.json") for i, r in enumerate(respostas)]
+        return self.pj.instalar_canario_jaula(arquivos, self.caminhos, **kw)
+
+    def instalado(self) -> dict:
+        return json.loads(self.destino.read_text(encoding="utf-8"))
+
+    def test_resposta_que_aprova_e_instalada_no_formato_que_o_portao_le(self):
+        res = self.instalar(self.resposta("navegador"))
+        self.assertEqual((res["acao"], res["aprovados"]), ("criar", ["navegador"]))
+        rel = self.instalado()
+        self.assertEqual(rel["schema_version"], self.j.ESQUEMA_RELATORIO_INSTALADO)
+        self.assertEqual(rel["hashes"], self.atuais)
+        self.assertEqual(rel["modos"]["navegador"]["aprovado"], True)
+        self.assertEqual(rel["modos"]["navegador"]["itens"], len(self.pj.ids_do_canario("navegador")))
+        # o portão da entrada fixa (jaula.conferir_portao) lê exatamente este arquivo
+        ficha = {"navegador": {"dominios": ["esaj.exemplo.org"], "modos": ["sessao", "login"]}}
+        self.j.conferir_portao(ficha, "navegador", rel, self.atuais)
+        with self.assertRaises(self.j.Recusa):
+            self.j.conferir_portao(ficha, "codex-exec", rel, self.atuais)  # outro modo: não aprovado
+        with self.assertRaises(self.j.Recusa):
+            self.j.conferir_portao(ficha, "navegador-janela", rel, self.atuais, variante="login")
+
+    def test_cada_modo_e_variante_tem_a_sua_chave_e_as_respostas_se_somam(self):
+        self.instalar(self.resposta("navegador"))
+        res = self.instalar(self.resposta("janela-login"), self.resposta("codex-exec"))
+        self.assertEqual(res["acao"], "atualizar")
+        self.assertEqual(sorted(self.instalado()["modos"]), ["codex-exec", "navegador", "navegador-janela:login"])
+        self.instalar(self.resposta("janela-captcha"), self.resposta("codex-titular"))
+        self.assertEqual(sorted(self.instalado()["modos"]), ["codex-exec", "codex-titular", "navegador",
+                                                              "navegador-janela:captcha", "navegador-janela:login"])
+        self.j.conferir_portao({}, "navegador-janela", self.instalado(), self.atuais, variante="captcha")
+
+    def test_resposta_que_reprova_revoga_o_modo_e_nao_abre(self):
+        self.instalar(self.resposta("navegador"))
+        res = self.instalar(self.resposta("navegador", reprovar=("proxy_sni",)))
+        self.assertEqual(res["aprovados"], [])
+        self.assertEqual(res["modos"][0]["reprovados"], ["proxy_sni"])
+        self.assertEqual(self.instalado()["modos"]["navegador"]["aprovado"], False)
+        with self.assertRaises(self.j.Recusa) as ctx:
+            self.j.conferir_portao({}, "navegador", self.instalado(), self.atuais)
+        self.assertIn("não aprovou", str(ctx.exception))
+
+    def test_o_ok_da_resposta_nao_vale_a_conclusao_e_recalculada_pelos_itens(self):
+        self.instalar(self.resposta("navegador", reprovar=("escrita", "proc"), ok=True, aprovado=True))
+        self.assertEqual(self.instalado()["modos"]["navegador"]["aprovado"], False)
+        self.assertEqual(self.instalado()["modos"]["navegador"]["reprovados"], ["escrita", "proc"])
+        # item que veio sem o campo aprovado, ou com texto no lugar de verdadeiro, também reprova
+        resp = self.resposta("navegador")
+        resp["relatorio"]["itens"][0].pop("aprovado")
+        resp["relatorio"]["itens"][1]["aprovado"] = "true"
+        self.instalar(resp)
+        self.assertEqual(self.instalado()["modos"]["navegador"]["aprovado"], False)
+
+    def test_f3_relatorio_forjado_numa_pasta_que_a_sessao_grava_nao_abre_modo_nenhum(self):
+        """Prova negativa da F3: o relatorio vale pelo que a JAULA guardou (estado dela, que a sessao nao alcanca), nao pela
+        forma do arquivo. Aprovado e bem formado, mas sem a copia da jaula (ou diferente dela): recusado, nada instalado."""
+        forjado = self.resposta("navegador")                       # aprovado, completo, com os hashes certos
+        with self.assertRaises(self.m.EntradaInvalida) as ctx:
+            self.pj.instalar_canario_jaula([self.arquivo(forjado, "forjado.json", guardar=False)], self.caminhos)
+        self.assertIn("não guardou a resposta", str(ctx.exception))
+        self.assertFalse(self.destino.exists())
+        # a jaula guardou o canario que REPROVOU; a sessao regrava o arquivo do titular com os mesmos itens e aprovado: true
+        real = self.resposta("navegador", reprovar=("userns",))
+        guardada = self.arquivo(real, "real.json").read_bytes()
+        adulterado = json.loads(guardada)
+        adulterado["relatorio"]["itens"] = [{**i, "aprovado": True} for i in adulterado["relatorio"]["itens"]]
+        adulterado["relatorio"]["aprovado"] = adulterado["ok"] = True
+        (self.base / "adulterado.json").write_text(json.dumps(adulterado), encoding="utf-8")
+        with self.assertRaises(self.m.EntradaInvalida) as ctx:
+            self.pj.instalar_canario_jaula([self.base / "adulterado.json"], self.caminhos)
+        self.assertIn("não é o que a jaula guardou", str(ctx.exception))
+        self.assertFalse(self.destino.exists())
+        # ate um espaco a mais no arquivo do titular o torna outro arquivo
+        (self.base / "espaco.json").write_bytes(guardada + b" ")
+        with self.assertRaises(self.m.EntradaInvalida):
+            self.pj.instalar_canario_jaula([self.base / "espaco.json"], self.caminhos)
+        self.assertFalse(self.destino.exists())
+        # o arquivo igual ao que a jaula guardou vale, e reprovado continua reprovado (a copia da jaula e o que conta)
+        res = self.pj.instalar_canario_jaula([self.base / "real.json"], self.caminhos)
+        self.assertEqual((res["aprovados"], res["modos"][0]["reprovados"]), ([], ["userns"]))
+        # projeto e id do arquivo sao dados nao confiaveis: nada de caminho, e id de outro projeto nao serve
+        for nome, mudanca in {"projeto com caminho": {"projeto": "../caso-real"}, "projeto com barra": {"projeto": "a/b"},
+                              "id com caminho": {"id": "../../etc/x1234567"}, "id curto": {"id": "c-1"},
+                              "sem projeto": {"projeto": None}, "outro projeto": {"projeto": "outro-caso"}}.items():
+            resp = {**self.resposta("navegador"), **mudanca}
+            resp = {k: v for k, v in resp.items() if v is not None}
+            with self.subTest(nome), self.assertRaises(self.m.EntradaInvalida):
+                self.pj.instalar_canario_jaula([self.arquivo(resp, "mudado.json", guardar=False)], self.caminhos)
+
+    def test_o_codex_tem_um_item_a_mais_e_o_navegador_nao(self):
+        self.assertIn("segredo_da_jaula_invisivel", self.pj.ids_do_canario("codex-exec"))
+        self.assertNotIn("segredo_da_jaula_invisivel", self.pj.ids_do_canario("navegador"))
+        with self.assertRaises(self.m.EntradaInvalida):
+            self.instalar(self.resposta("codex-exec", tirar=("segredo_da_jaula_invisivel",)))
+        with self.assertRaises(self.m.EntradaInvalida):
+            self.instalar(self.resposta("navegador", extras=({"id": "segredo_da_jaula_invisivel", "aprovado": True},)))
+
+    def test_respostas_que_nao_sao_do_canario_desta_jaula_sao_recusadas(self):
+        casos = {
+            "item que falta": self.resposta(tirar=("proxy_ip",)),
+            "item repetido": self.resposta(extras=({"id": "proxy_ip", "aprovado": True},)),
+            "item desconhecido": self.resposta(extras=({"id": "vale_tudo", "aprovado": True},)),
+            "hashes de outra versão": self.resposta(hashes={**self.atuais, "proxy_lista.py": "e" * 64}),
+            "sem hashes": {k: v for k, v in self.resposta().items() if k != "hashes"},
+            "hashes a mais": self.resposta(hashes={**self.atuais, "extra": "f" * 64}),
+            "outro esquema": self.resposta(schema_version="outro/1"),
+            "modo que não é canario": self.resposta(modo="navegador"),
+            "relatório de outro esquema": {**self.resposta(), "relatorio": {**self.resposta()["relatorio"], "schema_version": "x/1"}},
+            "como diferente do relatório": self.resposta(como="codex-exec"),
+            "como desconhecido": self.resposta(como="shell"),
+            "janela sem variante": {k: v for k, v in self.resposta("janela-login").items() if k != "variante"},
+            "variante desconhecida": self.resposta("janela-login", variante="tudo"),
+            "variante no navegador comum": self.resposta("navegador", variante="login"),
+            "sem relatório": {k: v for k, v in self.resposta().items() if k != "relatorio"},
+            "itens que não são lista": {**self.resposta(), "relatorio": {**self.resposta()["relatorio"], "itens": "ok"}},
+        }
+        for nome, resp in casos.items():
+            with self.subTest(nome), self.assertRaises(self.m.EntradaInvalida):
+                self.instalar(resp)
+            self.assertFalse(self.destino.exists(), nome)
+        for bruto in (b"nao e json", b"[]", b'{"a": 1, "a": 2}', b"\xff"):
+            with self.subTest(bruto), self.assertRaises(self.m.EntradaInvalida):
+                self.pj.classificar_resposta_do_canario(bruto, self.atuais)
+
+    def test_a_jaula_que_mudou_depois_do_canario_descarta_os_modos_aprovados_antes(self):
+        self.instalar(self.resposta("navegador"), self.resposta("codex-exec"))
+        (Path(self.caminhos.programas) / "proxy_lista.py").write_bytes(b"proxy de outra versao\n")
+        self.atuais = self.j.hashes_da_instalacao(self.cfg)
+        self.instalar(self.resposta("janela-login"))
+        self.assertEqual(sorted(self.instalado()["modos"]), ["navegador-janela:login"])  # os de antes eram da outra versão
+        self.assertEqual(self.instalado()["hashes"], self.atuais)
+        with self.assertRaises(self.j.Recusa):
+            self.j.conferir_portao({}, "navegador", self.instalado(), self.atuais)
+
+    def test_relatorio_instalado_nao_vale_para_a_jaula_que_mudou_depois(self):
+        self.instalar(self.resposta("navegador"))
+        rel = self.instalado()
+        (Path(self.caminhos.programas) / "jaula-entrar").write_bytes(b"entrada fixa trocada\n")
+        novos = self.j.hashes_da_instalacao(self.cfg)
+        with self.assertRaises(self.j.Recusa) as ctx:
+            self.j.conferir_portao({}, "navegador", rel, novos)
+        self.assertIn("outra versão", str(ctx.exception))
+
+    def test_idempotente_simular_e_sem_root(self):
+        resp = self.resposta("navegador")   # a mesma resposta (o mesmo id e os mesmos bytes) as duas vezes
+        self.instalar(resp, hoje="2026-11-08")
+        antes = self.destino.read_bytes()
+        res = self.instalar(resp, hoje="2026-11-08")
+        self.assertEqual(res["acao"], "igual")
+        self.assertEqual(self.destino.read_bytes(), antes)
+        self.destino.unlink()
+        res = self.instalar(self.resposta("navegador"), simular=True)
+        self.assertEqual((res["acao"], res["simulacao"]), ("criar", True))
+        self.assertFalse(self.destino.exists())
+        reais = self.pj.Caminhos(**{**self.caminhos._asdict(), "ensaio": False})
+        with self.assertRaises(self.m.EntradaInvalida) as ctx:
+            self.pj.instalar_canario_jaula([self.arquivo(self.resposta(), "r.json")], reais)
+        self.assertIn("sudo", str(ctx.exception))
+        with self.assertRaises(self.m.EntradaInvalida):
+            self.pj.instalar_canario_jaula([], self.caminhos)
+
+    def test_jaula_nao_instalada_e_resposta_grande_demais_sao_recusadas(self):
+        arquivo = self.arquivo(self.resposta(), "r.json")
+        (Path(self.caminhos.programas) / "proxy_lista.py").unlink()
+        with self.assertRaises(self.m.EntradaInvalida) as ctx:
+            self.pj.instalar_canario_jaula([arquivo], self.caminhos)
+        self.assertIn("não está instalada", str(ctx.exception))
+        (Path(self.caminhos.programas) / "proxy_lista.py").write_bytes(b"proxy de ensaio\n")
+        grande = self.base / "grande.json"
+        grande.write_bytes(b" " * (1 << 20) + b"{}")
+        with self.assertRaises(self.m.EntradaInvalida):
+            self.pj.instalar_canario_jaula([grande], self.caminhos)
+        with self.assertRaises(self.m.EntradaInvalida):
+            self.pj.instalar_canario_jaula([self.base / "nao-existe.json"], self.caminhos)
+
+    def test_texto_do_resultado_diz_o_modo_o_veredito_e_o_proximo_passo(self):
+        res = self.instalar(self.resposta("navegador"), self.resposta("codex-exec", reprovar=("rede_direta",)))
+        texto = "\n".join(self.pj.texto_do_canario(res))
+        for trecho in ("[criar]", "modo navegador: APROVADO", "modo codex-exec: REPROVADO (rede_direta)",
+                       "aprovados no relatório instalado: navegador"):
+            self.assertIn(trecho, texto)
+        self.assertIn("preparar-wsl.sh", res["proximo_passo"])
+
+    def test_linha_de_comando_do_titular(self):
+        """`preparo_host.py instalar-canario-jaula` com a pasta de ensaio: o que o preparar-wsl.sh --canario-jaula roda."""
+        arquivos = [self.arquivo(self.resposta("navegador"), "a.json"), self.arquivo(self.resposta("codex-exec"), "b.json")]
+        base = [sys.executable, "-I", "-B", str(_SKILL / "assets" / "host" / "preparo_host.py"), "instalar-canario-jaula",
+                "--area-raiz", str(self.base / "area"), "--ensaio-base", str(self.base / "jaula-ensaio")]
+        r = _subprocess.run([*base, "--relatorio", str(arquivos[0]), "--relatorio", str(arquivos[1]), "--texto"],
+                            capture_output=True, text=True, encoding="utf-8", env=_ENV, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("modo codex-exec: APROVADO", r.stdout)
+        self.assertEqual(sorted(self.instalado()["modos"]), ["codex-exec", "navegador"])
+        r = _subprocess.run([*base, "--relatorio", str(self.arquivo({"x": 1}, "c.json"))], capture_output=True,
+                            text=True, encoding="utf-8", env=_ENV, timeout=120)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)  # resposta que não é do canário: recusa
+        r = _subprocess.run([sys.executable, "-I", "-B", str(_SKILL / "assets" / "host" / "preparo_host.py"),
+                             "instalar-canario-jaula", "--relatorio", str(arquivos[0])], capture_output=True, text=True,
+                            encoding="utf-8", env=_ENV, timeout=120)
+        self.assertNotEqual(r.returncode, 0)  # sem root e fora de ensaio
 
 
 if __name__ == "__main__":

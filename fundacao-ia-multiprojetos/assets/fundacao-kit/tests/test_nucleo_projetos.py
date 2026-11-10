@@ -29,6 +29,19 @@ class TestModeloDeProjeto(FoundationTestCase):
         self.assertEqual(config["schema_version"], "fundacao.project/1")
         self.assertEqual(json.loads((pdir / "data" / "catalog.json").read_text(encoding="utf-8")), {})
 
+    def test_regras_codigo_e_campo_opcional_de_lista_fechada(self):
+        """1.7.11 (ponytail, P7): o lançador do Ubuntu lê `regras_codigo` do projeto.json; o kit não pode recusar o campo
+        (antes, `load_config` falhava com "campos desconhecidos"), e a lista é a mesma do lançador: só `enxuto`."""
+        cfg = self.root / "projects" / "juridico-lab" / "projeto.json"
+        config = json.loads(cfg.read_text(encoding="utf-8"))
+        self.assertEqual(projects.validate_config(dict(config)), config)
+        self.assertEqual(projects.validate_config({**config, "regras_codigo": "enxuto"})["regras_codigo"], "enxuto")
+        for ruim in ("lite", "ultra", "Enxuto", "", None, ["enxuto"], 1):
+            with self.subTest(valor=ruim), self.assertRaises(ValidationError):
+                projects.validate_config({**config, "regras_codigo": ruim})
+        with self.assertRaises(ValidationError):
+            projects.validate_config({**config, "outro_campo": "enxuto"})
+
     def test_recriacao_informa_existencia_e_nao_sobrescreve(self):
         cfg = self.root / "projects" / "juridico-lab" / "projeto.json"
         antes = cfg.read_bytes()

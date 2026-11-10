@@ -142,9 +142,13 @@ class TestLinhaDeComandoDoRodar(Base):
         super().setUp()
         self.mod.preparar(self.base)
         self.config = self.mod.config_do_ensaio(self.base)  # no ext4 da casa do teste (REV3), não na base
+        # Uma cópia fora da raiz: na árvore de trabalho dentro de <raiz>/projects/, o ensaio recusa rodar (revisão de
+        # segurança da 1.7.10, CI-F1), e a recusa medida aqui seria outra.
+        from test_ensaio_isolamento import copia_do_script
+        self.script = copia_do_script(self.tmp / "skill")
 
     def rodar(self, *extra):
-        r = subprocess.run([sys.executable, "-B", str(SCRIPTS / "ensaio_isolamento_wsl.py"), "rodar", "--base",
+        r = subprocess.run([sys.executable, "-B", str(self.script), "rodar", "--base",
                             str(self.base), "--claude", sys.executable, "--temp-base", self.temp_base.as_posix(),
                             *map(str, extra)], capture_output=True, text=True, encoding="utf-8", errors="replace",
                            env=self.env, timeout=120)
@@ -234,7 +238,9 @@ class TestIntegracaoComOsHooksReais(Base):
                     continue
                 negados.append((ses["rotulo"], rot))
                 self.assertEqual(papel, "permissao", (ses["rotulo"], rot, decisao))
-        self.assertEqual(negados, [("leitura_outro", "cat")])
+        # 1.7.11: o `cat` do outro projeto também vai nas duas sessões do modo sem perguntas (o hook tem de negá-lo)
+        self.assertEqual(negados, [("leitura_outro", "cat"), ("bypass_ligado", "cat outro projeto"),
+                                   ("bypass_so_permitido", "cat outro projeto")])
         self.assertGreater(liberados, 20)
 
     def test_guarda_ferramentas_libera_o_bash_da_lista_e_nega_o_resto(self):
@@ -275,7 +281,7 @@ class TestIntegracaoComOPerfilDoHost(Base):
         self.assertEqual(sorted({Path(a).name for a in args}), sorted(HOOKS))
         # 1.7.10.2: o sinais_sessao.py também passa as regras da sessão ao subagente
         self.assertEqual([Path(h["args"][-1]).name for g in perfil["hooks"]["SubagentStart"] for h in g["hooks"]],
-                         ["sinais_sessao.py"])
+                         ["sinais_sessao.py", "regras_codigo.py"])  # 1.7.11 (ponytail, P7): o hook novo, só no Ubuntu
         fs = perfil["sandbox"]["filesystem"]
         self.assertIn(self.temp_base.as_posix() + "/fundacao-ia-ensaio-a", fs["allowRead"])
         self.assertIn("/tmp", fs["denyRead"])
@@ -305,7 +311,9 @@ if fontes == "local,project":
     init["skills"], init["agents"] = ["ensaio-aninhada"], ["ensaio-agente"]
 saida = [init]
 for n, linha in enumerate(re.findall(r"^\d+\. (.*)$", sys.argv[-1], re.M)):
-    m = re.search(r"; echo FIM-([0-9a-f]+)-(\d+)-\$\?$", linha)
+    m = re.search(r" && echo FIM-([0-9a-f]+)-(\d+)-0 \|\| echo FIM-[0-9a-f]+-\d+-1$", linha)
+    if not m:  # linha numerada de um prompt sem comandos (as sessões de medida da 1.7.11): nada a rodar
+        continue
     nonce, i = m.group(1), m.group(2)
     texto, erro = None, False
     if "PY-OK-" in linha:
@@ -354,8 +362,12 @@ class TestPontaAPontaComClaudeFalso(Base):
         (config / ".credentials.json").write_text("{}", encoding="utf-8")
         chave = "ANTHROPIC_" + "API_KEY"
         amb = {**self.env, chave: "valor-ficticio-de-teste", "PATH": "/opt/shim:" + ENV.get("PATH", "")}
+        # O preparo do host REAL, de uma cópia fora da raiz: o --preparo-host de dentro de <raiz>/projects/ é recusado
+        # (revisão de segurança da 1.7.10, CI-F1), e a árvore de trabalho pode ficar lá.
+        from test_host_projeto_apoio import skill_de_ensaio
+        preparo = skill_de_ensaio(self.tmp / "skill-host") / "assets" / "host" / "preparo_host.py"
         r = subprocess.run([sys.executable, "-B", str(alvo), "rodar", "--base", str(self.base), "--claude",
-                            str(claude), "--preparo-host", str(PREPARO_REAL), "--temp-base", tb,
+                            str(claude), "--preparo-host", str(preparo), "--temp-base", tb,
                             "--saida", str(self.tmp / "relatorio.json")], capture_output=True, text=True,
                            encoding="utf-8", errors="replace", env=amb, timeout=300)
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
@@ -373,24 +385,36 @@ class TestPontaAPontaComClaudeFalso(Base):
         self.assertIs(rel["seccomp_presente"], True)
         self.assertEqual(rel["claude"]["versao"], "2.1.302")
         sessoes = [json.loads(x) for x in (bin_dir / "sessoes.jsonl").read_text(encoding="utf-8").splitlines()]
-        self.assertGreaterEqual(len(sessoes), 11)  # 12 com um barramento no host
+        self.assertGreaterEqual(len(sessoes), 11)  # 24, ou 25 com um barramento no host (1.7.11)
         perfil = (self.base / "perfil-ensaio-a.settings.json").as_posix()
+        variante = (self.base / "perfil-ensaio-a-conectores.settings.json").as_posix()  # M3: conectores da conta ligados
+        projeto = str(self.base / "projects" / "ensaio-a")
         ferramentas = json.loads(Path(perfil).read_text(encoding="utf-8"))["env"]["FUNDACAO_FERRAMENTAS"]
         esperadas = {"HOME", "USER", "LOGNAME", "SHELL", "PATH", "TMPDIR", "CLAUDE_CONFIG_DIR", "FUNDACAO_RAIZ",
                      "FUNDACAO_PROJECT", "FUNDACAO_PORTEIRO", "FUNDACAO_" + "PRINCIPAL"}
+        mencao = "CLAUDE_CODE_DISABLE_FILE_MENTIONS"
         for s in sessoes:
             argv, env = s["argv"], s["env"]
-            self.assertEqual(argv[argv.index("--settings") + 1], perfil)
+            settings = argv[argv.index("--settings") + 1]
+            self.assertIn(settings, (perfil, variante))
             self.assertEqual(argv[argv.index("--tools") + 1], ferramentas)
             self.assertIn(argv[argv.index("--setting-sources") + 1], ("local", "local,project"))
-            self.assertIn("--strict-mcp-config", argv)
+            if "--strict-mcp-config" not in argv:  # só a sessão sem strict do M3, e com o perfil dos conectores
+                self.assertEqual(settings, variante)
             self.assertNotIn(chave, env)
-            self.assertEqual(set(env) - {"LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM", "TZ", "WSL_DISTRO_NAME"},
+            self.assertEqual(set(env) - {"LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM", "TZ", "WSL_DISTRO_NAME", mencao},
                              esperadas, sorted(env))
             self.assertEqual(env["PATH"], "/usr/local/bin:/usr/bin:/bin")
             self.assertEqual(env["TMPDIR"], tb + "/fundacao-ia-ensaio-a")
             self.assertEqual(env["CLAUDE_CONFIG_DIR"], config.as_posix())
-            self.assertEqual(s["cwd"], str(self.base / "projects" / "ensaio-a"))
+            self.assertIn(s["cwd"], (projeto, projeto + "/data/origem"))  # a do AGENTS.md roda dentro de data/
+        # 1.7.11: o que cada sessão nova pede ao Claude Code, e só ela
+        self.assertEqual(sum("--strict-mcp-config" not in s["argv"] for s in sessoes), 1)
+        self.assertEqual(sum(s["argv"][s["argv"].index("--settings") + 1] == variante for s in sessoes), 2)
+        self.assertEqual(sum("--allow-dangerously-skip-permissions" in s["argv"] for s in sessoes), 2)
+        self.assertEqual(sum("--permission-mode" in s["argv"] for s in sessoes), 1)
+        self.assertEqual(sum(mencao in s["env"] for s in sessoes), 1)
+        self.assertEqual(sum(s["cwd"] != projeto for s in sessoes), 2)
         r = rodar_copia(alvo, "limpar", "--base", self.base, "--temp-base", tb, env=self.env)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         resumo = json.loads(r.stdout)

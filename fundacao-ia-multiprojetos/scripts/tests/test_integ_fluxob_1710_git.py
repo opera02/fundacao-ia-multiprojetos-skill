@@ -23,6 +23,7 @@ from apoio import SCRIPTS, rodar_script
 GIT = shutil.which("git")
 EXTENSOES = {"AGENTS.md": "# instruções antigas (dado)\n", "CLAUDE.md": "# instruções antigas (dado)\n",
              ".claude/skills/redator/SKILL.md": "---\nname: redator\n---\n", ".codex/config.toml": "[x]\n",
+             ".claude/agents/revisor.md": "---\nname: revisor\n---\n",
              ".mcp.json": "{}\n"}
 
 
@@ -74,14 +75,14 @@ class TestInstrucoesNoRepositorioMontado(unittest.TestCase):
     def test_avisa_das_extensoes_e_do_agents_md_do_codex(self):
         res = self.montar(self.origem("com-extensoes", EXTENSOES), "repo")
         conf = res["instrucoes_aninhadas"]
-        self.assertEqual(conf["encontrados"], 5)
+        self.assertEqual(conf["encontrados"], 6)
         self.assertEqual(sorted(conf["itens"]["instrucoes"]), ["AGENTS.md", "CLAUDE.md"])
         self.assertEqual(conf["itens"]["skills"], [".claude/skills/redator/SKILL.md"])
         self.assertEqual((conf["itens"]["codex"], conf["itens"]["mcp"]), ([".codex/config.toml"], [".mcp.json"]))
-        self.assertEqual(conf["negar_skills"], ["redator"])
+        self.assertEqual((conf["negar_skills"], conf["negar_agentes"]), (["redator"], ["revisor"]))
         self.assertTrue(conf["completo"])
         aviso = next(a for a in res["avisos"] if "carregam sozinhos" in a)
-        for trecho in ("o Codex", "AGENTS.md da raiz desse Git para baixo", "fora de data/", "--negar-skill redator"):
+        for trecho in ("o Codex", "AGENTS.md da raiz desse Git para baixo", "fora de data/", "--negar-skill redator", "--negar-agente revisor"):
             self.assertIn(trecho, aviso)
         self.assertTrue(res["conferencia"]["ok"], "o aviso não muda a conferência do Git")
 
@@ -114,7 +115,7 @@ class TestResumoDasInstrucoes(unittest.TestCase):
             erro, avisos = MOD.instrucoes_do_repositorio(self.base, "repo")
         self.assertEqual(set(erro) - {"erro"}, set(normal))
         self.assertEqual((erro["encontrados"], erro["completo"], erro["erro"]), (None, False, "OSError"))
-        self.assertEqual((erro["contagem"], erro["itens"], erro["negar_skills"]), ({}, {}, []))
+        self.assertEqual((erro["contagem"], erro["itens"], erro["negar_skills"], erro["negar_agentes"]), ({}, {}, [], []))
         self.assertTrue(any("não rodou" in a for a in avisos))
 
     def test_so_data_com_a_caixa_exata_cala_o_aviso_do_claude_md_excludes(self):

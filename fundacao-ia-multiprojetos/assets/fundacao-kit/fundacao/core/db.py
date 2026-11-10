@@ -9,7 +9,10 @@ confere o marcador `state/banco.trava` do outro lado (core/trava_banco.py).
 
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
+import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -212,7 +215,9 @@ def uri_somente_leitura(caminho: Path, *, imutavel: bool = False) -> str:
 def connect(path: Path, *, wal: bool = True) -> sqlite3.Connection:
     """Abre o banco com as PRAGMAs da fundação e aplica migrações pendentes."""
     path = Path(path)
-    trava_banco.conferir(path.parent)  # marcador vivo ou velho do outro lado: não abre (1.7.10)
+    # marcador vivo ou velho do outro lado: não abre (1.7.10). Só aqui, na abertura para escrita, o marcador velho do
+    # Ubuntu com o WSL desligado sai sozinho (1.7.11), com o evento gravado antes: veja core/trava_banco.py.
+    liberacao = trava_banco.conferir(path.parent, liberar_sozinho=True)
     path.parent.mkdir(parents=True, exist_ok=True)
     # check_same_thread=False: etapas paralelas do coordenador debitam orçamento sob trava;
     # nenhuma outra operação compartilha a conexão entre threads.
@@ -226,10 +231,39 @@ def connect(path: Path, *, wal: bool = True) -> sqlite3.Connection:
         raise RuntimeError("foreign_keys não pôde ser habilitado nesta conexão")
     try:
         migrate(con)
+        if liberacao:
+            _liberar_marcador_velho(con, path.parent, liberacao)
     except BaseException:
         con.close()
         raise
     return con
+
+
+def _liberar_marcador_velho(con: sqlite3.Connection, pasta: Path, plano: dict) -> None:
+    """Cumpre a saída sozinha do marcador velho do Ubuntu (core/trava_banco.py): primeiro o evento na cadeia de
+    eventos (quem, quando, o conteúdo do marcador e a medida do WSL), depois o marcador sai e o aviso vai ao stderr.
+    Se o evento não grava, o marcador fica (erro, não silêncio)."""
+    from . import events  # events importa este módulo: só na hora do uso
+    from .auth import ENV_PRINCIPAL
+    atual = trava_banco.ler(pasta)
+    if atual is None:
+        return  # outra abertura se adiantou e já registrou a sua
+    if atual != plano["marcador"]:
+        raise trava_banco.BancoTravado("o marcador mudou antes de sair: o banco pode estar em uso; nada foi tirado",
+                                       situacao=trava_banco.situacao(atual))
+    quando = utcnow()
+    payload = {"marcador": plano["marcador"], "renovado_ha_s": round(plano["idade_s"] or 0), "wsl": plano["wsl"],
+               "motivo": plano["motivo"], "liberado_em": quando, "lado": trava_banco.lado_desta_maquina(),
+               "pid": os.getpid(), "principal": os.environ.get(ENV_PRINCIPAL),
+               "host": trava_banco._host_local()}
+    events.emit(con, trava_banco.EVENTO_LIBERADO, subject=trava_banco.MARCADOR, payload=payload)
+    saiu = trava_banco.liberar(pasta, plano)
+    if saiu:
+        sys.stderr.write(json.dumps({"aviso": {
+            "code": "W_BANCO_MARCADOR_VELHO_LIBERADO", "marcador_removido": plano["marcador"], "wsl": plano["wsl"],
+            "message": "o marcador velho do Ubuntu (state/banco.trava) saiu sozinho: nenhuma distribuição do WSL "
+                       "estava em execução; o evento banco_marcador_velho_liberado ficou no histórico"},
+        }, ensure_ascii=False) + "\n")
 
 
 def conectar_somente_leitura(path: Path) -> sqlite3.Connection:

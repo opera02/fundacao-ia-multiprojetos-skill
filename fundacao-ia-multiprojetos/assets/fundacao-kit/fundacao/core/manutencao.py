@@ -140,22 +140,28 @@ def ler_ultima_copia(raiz) -> dict | None:
     return dados
 
 
-def registrar_copia(raiz, *, rotulo, criada_em: str, destino: str, verificada_em: str | None = None) -> None:
-    """Grava registry/ultima-copia.json por temporário e troca atômica, em LF; ligação no caminho recusa."""
+def registrar_copia(raiz, *, rotulo, criada_em: str, destino: str, verificada_em: str | None = None,
+                    cifrada: bool | None = None, sem_cifra: str | None = None) -> None:
+    """Grava registry/ultima-copia.json por temporário e troca atômica, em LF; ligação no caminho recusa. 1.7.11:
+    `cifrada` (cópia em partes .gpg) e `sem_cifra` (o motivo de uma cópia em claro com a chave instalada) entram só
+    quando existem; o registro de uma cópia comum não muda."""
     arquivo = _sem_ligacao(Path(raiz) / ULTIMA_COPIA)
     registro = {"schema_version": SCHEMA_ULTIMA_COPIA, "rotulo": rotulo, "criada_em": criada_em,
-                "verificada_em": verificada_em, "destino": destino}
+                "verificada_em": verificada_em, "destino": destino,
+                **({"cifrada": True} if cifrada else {}), **({"sem_cifra": sem_cifra} if sem_cifra else {})}
     publicacao.publicar(arquivo, (json.dumps(registro, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
 
 
-def registrar_verificacao(raiz, *, rotulo, criada_em: str, destino: str) -> str:
+def registrar_verificacao(raiz, *, rotulo, criada_em: str, destino: str, cifrada: bool | None = None) -> str:
     """Depois de um `backup verificar` com sucesso: anota `verificada_em` (a cópia verificada passa a ser a registrada),
     salvo quando ela é mais antiga que a registrada, que fica como estava. Devolve o que fez."""
     atual = ler_ultima_copia(raiz) or {}
     antes, agora = _data(atual.get("criada_em")), _data(criada_em)
     if antes and agora and antes > agora:
         return "cópia mais antiga que a registrada: registry/ultima-copia.json ficou como estava"
-    registrar_copia(raiz, rotulo=rotulo, criada_em=criada_em, destino=destino, verificada_em=utcnow())
+    sem_cifra = atual.get("sem_cifra") if atual.get("criada_em") == criada_em else None  # a verificação não apaga o motivo
+    registrar_copia(raiz, rotulo=rotulo, criada_em=criada_em, destino=destino, verificada_em=utcnow(), cifrada=cifrada,
+                    sem_cifra=sem_cifra)
     return "verificação anotada em registry/ultima-copia.json"
 
 
@@ -169,7 +175,7 @@ def copias_do_livro(raiz) -> dict:
         bruto = _ler_com_teto(livro)
     except (OSError, FundacaoError) as exc:
         return {"situacao": "recusado", "motivo": f"{type(exc).__name__}: {exc}"[:200], **vazio}
-    copias = {}
+    copias, cifradas = {}, []
     for linha in bruto.decode("utf-8", errors="replace").splitlines():
         try:
             rec = json.loads(linha)
@@ -179,9 +185,14 @@ def copias_do_livro(raiz) -> dict:
             rec = rec["documento"].get("entrada")
         if isinstance(rec, dict) and _data(rec.get("criado_em")):
             copias[rec.get("sha256_manifesto") or rec["criado_em"]] = rec
-    ultima = max(copias.values(), key=lambda r: _data(r["criado_em"]), default=None)
+            if rec.get("cifrada") is True:
+                cifradas.append(rec["criado_em"])
+    ultima = max(copias.values(), key=lambda r: (_data(r["criado_em"]), r.get("cifrada") is True), default=None)
     return {"situacao": "lido", "entradas": len(copias), "ultima": ultima and {
-        "rotulo": ultima.get("rotulo"), "criada_em": ultima["criado_em"], "destino": ultima.get("destino")}}
+        "rotulo": ultima.get("rotulo"), "criada_em": ultima["criado_em"], "destino": ultima.get("destino"),
+        **({"cifrada": True} if ultima.get("cifrada") is True else {}),
+        **({"sem_cifra": ultima["sem_cifra"]} if ultima.get("sem_cifra") else {})},
+        **({"primeira_cifrada": min(cifradas, key=_data)} if cifradas else {})}
 
 
 def situacao(raiz, agora: datetime | None = None) -> dict:
@@ -201,7 +212,8 @@ def situacao(raiz, agora: datetime | None = None) -> dict:
         isinstance(registro, dict) and registro.get("criada_em") == ultima["criada_em"]) else None
     idade = agora - _data(ultima["criada_em"])
     res.update(ultima_copia={"rotulo": ultima.get("rotulo"), "criada_em": ultima["criada_em"],
-                             "destino": ultima.get("destino"), "verificada_em": verificada},
+                             "destino": ultima.get("destino"), "verificada_em": verificada,
+                             **{k: ultima[k] for k in ("cifrada", "sem_cifra") if ultima.get(k)}},
                idade_dias=max(idade.days, 0), em_dia=idade <= timedelta(days=LIMITE_DIAS))
     if not res["em_dia"]:
         res["aviso"] = (f"a última cópia de segurança tem {idade.days} dias (mais de {LIMITE_DIAS}): faça uma cópia "

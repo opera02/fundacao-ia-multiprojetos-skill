@@ -21,6 +21,7 @@ from unittest import mock
 
 from helpers import KIT
 
+from fundacao.core import aberturas_mcp as mcp_regras
 from fundacao.core import aberturas_plugins as plugins
 from fundacao.core import aberturas_regras as regras
 
@@ -67,8 +68,7 @@ class TestEsquema(unittest.TestCase):
                 self.assertTrue(any("additionalProperties" in e["motivo"] for e in erros(ficha(**{campo: 1}))))
 
     def test_reservadas_preenchidas_recusam_com_1_7_11_e_vazias_valem(self):
-        preenchidas = {"mcp": [{"nome": "x"}], "navegador": {"ativo": True}, "git": [{"pasta": "repo"}],
-                       "segredos": {"arquivos": [".env"]}, "outras_llm": [{"provedor": "x"}],
+        preenchidas = {"git": [{"pasta": "repo"}], "segredos": {"arquivos": [".env"]},
                        "execucao": [{"perfil": "p"}], "leitura_liberada": ["src/secrets/x"],
                        "perfil_navegador_copiado": True}
         self.assertEqual(sorted(preenchidas), sorted(regras.RESERVADAS))
@@ -81,6 +81,18 @@ class TestEsquema(unittest.TestCase):
         for vazio in ([], {}, "", None, False):
             with self.subTest(vazio=vazio):
                 self.assertEqual(erros(ficha(**{c: vazio for c in regras.RESERVADAS})), [])
+
+    def test_perfil_navegador_copiado_segue_recusado_com_o_motivo_da_decisao(self):
+        """Decisão do titular de 08/11/2026 (perfil novo; DECISAO-005, item 8): o copiado do Windows não chega sem os
+        logins e fica fechado, mesmo com a seção `navegador` presente."""
+        copiado = {"origem": "data/x_browser_profile", "manifesto_sha256": "a" * 64}
+        f = ficha(navegador={"dominios": ["esaj.tjsp.jus.br"], "modos": ["sessao"]}, perfil_navegador_copiado=copiado)
+        achados = [e for e in erros(f) if e["campo"] == "perfil_navegador_copiado"]
+        self.assertEqual(len(achados), 1)
+        self.assertIn("perfil do navegador é sempre novo", achados[0]["motivo"])
+        self.assertIn("perfil_navegador_copiado", regras.RESERVADAS)
+        for secao in ("mcp", "navegador", "outras_llm"):
+            self.assertNotIn(secao, regras.RESERVADAS)
 
     def test_tipos_e_formas(self):
         casos = {"schema_version": ["fundacao.ficha_aberturas/2", 1], "ficha_id": ["", "a b", "-x", 7],
@@ -332,6 +344,444 @@ class TestPluginsNaFicha(unittest.TestCase):
         r = regras.validar(ficha(plugins=[self.item(nome="modelos")]), projeto="juridico-lab", hoje=HOJE)
         self.assertEqual(r["erros"], [])
         self.assertTrue(any("prefixo" in a["motivo"] for a in r["avisos"]))
+
+
+class TestCuringaCobreODominioPrincipal(unittest.TestCase):
+    """DECISAO-010, item 5: `*.x` vale para `x` e para os subdomínios; o teto de 200 conta itens da ficha."""
+
+    def test_cobre(self):
+        tabela = [("*.x.com.br", "x.com.br", True), ("*.x.com.br", "a.x.com.br", True),
+                  ("*.x.com.br", "a.b.x.com.br", True), ("*.x.com.br", "outrox.com.br", False),
+                  ("*.x.com.br", "x.com.br.outro", False), ("*.x.com.br", "com.br", False),
+                  ("*.x.com.br", "y.com.br", False), ("x.com.br", "x.com.br", True), ("x.com.br", "a.x.com.br", False),
+                  ("*.", "x.com", False), ("*.x.com", None, False), (None, "x.com", False)]
+        for entrada, host, esperado in tabela:
+            with self.subTest(entrada=entrada, host=host):
+                self.assertEqual(regras.cobre(entrada, host), esperado)
+
+    def test_curinga_em_sufixo_publico_continua_recusado(self):
+        for d in ("*.com", "*.com.br", "*.gov.br", "*.jus.br", "*.co.uk", "*.br", "*.vercel.app", "*.amazonaws.com"):
+            with self.subTest(dominio=d):
+                self.assertIsNotNone(regras.problema_do_dominio(d))
+
+    def test_expandir_gera_x_e_curinga_sem_repetir_e_e_idempotente(self):
+        self.assertEqual(regras.expandir_curingas(["pypi.org", "*.tjsp.jus.br"]),
+                         ["pypi.org", "tjsp.jus.br", "*.tjsp.jus.br"])
+        self.assertEqual(regras.expandir_curingas(["*.x.com", "x.com"]), ["x.com", "*.x.com"])
+        self.assertEqual(regras.expandir_curingas(["x.com", "*.x.com"]), ["x.com", "*.x.com"])
+        once = regras.expandir_curingas(["a.org", "*.b.org", "*.c.org"])
+        self.assertEqual(regras.expandir_curingas(once), once)
+        self.assertEqual(regras.expandir_curingas([]), [])
+
+    def test_teto_de_200_conta_os_itens_da_ficha(self):
+        """200 curingas valem (geram 400 entradas no perfil); o 201º item recusa."""
+        dominios = [f"*.d{i}.ficticio.com" for i in range(regras.TETO_DOMINIOS)]
+        self.assertEqual(erros(ficha(rede={"dominios": dominios})), [])
+        self.assertEqual(len(regras.expandir_curingas(dominios)), 2 * regras.TETO_DOMINIOS)
+        mais = erros(ficha(rede={"dominios": dominios + ["*.d999.ficticio.com"]}))
+        self.assertEqual([e["campo"] for e in mais], ["rede.dominios"])
+
+    def test_texto_e_aviso_dizem_que_o_curinga_cobre_o_principal(self):
+        self.assertTrue(any("x.com e para todo subdomínio dele" in a for a in regras.avisos_do_dominio("*.x.com")))
+        texto = regras.descrever(ficha(rede={"dominios": ["*.x.com"]}))[0]["texto"]
+        self.assertIn("x.com e qualquer subdomínio de x.com", texto)
+
+
+def mcp(**extra) -> dict:
+    base = {"nome": "fsn", "origem": "conta", "conector": "Conector do escritorio",
+            "ferramentas": ["buscar_clientes", "buscar_processos", "get_processo", "relatorio_prazos"],
+            "ocultar": ["escanear_vault"], "conteudo_de_terceiros": True}
+    base.update(extra)
+    return base
+
+
+# As 24 ferramentas do conector do escritório (DESENHO-JAULA §4.2): 17 de consulta e 7 que gravam ou escaneiam.
+CONSULTA_DO_ESCRITORIO = ("buscar_clientes buscar_documentos buscar_notas buscar_prazos buscar_precedentes "
+                          "buscar_processos get_andamentos_processo get_cliente get_documento get_nota get_prazo "
+                          "get_precedente get_processo listar_documentos_do_processo listar_notas_do_processo "
+                          "listar_tags relatorio_prazos").split()
+GRAVA_NO_ESCRITORIO = ("salvar_nota atualizar_curadoria_precedente propor_operacoes confirmar_operacoes cancelar_operacoes "
+                       "escanear_vault validar_frontmatter").split()
+TODAS_DO_ESCRITORIO = CONSULTA_DO_ESCRITORIO + GRAVA_NO_ESCRITORIO
+
+
+class TestMcp(unittest.TestCase):
+    def test_conector_do_escritorio_com_todas_as_ferramentas_vale(self):
+        """DECISAO-011: as 24 ferramentas do conector, as de consulta e as que gravam, na lista nominal."""
+        self.assertEqual((len(CONSULTA_DO_ESCRITORIO), len(GRAVA_NO_ESCRITORIO), len(TODAS_DO_ESCRITORIO)), (17, 7, 24))
+        self.assertEqual(erros(ficha(mcp=[mcp(ferramentas=TODAS_DO_ESCRITORIO, ocultar=[])])), [])
+        self.assertEqual(erros(ficha(mcp=[mcp(ferramentas=CONSULTA_DO_ESCRITORIO, ocultar=GRAVA_NO_ESCRITORIO)])), [])
+        self.assertEqual(erros(ficha(mcp=[mcp(ferramentas=["salvar_nota"], ocultar=[])])), [])  # só gravação também vale
+        self.assertEqual(erros(ficha(mcp=[mcp()])), [])
+        self.assertEqual(erros(ficha(mcp=[mcp(origem="url", conector=None, url="https://mcp.escritorio.com.br/mcp")])),
+                         [])
+
+    def test_classificacao_pelo_nome(self):
+        """Consulta é prefixo de consulta sem verbo de gravação em nenhuma parte; o resto grava (na dúvida, grava)."""
+        for nome in CONSULTA_DO_ESCRITORIO:
+            with self.subTest(nome=nome):
+                self.assertEqual(mcp_regras.classificar_ferramenta(nome), "consulta")
+        for nome in GRAVA_NO_ESCRITORIO:
+            with self.subTest(nome=nome):
+                self.assertEqual(mcp_regras.classificar_ferramenta(nome), "grava")
+        # prefixo de consulta + verbo de gravação em qualquer parte do nome
+        for nome in ("buscar_e_apagar", "get_set_valor", "listar_e_excluir", "read_write_log", "obter_e_salvar",
+                     "buscar_ou_criar", "fetch_and_delete", "search_update", "get_post", "list_patch",
+                     "obter_enviar_email"):
+            with self.subTest(nome=nome):
+                self.assertEqual(mcp_regras.classificar_ferramenta(nome), "grava")
+        # nome sem prefixo de consulta, mesmo sem verbo conhecido
+        for nome in ("escanear_vault", "validar_frontmatter", "x", "abrir_porta", "buscar", "getter_x"):
+            with self.subTest(nome=nome):
+                self.assertEqual(mcp_regras.classificar_ferramenta(nome), "grava")
+        # todos os verbos da lista, em qualquer posição, tiram o nome da consulta
+        for verbo in mcp_regras.VERBOS_DE_GRAVACAO:
+            with self.subTest(verbo=verbo):
+                self.assertEqual(mcp_regras.classificar_ferramenta(f"buscar_{verbo}_x"), "grava")
+                self.assertEqual(mcp_regras.classificar_ferramenta(f"{verbo}_x"), "grava")
+
+    def test_nome_fora_da_forma_e_repetido(self):
+        for nome in ("Buscar_x", "buscar-x", "1buscar", "buscar x", "", "buscar__x", "buscar_x_", "b" * 65, 7, None,
+                     "Salvar_Nota", "salvar-nota", "salvar__nota", "salvar_nota_", "salvar nota"):
+            with self.subTest(nome=nome):
+                self.assertTrue(erros(ficha(mcp=[mcp(ferramentas=[nome])])))
+        repetido = erros(ficha(mcp=[mcp(ferramentas=["buscar_x", "buscar_x"])]))
+        self.assertEqual([e["motivo"] for e in repetido], ["nome repetido"])
+        repetido = erros(ficha(mcp=[mcp(ferramentas=["salvar_nota", "salvar_nota"])]))
+        self.assertEqual([e["motivo"] for e in repetido], ["nome repetido"])
+        self.assertEqual(mcp_regras.TETO_MCP_FERRAMENTAS, 32)  # as 24 do conector e 8 de folga
+        self.assertTrue(erros(ficha(mcp=[mcp(ferramentas=[])])))  # 1 a 32
+        self.assertTrue(erros(ficha(mcp=[mcp(ferramentas=[f"buscar_{i}x" for i in range(33)])])))
+        self.assertTrue(erros(ficha(mcp=[mcp(ferramentas=[f"salvar_{i}x" for i in range(33)])])))
+        self.assertEqual(erros(ficha(mcp=[mcp(ferramentas=[f"buscar_x{i}" for i in range(32)])])), [])
+        self.assertEqual(erros(ficha(mcp=[mcp(ferramentas=[f"salvar_x{i}" for i in range(32)])])), [])
+
+    def test_curinga_e_nome_completo_da_ferramenta_sao_recusados(self):
+        for nome in ("*", "buscar_*", "*_nota", "buscar_%", "buscar_?", "mcp__fsn__buscar_clientes", "mcp__fsn__*",
+                     "buscar_.*", "buscar_[a-z]", "buscar_(x)", "buscar_x|salvar_y"):
+            with self.subTest(nome=nome):
+                achados = erros(ficha(mcp=[mcp(ferramentas=["buscar_clientes", nome])]))
+                self.assertEqual([e["campo"] for e in achados], ["mcp[0].ferramentas[1]"])
+                achados = erros(ficha(mcp=[mcp(ocultar=[nome])]))
+                self.assertEqual([e["campo"] for e in achados], ["mcp[0].ocultar[0]"])
+
+    def test_ocultar_so_nomes_disjuntos_de_consulta(self):
+        self.assertTrue(erros(ficha(mcp=[mcp(ocultar=["buscar_clientes"])])))  # disjuntos
+        self.assertTrue(erros(ficha(mcp=[mcp(ferramentas=["salvar_nota"], ocultar=["salvar_nota"])])))
+        self.assertTrue(erros(ficha(mcp=[mcp(ocultar=[f"salvar_{i}" for i in range(33)])])))
+        self.assertTrue(erros(ficha(mcp=[mcp(ocultar=["Salvar"])])))
+        self.assertEqual(erros(ficha(mcp=[mcp(ocultar=[])])), [])
+        sem = mcp()
+        del sem["ocultar"]
+        self.assertEqual(erros(ficha(mcp=[sem])), [])
+
+    def test_mcp_local_e_campos_fora_do_esquema_sao_recusados(self):
+        for campo in ("comando", "argv", "command", "args", "env", "headers"):
+            with self.subTest(campo=campo):
+                achados = erros(ficha(mcp=[mcp(**{campo: ["npx"]})]))
+                self.assertEqual(len(achados), 1)
+                self.assertEqual(achados[0]["campo"], f"mcp[0].{campo}")
+                self.assertIn("MCP local fica fechado", achados[0]["motivo"])
+        for campo in ("gravacao", "escrita", "extra", "permitir", "curinga"):
+            with self.subTest(campo=campo):
+                achados = erros(ficha(mcp=[mcp(**{campo: ["salvar_nota"]})]))
+                self.assertEqual([e["campo"] for e in achados], [f"mcp[0].{campo}"])
+                self.assertIn("additionalProperties", achados[0]["motivo"])
+
+    def test_campo_consulta_foi_renomeado_para_ferramentas_e_o_nome_velho_e_recusado(self):
+        """DECISAO-011: a lista tem as de gravação, e `consulta` ficou enganoso. Nenhuma ficha assinada tinha a seção,
+        então não há migração: o nome velho é recusado com a mensagem que diz o novo."""
+        velho = mcp()
+        velho["consulta"] = velho.pop("ferramentas")
+        achados = erros(ficha(mcp=[velho]))
+        self.assertIn("mcp[0].consulta", [e["campo"] for e in achados])
+        recusa = next(e for e in achados if e["campo"] == "mcp[0].consulta")
+        self.assertIn('renomeado para "ferramentas"', recusa["motivo"])
+        self.assertIn("mcp[0].ferramentas", [e["campo"] for e in achados])  # a lista nova falta: a ficha não vale
+        com_as_duas = erros(ficha(mcp=[dict(mcp(), consulta=["buscar_clientes"])]))
+        self.assertEqual([e["campo"] for e in com_as_duas], ["mcp[0].consulta"])  # a nova vale, a velha ainda recusa
+        self.assertEqual(erros(ficha(mcp=[mcp()])), [])
+        self.assertEqual(regras.itens(ficha(mcp=[velho])), [])  # o nome velho não abre nada em itens
+        self.assertEqual(regras.descrever(ficha(mcp=[velho])), regras.descrever(ficha()))
+
+    def test_so_um_servidor_o_do_escritorio(self):
+        self.assertEqual(mcp_regras.TETO_MCP_SERVIDORES, 1)
+        achados = erros(ficha(mcp=[mcp(), mcp(nome="outro")]))
+        self.assertEqual([e["campo"] for e in achados], ["mcp"])
+        self.assertTrue(erros(ficha(mcp=[mcp(ferramentas=TODAS_DO_ESCRITORIO, ocultar=[]),
+                                         mcp(nome="legis", ferramentas=["salvar_nota"], ocultar=[])])))
+        self.assertTrue(erros(ficha(mcp={"nome": "fsn"})))
+        self.assertTrue(erros(ficha(mcp=["fsn"])))
+        for vazio in ([], None, {}, "", False):
+            self.assertEqual(erros(ficha(mcp=vazio)), [])
+
+    def test_nome_origem_e_conector(self):
+        casos = {"nome": ["FSN", "fsn_x", "", "a" * 33, "fsn x", None], "origem": ["rota", "", None, "URL"],
+                 "conector": ["", "a__b", " x", "x ", "Conectorçao", "x" * 65, "a\tb", None, 3]}
+        for campo, valores in casos.items():
+            for valor in valores:
+                with self.subTest(campo=campo, valor=valor):
+                    self.assertTrue(erros(ficha(mcp=[mcp(**{campo: valor})])))
+        self.assertTrue(erros(ficha(mcp=[mcp(url="https://mcp.escritorio.com.br/mcp")])))  # conta não tem URL
+        self.assertTrue(erros(ficha(mcp=[mcp(origem="url", url="https://mcp.escritorio.com.br/mcp")])))  # url sem conector
+
+    def test_url_do_servidor(self):
+        bons = ("https://mcp.escritorio.com.br/mcp", "https://mcp.escritorio.com.br", "https://a.b.escritorio.com.br/x/y")
+        for url in bons:
+            self.assertIsNone(mcp_regras.problema_da_url_mcp(regras._contexto(), url), url)
+        ruins = ("http://mcp.escritorio.com.br/mcp", "https://mcp.escritorio.com.br:8443/mcp",
+                 "https://usuario" + "@" + "mcp.escritorio.com.br/mcp", "https://mcp.escritorio.com.br/mcp#frag",
+                 "https://mcp.escritorio.com.br/mcp?token=1", "https://*.escritorio.com.br/mcp",
+                 "https://MCP.escritorio.com.br/mcp", "https://10.0.0.1/mcp", "https://localhost/mcp",
+                 "https://[::1]/mcp", "https://x.vercel.app/mcp", "https://x.s3.amazonaws.com/mcp",
+                 "https://x.ngrok.io/mcp", "https://x.duckdns.org/mcp", "https://127.0.0.1.nip.io/mcp",
+                 "https://mcp.escritorio.com.br/a b", "https://mcp.escritorio.com.br/a\\b", "ftp://x.com", "", None,
+                 "https://" + "a" * 300 + ".com")
+        for url in ruins:
+            with self.subTest(url=url):
+                self.assertIsNotNone(mcp_regras.problema_da_url_mcp(regras._contexto(), url))
+
+    def test_conteudo_de_terceiros_tem_de_ser_true(self):
+        for valor in (False, None, "sim", 1, 0):
+            with self.subTest(valor=valor):
+                self.assertEqual([e["campo"] for e in erros(ficha(mcp=[mcp(conteudo_de_terceiros=valor)]))],
+                                 ["mcp[0].conteudo_de_terceiros"])
+        sem = mcp()
+        del sem["conteudo_de_terceiros"]
+        self.assertTrue(erros(ficha(mcp=[sem])))
+
+    def test_itens_e_descrever_so_com_consulta(self):
+        f = ficha(mcp=[mcp()])
+        textos = regras.descrever(f)
+        self.assertEqual([t["secao"] for t in textos], ["mcp"])
+        self.assertNotIn("grava", textos[0])
+        self.assertIn("CONSULTAR", textos[0]["texto"])
+        self.assertIn("inclusive de outros clientes", textos[0]["texto"])
+        self.assertNotIn("GRAVAR", textos[0]["texto"])
+        self.assertEqual(set(regras.itens(f)), {("mcp", "fsn:buscar_clientes"), ("mcp", "fsn:buscar_processos"),
+                                                ("mcp", "fsn:get_processo"), ("mcp", "fsn:relatorio_prazos")})
+        self.assertNotIn("escanear_vault", textos[0]["texto"])  # o que fica oculto não é aberto
+
+    def test_itens_e_descrever_separam_as_que_gravam(self):
+        """DECISAO-011: a ficha com as 24 ferramentas descreve em duas linhas, a das que gravam marcada `grava`, com o
+        risco em português simples; `itens` separa as seções para a comparação entre versões."""
+        f = ficha(mcp=[mcp(ferramentas=TODAS_DO_ESCRITORIO, ocultar=[])])
+        textos = regras.descrever(f)
+        self.assertEqual([t["secao"] for t in textos], ["mcp", "mcp-grava"])
+        consulta, grava = textos
+        self.assertNotIn("grava", consulta)
+        self.assertIs(grava["grava"], True)
+        self.assertIn("CONSULTAR", consulta["texto"])
+        for nome in CONSULTA_DO_ESCRITORIO:
+            self.assertIn(nome, consulta["texto"])
+        for nome in GRAVA_NO_ESCRITORIO:
+            self.assertIn(nome, grava["texto"])
+            self.assertNotIn(nome, consulta["texto"])
+        for trecho in ("GRAVAR", "criar, mudar e apagar dados do escritório", "inclusive de outros clientes",
+                       "texto malicioso numa página ou num documento", "sem pedir a sua confirmação",
+                       "só pelo nome"):
+            self.assertIn(trecho, grava["texto"])
+        itens = set(regras.itens(f))
+        self.assertEqual({s for s, _ in itens}, {"mcp", "mcp-grava"})
+        self.assertEqual({i for s, i in itens if s == "mcp-grava"}, {f"fsn:{n}" for n in GRAVA_NO_ESCRITORIO})
+        self.assertEqual({i for s, i in itens if s == "mcp"}, {f"fsn:{n}" for n in CONSULTA_DO_ESCRITORIO})
+        so_grava = regras.descrever(ficha(mcp=[mcp(ferramentas=["salvar_nota"], ocultar=[])]))
+        self.assertEqual([t["secao"] for t in so_grava], ["mcp-grava"])
+
+    def test_url_vira_aviso(self):
+        r = regras.validar(ficha(mcp=[mcp(origem="url", conector=None, url="https://mcp.escritorio.com.br/mcp")]),
+                           projeto="juridico-lab", hoje=HOJE)
+        self.assertEqual(r["erros"], [])
+        self.assertTrue(any("servidor MCP por URL" in a["motivo"] for a in r["avisos"]))
+
+
+def navegador(**extra) -> dict:
+    base = {"dominios": ["*.tjsp.jus.br", "esaj.tjsp.jus.br"], "logins": ["esaj.tjsp.jus.br"],
+            "modos": ["sessao", "login", "captcha"]}
+    base.update(extra)
+    return base
+
+
+class TestNavegador(unittest.TestCase):
+    def test_valido_e_pode_ter_dominio_fora_da_rede(self):
+        f = ficha(navegador=navegador(), rede={"dominios": ["pypi.org"]})
+        r = regras.validar(f, projeto="juridico-lab", hoje=HOJE)
+        self.assertEqual(r["erros"], [])
+        self.assertTrue(any(a["motivo"] == "o navegador alcança estes sites; os comandos da sessão não"
+                            for a in r["avisos"]))
+        self.assertTrue(any(a.get("dominio") == "*.tjsp.jus.br" and "curinga" in a["motivo"] for a in r["avisos"]))
+
+    def test_perfil_e_qualquer_outro_campo_recusados(self):
+        for campo in ("perfil", "perfil_copiado", "origem", "ativo", "scripts", "extensoes"):
+            with self.subTest(campo=campo):
+                achados = erros(ficha(navegador=navegador(**{campo: "x"})))
+                self.assertEqual([e["campo"] for e in achados], [f"navegador.{campo}"])
+        self.assertIn("perfil do navegador é sempre novo", erros(ficha(navegador=navegador(perfil="x")))[0]["motivo"])
+
+    def test_dominios_com_as_regras_da_rede(self):
+        for d in ("10.0.0.1", "localhost", "*.com", "*.com.br", "*.vercel.app", "Ficticio.com", "https://x.com",
+                  "x.com:443", "127.0.0.1.nip.io", "", 7):
+            with self.subTest(dominio=d):
+                self.assertEqual([e["campo"] for e in erros(ficha(navegador=navegador(dominios=[d], logins=[])))],
+                                 ["navegador.dominios[0]"])
+        repetido = erros(ficha(navegador=navegador(dominios=["x.com", "x.com"], logins=[])))
+        self.assertEqual([e["motivo"] for e in repetido], ["domínio repetido"])
+        self.assertEqual(erros(ficha(navegador=navegador(dominios=["*.x.com", "x.com"], logins=["x.com"]))), [])
+
+    def test_teto_de_200_dominios_e_20_logins(self):
+        dominios = [f"d{i}.ficticio.com" for i in range(regras.TETO_DOMINIOS)]
+        self.assertEqual(erros(ficha(navegador=navegador(dominios=dominios, logins=dominios[:20]))), [])
+        self.assertEqual([e["campo"] for e in erros(ficha(navegador=navegador(dominios=dominios + ["x.ficticio.com"],
+                                                                              logins=[])))], ["navegador.dominios"])
+        self.assertEqual([e["campo"] for e in erros(ficha(navegador=navegador(dominios=dominios,
+                                                                              logins=dominios[:21])))],
+                         ["navegador.logins"])
+        self.assertTrue(erros(ficha(navegador=navegador(dominios=[]))))  # com outros campos, precisa de domínio
+
+    def test_logins_so_nome_exato_dentro_de_dominios(self):
+        for login in ("*.tjsp.jus.br", "outro.ficticio.com", "tjsp.jus.br"):
+            with self.subTest(login=login):
+                self.assertEqual([e["campo"] for e in erros(ficha(navegador=navegador(logins=[login])))],
+                                 ["navegador.logins[0]"])
+        repetido = erros(ficha(navegador=navegador(logins=["esaj.tjsp.jus.br", "esaj.tjsp.jus.br"])))
+        self.assertEqual([e["motivo"] for e in repetido], ["login repetido"])
+        self.assertTrue(erros(ficha(navegador=navegador(logins="esaj.tjsp.jus.br"))))
+
+    def test_modos(self):
+        for modos in (["scrapjur"], ["sessao", "sessao"], [], "sessao", ["Sessao"], ["sessao", "x"], None):
+            with self.subTest(modos=modos):
+                self.assertTrue(erros(ficha(navegador=navegador(modos=modos))))
+        for modos in (["sessao"], ["login"], ["captcha"], ["sessao", "captcha"]):
+            self.assertEqual(erros(ficha(navegador=navegador(modos=modos))), [])
+
+    def test_fechado_quando_ausente_ou_vazio(self):
+        for vazio in (None, {}, [], "", False, {"dominios": [], "logins": [], "modos": []}):
+            with self.subTest(vazio=vazio):
+                self.assertEqual(erros(ficha(navegador=vazio)), [])
+        self.assertEqual([e["campo"] for e in erros(ficha(navegador={"dominios": [], "perfil": ""}))],
+                         ["navegador.perfil"])  # campo fora do esquema recusa até vazio
+        self.assertTrue(erros(ficha(navegador=["x.com"])))
+
+    def test_descrever_e_itens(self):
+        f = ficha(navegador=navegador())
+        textos = regras.descrever(f)
+        self.assertEqual([t["secao"] for t in textos], ["navegador", "navegador", "navegador", "navegador-login"])
+        self.assertIn("perfil novo só deste projeto", textos[0]["texto"])
+        self.assertIn("os comandos da sessão não alcançam esses sites", textos[0]["texto"])
+        self.assertIn("tjsp.jus.br e qualquer subdomínio de tjsp.jus.br", textos[1]["texto"])
+        self.assertEqual(set(regras.itens(f)), {("navegador", "*.tjsp.jus.br"), ("navegador", "esaj.tjsp.jus.br"),
+                                                ("navegador-login", "esaj.tjsp.jus.br"), ("navegador-modo", "sessao"),
+                                                ("navegador-modo", "login"), ("navegador-modo", "captcha")})
+
+
+def codex(**extra) -> dict:
+    base = {"provedor": "openai-codex", "autenticacao": "conta_chatgpt", "modos": ["exec", "titular"],
+            "conteudo_de_terceiros": True, "teto_chamadas_dia": 30,
+            "r55": {"plano": "Plus", "treinamento_desligado": True, "conferido_em": "2026-10-31"}}
+    base.update(extra)
+    return base
+
+
+class TestOutrasLlm(unittest.TestCase):
+    def test_codex_pela_conta_do_chatgpt_vale(self):
+        r = regras.validar(ficha(outras_llm=[codex()]), projeto="juridico-lab", hoje=HOJE)
+        self.assertEqual(r["erros"], [])
+        self.assertTrue(any("OpenAI (EUA)" in a["motivo"] for a in r["avisos"]))
+
+    def test_so_o_codex_pela_conta_do_chatgpt(self):
+        """Decisão do titular de 08/11/2026: a chave de API não abre; só a conta do ChatGPT dele."""
+        for campo, valor in (("provedor", "openai"), ("provedor", "anthropic"), ("provedor", None),
+                             ("autenticacao", "chave_api"), ("autenticacao", "token"), ("autenticacao", None)):
+            with self.subTest(campo=campo, valor=valor):
+                self.assertEqual([e["campo"] for e in erros(ficha(outras_llm=[codex(**{campo: valor})]))],
+                                 [f"outras_llm[0].{campo}"])
+
+    def test_exatamente_um_item_e_sem_campo_de_dominios(self):
+        self.assertEqual([e["campo"] for e in erros(ficha(outras_llm=[codex(), codex()]))], ["outras_llm"])
+        self.assertTrue(erros(ficha(outras_llm={"provedor": "openai-codex"})))
+        self.assertTrue(erros(ficha(outras_llm=["codex"])))
+        for campo in ("dominios", "rede", "url", "chave", "comando"):
+            with self.subTest(campo=campo):
+                self.assertEqual([e["campo"] for e in erros(ficha(outras_llm=[codex(**{campo: "x.com"})]))],
+                                 [f"outras_llm[0].{campo}"])
+        for vazio in ([], None, {}, "", False):
+            self.assertEqual(erros(ficha(outras_llm=vazio)), [])
+
+    def test_campos_obrigatorios(self):
+        for campo in ("provedor", "autenticacao", "modos", "conteudo_de_terceiros", "teto_chamadas_dia", "r55"):
+            with self.subTest(campo=campo):
+                item = codex()
+                del item[campo]
+                self.assertIn(f"outras_llm[0].{campo}", [e["campo"] for e in erros(ficha(outras_llm=[item]))])
+
+    def test_modos_e_teto_de_chamadas(self):
+        for modos in ([], ["exec", "exec"], ["root"], "exec", None):
+            with self.subTest(modos=modos):
+                self.assertTrue(erros(ficha(outras_llm=[codex(modos=modos)])))
+        for modos in (["exec"], ["titular"], ["titular", "exec"]):
+            self.assertEqual(erros(ficha(outras_llm=[codex(modos=modos)])), [])
+        for teto in (0, -1, 101, True, "30", 1.5, None):
+            with self.subTest(teto=teto):
+                self.assertTrue(erros(ficha(outras_llm=[codex(teto_chamadas_dia=teto)])))
+        for teto in (1, 100):
+            self.assertEqual(erros(ficha(outras_llm=[codex(teto_chamadas_dia=teto)])), [])
+        for valor in ("sim", 1, None):
+            self.assertTrue(erros(ficha(outras_llm=[codex(conteudo_de_terceiros=valor)])))
+        self.assertEqual(erros(ficha(outras_llm=[codex(conteudo_de_terceiros=False)])), [])
+
+    def test_r55_forma_e_validade_de_90_dias(self):
+        r55 = codex()["r55"]
+        def com(**extra):
+            return erros(ficha(outras_llm=[codex(r55={**r55, **extra})]))
+        self.assertEqual(com(conferido_em="2026-10-31"), [])  # hoje
+        self.assertEqual(com(conferido_em="2026-08-02"), [])  # 90 dias
+        velho = com(conferido_em="2026-08-01")  # 91 dias
+        self.assertEqual([e["campo"] for e in velho], ["outras_llm[0].r55.conferido_em"])
+        self.assertTrue(velho[0].get("vencida"))
+        futuro = com(conferido_em="2026-11-01")
+        self.assertEqual([e["campo"] for e in futuro], ["outras_llm[0].r55.conferido_em"])
+        self.assertIn("futuro", futuro[0]["motivo"])
+        for ruim in ("31/10/2026", "2026-02-30", "20261031", "", None, 20261031):
+            with self.subTest(data=ruim):
+                self.assertTrue(com(conferido_em=ruim))
+        for campo, valor in (("treinamento_desligado", False), ("treinamento_desligado", "sim"),
+                             ("treinamento_desligado", None), ("plano", ""), ("plano", "x" * 33),
+                             ("plano", "Plus\x1b[2J"), ("plano", "Pl" + chr(0x202E) + "us"), ("plano", None)):
+            with self.subTest(campo=campo, valor=valor):
+                self.assertTrue(com(**{campo: valor}))
+        for ruim in ({"plano": "Plus"}, {**r55, "extra": 1}, "ok", None, []):
+            with self.subTest(r55=ruim):
+                self.assertTrue(erros(ficha(outras_llm=[codex(r55=ruim)])))
+        # sem `hoje`, só a forma (como a vigência)
+        self.assertEqual(regras.validar(ficha(outras_llm=[codex(r55={**r55, "conferido_em": "2020-01-01"})]))["erros"],
+                         [])
+
+    def test_descrever_e_itens(self):
+        f = ficha(outras_llm=[codex()])
+        textos = regras.descrever(f)
+        self.assertEqual([t["secao"] for t in textos], ["outras_llm"])
+        for trecho in ("Codex", "conta do ChatGPT", "conteúdo de clientes", "OpenAI (EUA)", "2026-10-31",
+                       "'Plus'", "até 30 chamadas por dia", "treinamento com os seus dados está desligado"):
+            self.assertIn(trecho, textos[0]["texto"])
+        self.assertEqual(set(regras.itens(f)), {("outras_llm", "openai-codex:exec"), ("outras_llm", "openai-codex:titular")})
+
+
+class TestSecoesNovasNaoQuebram(unittest.TestCase):
+    def test_descrever_e_itens_com_tipos_errados_nao_quebram(self):
+        """Ficha adulterada depois do preparo (`verificar` a descreve): nada levanta exceção."""
+        for f in ({"mcp": 5}, {"mcp": "abc"}, {"mcp": [None, 3, {"ferramentas": 5, "nome": 7}]}, {"mcp": [{"ferramentas": [1]}]},
+                  {"navegador": 5}, {"navegador": {"dominios": 5, "logins": None, "modos": "x"}},
+                  {"navegador": {"dominios": [1, {}, None]}}, {"outras_llm": 5}, {"outras_llm": [None]},
+                  {"outras_llm": [{"r55": 5, "modos": 5}]}, {"outras_llm": [{"r55": {"plano": ["x"]}}]}):
+            with self.subTest(ficha=f):
+                regras.itens(f)
+                self.assertIsInstance(regras.descrever(f), list)
+
+    def test_validar_com_tipos_errados_nao_levanta(self):
+        for valor in (5, "x", [None], [[]], {"a": 1}, [{"ferramentas": {}}], [{"nome": ["x"]}], True):
+            for secao in ("mcp", "navegador", "outras_llm"):
+                with self.subTest(secao=secao, valor=valor):
+                    self.assertIsInstance(regras.validar(ficha(**{secao: valor}), hoje=HOJE)["erros"], list)
 
 
 class TestJsonECanonico(unittest.TestCase):

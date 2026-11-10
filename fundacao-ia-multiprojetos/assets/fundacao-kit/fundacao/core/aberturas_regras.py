@@ -4,10 +4,14 @@ desenho, "tetos que nenhuma assinatura derruba"; revisão independente do pacote
 A ficha `fundacao.ficha_aberturas/1` diz o que o titular abre para UM projeto (rede para os comandos da sessão,
 WebFetch, WebSearch e plugins conferidos), fechada por padrão: campo ausente ou vazio = fechado. Este módulo é o
 validador de tetos fixos do preparo (`abertura preparar`), da ficha em vigor (`core/aberturas.vigente`) e da
-assinatura (assets/host/fundacao_titular.py): nenhuma assinatura derruba um teto daqui. Só biblioteca padrão e nenhum
-outro módulo do kit (o scripts/levantar_aberturas.py o carrega pelo caminho). Tetos (erro recusa; aviso só informa):
+assinatura (assets/host/fundacao_titular.py): nenhuma assinatura derruba um teto daqui. Só biblioteca padrão; os
+irmãos aberturas_dominios, aberturas_mcp, aberturas_agentes, aberturas_scripts e aberturas_jaula (teto de linhas) são
+carregados na chamada, pelo pacote ou, se este foi carregado pelo caminho (scripts/levantar_aberturas.py), pelo arquivo
+vizinho. Tetos (erro recusa; aviso só informa):
 - esquema fechado (additionalProperties: false), com `versao` de 1 a VERSAO_MAXIMA (o que cabe em ficha-v<N>.json); as
-  seções da 1.7.11 (RESERVADAS) só valem ausentes ou vazias, e preenchidas a recusa diz "1.7.11";
+  seções ainda reservadas (RESERVADAS) só valem ausentes ou vazias, e preenchidas a recusa diz "1.7.11"; as seções
+  `mcp`, `navegador` e `outras_llm` (1.7.11, DESENHO-JAULA §7) têm esquema, lista fechada e tetos próprios abaixo;
+- curinga (DECISAO-010, item 5): `*.x` vale para `x` e para todo subdomínio dele (`cobre`, `expandir_curingas`);
 - domínio: nome DNS em minúsculas, sem esquema, porta, caminho, IP literal, IP escrito no nome (127.0.0.1.nip.io), DNS
   para qualquer IP (DNS_PARA_QUALQUER_IP) nem endereço local (localhost, .local...), que pelo proxy do sandbox valem
   como o localhost. Curinga só `*.<domínio registrável>` (SEGUNDO_NIVEL) e nunca sobre hospedagem compartilhada
@@ -15,6 +19,9 @@ outro módulo do kit (o scripts/levantar_aberturas.py o carrega pelo caminho). T
   (DOMINIOS_LARGOS) e para host em hospedagem compartilhada; `webfetch.dominios` contido em `rede.dominios`;
 - plugin: nome próprio do projeto e origem relativa à pasta do projeto, fora de data/ e das pastas protegidas, cada
   parte só com letra ASCII, número, ponto, hífen e sublinhado, sem terminar em ponto/espaço nem com '~' (PARTE_ORIGEM);
+  o campo opcional `agentes` (1.7.11, lote A2) abre os agentes de arquivo do plugin: regras em aberturas_agentes.py,
+  e o `skills_com_scripts` (lote S1) os scripts Python e o lock das skills, presos por hash: aberturas_scripts.py; o
+  plugin com um dos dois tem de se chamar `<projeto>-<nome>` (aos outros, o prefixo é só aviso);
 - `vigencia_ate` no passado recusa (na assinatura e na conferência: ficha vencida fecha tudo).
 O texto livre (`motivo`, `consequencias`) é da sessão: sem controle nem invisível, até TETO_LINHAS linhas e sem duas
 vazias seguidas (não apaga nem empurra a lista fixa para fora da tela); quem descreve cada abertura é `descrever`.
@@ -22,51 +29,54 @@ vazias seguidas (não apaga nem empurra a lista fixa para fora da tela); quem de
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
+import os
 import re
+import types
 import unicodedata
 from datetime import date
 
 SCHEMA = "fundacao.ficha_aberturas/1"
 NAMESPACE = "fundacao-abertura"  # o da ficha: o aceite de uma entrega (fundacao-decisao) nunca abre nada
 OBRIGATORIOS = ("schema_version", "ficha_id", "project_id", "versao", "motivo", "consequencias")
-OPCIONAIS = ("vigencia_ate", "rede", "webfetch", "websearch", "plugins")
-# Para a 1.7.11 (contratos do lote 2, §5): MCP e `leitura_liberada` exigem a jaula, negações enumeradas e o canário A1.
-RESERVADAS = tuple("mcp navegador git segredos outras_llm execucao leitura_liberada perfil_navegador_copiado".split())
+OPCIONAIS = ("vigencia_ate", "rede", "webfetch", "websearch", "plugins", "mcp", "navegador", "outras_llm")
+# Seções ainda fechadas (contratos do lote 2, §5): só valem ausentes ou vazias. A 1.7.11 abriu `mcp`, `navegador` e
+# `outras_llm` (DESENHO-JAULA §7, DECISAO-010); `perfil_navegador_copiado` segue recusada (decisão do titular de
+# 08/11/2026: perfil novo; DECISAO-005, item 8).
+# Módulos irmãos: agentes dos plugins; mcp; navegador e outras_llm.
+SECOES_1711 = ("aberturas_agentes", "aberturas_scripts", "aberturas_mcp", "aberturas_jaula")
+_IRMAOS: dict = {}
+
+
+def _irmao(nome: str):
+    """Módulo ao lado deste: pelo pacote do kit, ou, se este foi carregado pelo caminho (scripts/levantar_aberturas.py),
+    pelo arquivo vizinho. É o único acoplamento com o resto do kit, e só em tempo de chamada."""
+    if nome not in _IRMAOS:
+        if __package__:
+            _IRMAOS[nome] = importlib.import_module("." + nome, __package__)
+        else:
+            spec = importlib.util.spec_from_file_location(nome, os.path.join(os.path.dirname(__file__), nome + ".py"))
+            _IRMAOS[nome] = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(_IRMAOS[nome])
+    return _IRMAOS[nome]
+
+
+def _contexto():
+    """Este módulo, para os irmãos usarem `mostrar`, `problema_do_dominio` e afins (sem importar este arquivo)."""
+    return types.SimpleNamespace(**globals())
+
+
+_D = _irmao("aberturas_dominios")  # as regras de domínio e do curinga: aberturas_dominios.py (os mesmos nomes públicos)
+(SUFIXOS_COMPARTILHADOS, PROVEDORES_COMPARTILHADOS, DOMINIOS_LARGOS, TERMINACOES_LOCAIS, DNS_PARA_QUALQUER_IP,
+ SEGUNDO_NIVEL, problema_do_dominio, avisos_do_dominio, cobre, expandir_curingas, _sob) = (
+    _D.SUFIXOS_COMPARTILHADOS, _D.PROVEDORES_COMPARTILHADOS, _D.DOMINIOS_LARGOS, _D.TERMINACOES_LOCAIS,
+    _D.DNS_PARA_QUALQUER_IP, _D.SEGUNDO_NIVEL, _D.problema_do_dominio, _D.avisos_do_dominio, _D.cobre,
+    _D.expandir_curingas, _D._sob)
+RESERVADAS = tuple("git segredos execucao leitura_liberada perfil_navegador_copiado".split())
 TETO_FICHA, TETO_TEXTO, TETO_LINHAS, TETO_DOMINIOS, TETO_PLUGINS = 256 * 1024, 4000, 20, 200, 20
 VERSAO_MAXIMA = 10**9 - 1  # ficha-v<N>.json com até 9 dígitos (core/aberturas.VERSAO_RE)
-# Hospedagem compartilhada: curinga nunca; site exato, com aviso. Os 19 dos contratos e outros da mesma natureza.
-SUFIXOS_COMPARTILHADOS = tuple((
-    "vercel.app github.io workers.dev googleusercontent.com netlify.app pages.dev herokuapp.com "
-    "azurewebsites.net cloudfront.net appspot.com firebaseapp.com web.app ngrok.io ngrok-free.app "
-    "trycloudflare.com repl.co glitch.me blob.core.windows.net s3.amazonaws.com githubusercontent.com "
-    "gitlab.io onrender.com fly.dev railway.app surge.sh deno.dev r2.dev amplifyapp.com azurestaticapps.net "
-    "web.core.windows.net storage.googleapis.com ngrok.app loca.lt replit.dev blogspot.com wordpress.com "
-    "wixsite.com weebly.com neocities.org notion.site myshopify.com 000webhostapp.com").split())
-# Provedor onde qualquer cliente publica ou recebe dados (bucket, função, túnel, DNS dinâmico, coletor), também por
-# região (*.s3.sa-east-1.amazonaws.com): curinga abaixo dele nunca; host exato abaixo dele, com aviso de compartilhada.
-PROVEDORES_COMPARTILHADOS = tuple((
-    "amazonaws.com on.aws awsapprunner.com elasticbeanstalk.com windows.net azure.com azureedge.net "
-    "azurefd.net azure-api.net cloudapp.net trafficmanager.net azurecr.io azurecontainerapps.io "
-    "googleapis.com run.app cloudfunctions.net firebaseio.com firebasestorage.app supabase.co supabase.in "
-    "github.dev devtunnels.ms ondigitalocean.app digitaloceanspaces.com pipedream.net cloudflarestorage.com "
-    "oraclecloud.com appdomain.cloud backblazeb2.com wasabisys.com linodeobjects.com aliyuncs.com "
-    "myqcloud.com hf.space streamlit.app replit.app netlify.com now.sh webhook.site requestcatcher.com "
-    "beeceptor.com lhr.life serveo.net loclx.io interact.sh oast.fun oast.pro oast.live oast.site oast.online "
-    "oast.me burpcollaborator.net duckdns.org ddns.net no-ip.org no-ip.biz hopto.org zapto.org sytes.net dynv6.net "
-    "mooo.com ts.net ngrok.dev loophole.site localhost.run pinggy.link tunnelmole.net dyndns.org dynu.net afraid.org "
-    "freeddns.org synology.me myfritz.net ngrok-free.dev ngrok.pizza bore.pub pagekite.me tunnelto.dev zrok.io "
-    "playit.gg cfargotunnel.com ydns.eu dedyn.io").split())  # DNS dinâmico e túneis: reconferências de 31/10 e 01/11
-DOMINIOS_LARGOS = ("docs.google.com", "drive.google.com", "pastebin.com", "gist.github.com", "github.com",
-                   "gitlab.com", "bitbucket.org", "dropbox.com")
-TERMINACOES_LOCAIS = ("localhost", "local", "internal", "localdomain", "lan", "home", "corp", "intranet", "private",
-                      "test", "example", "invalid", "onion", "arpa")
-# DNS que responde o IP escrito no nome (10-0-0-1.sslip.io) e nomes que apontam para o próprio computador: recusados.
-DNS_PARA_QUALQUER_IP = ("nip.io", "sslip.io", "xip.io", "traefik.me", "localtest.me", "lvh.me", "vcap.me",
-                        "lacolhost.com", "localhost.direct", "fuf.me")
-# Segundo nível genérico sob o código de país (com.br, gov.br, co.uk...): `*.com.br` cobriria domínios de todo mundo.
-SEGUNDO_NIVEL = frozenset("com net org gov edu mil int ac co or ne go nom jus leg mp adv eng med art blog biz info "
-                          "ind inf ltd plc sch gob gouv nic tec tur".split())
 PASTAS_PROTEGIDAS = ("data", ".claude", ".porteiro", ".git", "decisoes")  # 1ª parte que nunca vira plugin (dado/protegida)
 ID_PROJETO = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")  # a de core/paths.validate_id (e sem "--")
 ID_FICHA = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
@@ -75,9 +85,6 @@ NOME_PLUGIN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?")
 PARTE_ORIGEM = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 DATA = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
-_ROTULO = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
-_TERMINACAO = re.compile(r"[a-z]{2,63}|xn--[a-z0-9-]{1,59}")
-_IPV4_COM_HIFEN = re.compile(r"(?:.*-)?(?:[0-9]{1,3}-){3}[0-9]{1,3}(?:-.*)?")
 _INVISIVEIS = frozenset({"Cc", "Cf", "Cs", "Co", "Zl", "Zp"})
 
 
@@ -125,58 +132,6 @@ def problema_do_texto(valor, teto: int = TETO_TEXTO) -> str | None:
     if any(not a.strip() and not b.strip() for a, b in zip(linhas, linhas[1:])):
         return "duas linhas vazias seguidas: o texto da sessão não pode empurrar a lista fixa para fora da tela"
     return None
-
-
-def _sob(base: str, sufixos) -> bool:
-    return any(base == s or base.endswith("." + s) for s in sufixos)
-
-
-def problema_do_dominio(dominio) -> str | None:
-    """Motivo da recusa de `dominio` (`nome` ou `*.nome`), ou None."""
-    if not isinstance(dominio, str) or not dominio:
-        return "domínio precisa ser texto não vazio"
-    curinga = dominio.startswith("*.")
-    base = dominio[2:] if curinga else dominio
-    if any(c in base for c in ":[]/@?#\\ "):
-        return "só o nome do domínio: sem esquema, porta, caminho, usuário nem IP literal (IPv6)"
-    if "*" in base:
-        return "curinga só no começo, na forma *.<domínio registrável>"
-    if base != base.lower() or base.endswith(".") or len(base) > 253:
-        return "use a forma canônica: minúsculas, sem ponto no fim, até 253 caracteres"
-    rotulos = base.split(".")
-    if not all(_ROTULO.fullmatch(r) for r in rotulos):
-        return "domínio inválido: só letras minúsculas sem acento, números, hífen e ponto (nome internacional em xn--)"
-    if rotulos[-1].isdigit():
-        return "IP literal não é aceito: use o nome do domínio"
-    if _sob(base, TERMINACOES_LOCAIS):
-        return "endereço local ou reservado (localhost, .local, .internal e afins) não é aceito"
-    if (any(all(r.isdigit() for r in rotulos[i:i + 4]) for i in range(len(rotulos) - 3))
-            or any(_IPV4_COM_HIFEN.fullmatch(r) for r in rotulos)):
-        return "IP escrito no nome (127.0.0.1.nip.io, 10-0-0-1.exemplo.com) não é aceito: pelo proxy, vale como o IP"
-    if _sob(base, DNS_PARA_QUALQUER_IP):
-        return "serviço de DNS que aponta para qualquer IP ou para o próprio computador (nip.io, localtest.me e afins)"
-    if curinga and (len(rotulos) < 2 or (len(rotulos) == 2 and rotulos[0] in SEGUNDO_NIVEL and len(rotulos[1]) == 2)):
-        return "curinga só sobre domínio registrável (*.<nome>.<terminação>), nunca sobre a terminação (*.com, *.com.br)"
-    if len(rotulos) < 2 or not _TERMINACAO.fullmatch(rotulos[-1]):
-        return "domínio sem terminação válida: precisa de nome e terminação, como exemplo.com.br"
-    if curinga and (_sob(base, SUFIXOS_COMPARTILHADOS + PROVEDORES_COMPARTILHADOS)
-                    or any(s.endswith("." + base) for s in SUFIXOS_COMPARTILHADOS)):
-        return "curinga sobre hospedagem compartilhada (qualquer pessoa publica um site ali): liste o site exato"
-    return None
-
-
-def avisos_do_dominio(dominio: str) -> list[str]:
-    curinga = dominio.startswith("*.")
-    base = dominio[2:] if curinga else dominio
-    avisos = []
-    if any(base == d or base.endswith("." + d) or (curinga and d.endswith("." + base)) for d in DOMINIOS_LARGOS):
-        avisos.append("domínio largo que recebe dado por GET (formulário, documento, colagem): dados do projeto podem "
-                      "sair por ele")
-    if _sob(base, SUFIXOS_COMPARTILHADOS + PROVEDORES_COMPARTILHADOS):
-        avisos.append("site em hospedagem compartilhada (qualquer pessoa publica ali): confira de quem é o site")
-    if curinga:
-        avisos.append(f"curinga: vale para todo subdomínio de {base}, inclusive os que ainda não existem")
-    return avisos
 
 
 def problema_da_origem(origem) -> str | None:
@@ -235,8 +190,10 @@ def _plugins(ficha: dict, projeto: str | None, erro, avisos: list) -> None:
     nomes, origens = set(), set()
     for i, item in enumerate(lista):
         campo = f"plugins[{i}]"
-        if not isinstance(item, dict) or set(item) != {"nome", "origem", "manifesto_sha256"}:
-            erro(campo, 'cada plugin é {"nome", "origem", "manifesto_sha256"}, sem outros campos')
+        if not isinstance(item, dict) or not {"nome", "origem", "manifesto_sha256"} <= set(item) <= {
+                "nome", "origem", "manifesto_sha256", "agentes", "skills_com_scripts"}:
+            erro(campo, 'cada plugin é {"nome", "origem", "manifesto_sha256"} e, se abrir agentes ou scripts, "agentes" e '
+                        '"skills_com_scripts"; sem outros campos')
             continue
         nome, origem, sha = item["nome"], item["origem"], item["manifesto_sha256"]
         if not isinstance(nome, str) or not NOME_PLUGIN.fullmatch(nome) or nome in nomes:
@@ -244,7 +201,8 @@ def _plugins(ficha: dict, projeto: str | None, erro, avisos: list) -> None:
                  valor=mostrar(nome))
         else:
             nomes.add(nome)
-            if projeto and not nome.startswith(projeto + "-"):
+            if projeto and not nome.startswith(projeto + "-") and not (item.get("agentes")
+                                                                       or item.get("skills_com_scripts")):  # irmãos: erro
                 avisos.append({"campo": campo + ".nome", "dominio": None,
                                "motivo": f"nome sem o prefixo do projeto ({projeto}-): use um nome próprio do projeto"})
         motivo = problema_da_origem(origem) or ("origem repetida" if origem in origens else None)
@@ -268,6 +226,11 @@ def _vigencia(valor, hoje: date | None, erro) -> None:
                              "versão nova", vencida=True)
 
 
+def _chave(chave) -> str:
+    """O nome do campo no caminho do erro: puro se for um nome comum, escapado (mostrar) se não for."""
+    return chave if isinstance(chave, str) and re.fullmatch(r"[A-Za-z0-9_]{1,40}", chave) else mostrar(chave)
+
+
 def validar(ficha, *, projeto: str | None = None, hoje: date | None = None) -> dict:
     """Erros e avisos da ficha pelos tetos fixos, sem tocar no disco. `projeto`: o project_id esperado; `hoje`: com
     ele, `vigencia_ate` no passado recusa."""
@@ -282,7 +245,9 @@ def validar(ficha, *, projeto: str | None = None, hoje: date | None = None) -> d
         erro(mostrar(chave), "campo fora do esquema da ficha (additionalProperties: false)")
     for chave in RESERVADAS:
         if chave in ficha and not _vazio(ficha[chave]):
-            erro(chave, "seção reservada para a 1.7.11: nesta versão só ausente ou vazia (fechada)", versao="1.7.11")
+            erro(chave, "seção reservada para a 1.7.11: nesta versão só ausente ou vazia (fechada)"
+                 + ("; o perfil do navegador é sempre novo e só do projeto (decisão do titular de 08/11/2026; "
+                    "DECISAO-005, item 8)" if chave == "perfil_navegador_copiado" else ""), versao="1.7.11")
     erros += [{"campo": c, "motivo": "campo obrigatório ausente"} for c in OBRIGATORIOS if c not in ficha]
     if "schema_version" in ficha and ficha["schema_version"] != SCHEMA:
         erro("schema_version", f"esquema desconhecido: use {SCHEMA}")
@@ -311,6 +276,8 @@ def validar(ficha, *, projeto: str | None = None, hoje: date | None = None) -> d
     if "websearch" in ficha and not isinstance(ficha["websearch"], bool):
         erro("websearch", "websearch é true ou false")
     _plugins(ficha, projeto, erro, avisos)
+    for nome in SECOES_1711:
+        _irmao(nome).validar(_contexto(), ficha, hoje, erro, avisos)
     return {"erros": erros, "avisos": avisos}
 
 
@@ -327,24 +294,33 @@ def itens(ficha) -> list[tuple[str, str]]:
     pares = [("rede", d) for d in _lista(ficha, "rede")] + [("webfetch", d) for d in _lista(ficha, "webfetch")]
     if isinstance(ficha, dict) and ficha.get("websearch") is True:
         pares.append(("websearch", "sim"))
-    return pares + [("plugins", str(p.get("nome"))) for p in _lista(ficha, "plugins", dict)]
+    pares += [("plugins", str(p.get("nome"))) for p in _lista(ficha, "plugins", dict)]
+    for nome in SECOES_1711:
+        pares += _irmao(nome).itens(ficha)
+    return pares
+
+
+def alvo(d: str) -> str:
+    return f"{d[2:]} e qualquer subdomínio de {d[2:]}" if d.startswith("*.") else d
 
 
 def descrever(ficha) -> list[dict]:
     """Cada abertura em português simples, por código fixo (o `motivo` e as `consequencias` são da sessão)."""
-    def alvo(d):
-        return f"qualquer subdomínio de {d[2:]}" if d.startswith("*.") else d
     textos = {"rede": "Os comandos da sessão (terminal) poderão se conectar a {}: dados do projeto podem sair para lá.",
               "webfetch": "A ferramenta WebFetch poderá ler páginas de {}; o domínio fica liberado também para os "
                           "comandos.",
               "websearch": "A sessão poderá pesquisar na web (WebSearch): as palavras da busca saem para o serviço de "
                            "busca, e os resultados entram como conteúdo de terceiros (dado, não instrução).{}"}
     saida = [{"secao": s, "item": i, "texto": textos[s].format(alvo(i) if s != "websearch" else "")}
-             for s, i in itens(ficha) if s != "plugins"]
+             for s, i in itens(ficha) if s in textos]
     for p in _lista(ficha, "plugins", dict):  # a origem na forma (PARTE_ORIGEM, até 240) inteira; fora dela, mostrar()
         origem = ascii(p["origem"]) if problema_da_origem(p.get("origem")) is None else mostrar(p.get("origem"))
+        forma = ("Markdown e os scripts Python listados abaixo, sem hooks nem MCP" if p.get("skills_com_scripts")
+                 else "Markdown, sem hooks, MCP nem executável")
         saida.append({"secao": "plugins", "item": str(p.get("nome")), "texto": f"O plugin {mostrar(p.get('nome'))} (de "
-                      f"{origem}; a fundação conferiu só a forma: Markdown, sem hooks, MCP nem executável; o texto das "
+                      f"{origem}; a fundação conferiu só a forma: {forma}; o texto das "
                       "instruções não foi revisado) entra na sessão: as skills, os agentes e os comandos dele passam a "
                       "valer como instrução."})
+    for nome in SECOES_1711:
+        saida += _irmao(nome).descrever(_contexto(), ficha)
     return saida or [{"secao": "nenhuma", "item": "", "texto": "Esta versão não abre nada: tudo continua fechado."}]

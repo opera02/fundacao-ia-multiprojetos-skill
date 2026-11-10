@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from apoio import ENV, SKILL
@@ -135,6 +136,117 @@ class SinaisSessao(unittest.TestCase):
             p.communicate()
 
 
+class SinalDoSubagente(unittest.TestCase):
+    """1.7.11 (C14): no SubagentStart o hook grava um sinal datado que o canário lê, sem mudar o que já emitia."""
+    EVENTO = {"hook_event_name": "SubagentStart", "agent_id": "SEGREDO-id", "agent_type": "general-purpose",
+              "cwd": "SEGREDO-cwd", "prompt": "SEGREDO-prompt", "transcript_path": "SEGREDO-transcript"}
+
+    def setUp(self):
+        self.base = Path(tempfile.mkdtemp(prefix="sinais-1711-"))
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.temp = self.base / "fundacao-ia-ensaio-ficticio"
+        self.temp.mkdir()
+        self.arq = self.temp / "sinais" / "subagente-start.jsonl"
+
+    def rodar(self, temp, evento=None, projeto="ensaio-ficticio"):
+        env = {k: v for k, v in ENV.items() if not k.startswith("FUNDACAO_") and k != "TMPDIR"}
+        env["FUNDACAO_PROJECT"] = projeto
+        if temp is not None:
+            env["TMPDIR"] = str(temp)
+        return subprocess.run([sys.executable, "-I", "-B", str(HOOK)], input=json.dumps(evento or self.EVENTO).encode(),
+                              capture_output=True, env=env, timeout=5)
+
+    def ligar(self, destino, alvo):
+        try:
+            os.symlink(alvo, destino, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            if os.name != "nt":
+                raise
+            r = subprocess.run(["cmd", "/c", "mklink", "/J", str(destino), str(alvo)], capture_output=True)
+            if r.returncode:
+                self.skipTest("sem permissão para criar ligação simbólica ou junção neste Windows")
+
+    def test_grava_a_linha_do_contrato_e_a_saida_nao_muda(self):
+        r = self.rodar(self.temp)
+        self.assertEqual((r.returncode, r.stderr), (0, b""))
+        linhas = self.arq.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(linhas), 1)
+        sinal = json.loads(linhas[0])
+        self.assertEqual(set(sinal), {"evento", "em", "agent_type"})
+        self.assertEqual((sinal["evento"], sinal["agent_type"]), ("SubagentStart", "general-purpose"))
+        em = datetime.fromisoformat(sinal["em"])
+        self.assertEqual(em.utcoffset().total_seconds(), 0)
+        self.assertLess(abs((datetime.now(timezone.utc) - em).total_seconds()), 60)
+        for segredo in (b"SEGREDO", b"prompt", b"cwd"):
+            self.assertNotIn(segredo, self.arq.read_bytes())
+        sem_tmp = self.rodar(None)
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (sem_tmp.returncode, sem_tmp.stdout, sem_tmp.stderr))
+        self.assertIn("nunca instrução", json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"])
+        self.rodar(self.temp)
+        self.assertEqual(len(self.arq.read_text(encoding="utf-8").splitlines()), 2)
+
+    def test_tipo_de_agente_fora_do_padrao_nao_entra(self):
+        self.rodar(self.temp, {**self.EVENTO, "agent_type": "x y\n{SEGREDO}"})
+        self.assertEqual(set(json.loads(self.arq.read_text(encoding="utf-8"))), {"evento", "em"})
+
+    def test_tmpdir_ausente_de_outro_projeto_ou_fora_do_padrao_nao_grava(self):
+        outros = [None, self.base / "fundacao-ia-outro-projeto", self.base / "tmp-qualquer",
+                  "relativo/fundacao-ia-ensaio-ficticio", self.base / "fundacao-ia-ensaio-ficticio-extra"]
+        for temp in outros:
+            with self.subTest(temp=str(temp)):
+                if isinstance(temp, Path):
+                    temp.mkdir(exist_ok=True)
+                r = self.rodar(temp)
+                self.assertEqual((r.returncode, r.stderr), (0, b""))
+                self.assertIn(b"additionalContext", r.stdout)
+        self.assertEqual(list(self.base.rglob("*.jsonl")), [])
+
+    def test_ligacao_no_caminho_nao_grava(self):
+        alvo = self.base / "alvo"
+        alvo.mkdir()
+        ligado = self.base / "ligado"
+        ligado.mkdir()
+        self.ligar(self.temp / "sinais", alvo)
+        self.ligar(ligado / "fundacao-ia-ensaio-ficticio", alvo)
+        for nome, temp in (("sinais", self.temp), ("temp", ligado / "fundacao-ia-ensaio-ficticio")):
+            with self.subTest(ligacao=nome):
+                r = self.rodar(temp)
+                self.assertEqual((r.returncode, r.stderr), (0, b""))
+                self.assertIn(b"additionalContext", r.stdout)
+        self.assertEqual(list(alvo.iterdir()), [])
+
+    def test_arquivo_ligado_nao_grava(self):
+        if os.name == "nt":
+            self.skipTest("ligação de arquivo no Windows exige privilégio; a junção de pasta está no teste acima")
+        (self.temp / "sinais").mkdir()
+        alvo = self.base / "alvo.txt"
+        alvo.write_text("intacto")
+        os.symlink(alvo, self.arq)
+        self.assertEqual(self.rodar(self.temp).returncode, 0)
+        self.assertEqual(alvo.read_text(), "intacto")
+
+    def test_arquivo_no_teto_nao_cresce(self):
+        (self.temp / "sinais").mkdir()
+        self.arq.write_bytes(b"x" * (32 * 1024))
+        r = self.rodar(self.temp)
+        self.assertEqual((r.returncode, r.stderr), (0, b""))
+        self.assertEqual(self.arq.stat().st_size, 32 * 1024)
+
+    def test_falha_de_escrita_nao_quebra_o_hook(self):
+        (self.temp / "sinais").write_text("arquivo no lugar da pasta")
+        r = self.rodar(self.temp)
+        self.assertEqual((r.returncode, r.stderr), (0, b""))
+        self.assertIn("nunca instrução", json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"])
+
+    def test_outros_eventos_nao_gravam(self):
+        self.rodar(self.temp, {"hook_event_name": "SessionStart", "source": "compact"})
+        self.assertFalse((self.temp / "sinais").exists())
+
+    def test_nome_do_arquivo_e_o_do_contrato_do_canario(self):
+        texto = (SKILL / "scripts" / "ensaio_isolamento_wsl.py").read_text(encoding="utf-8")
+        self.assertIn('SINAL_SUBAGENTE = "sinais/subagente-start.jsonl"', texto)
+
+
 class IntegracaoDosSinais(unittest.TestCase):
     def test_modelos_tem_compact_exec_form_e_status_sem_relaxar_guardas(self):
         m = carregar()
@@ -165,7 +277,10 @@ class IntegracaoDosSinais(unittest.TestCase):
         # onFailure block, mas no 2.1.302 a falha desse hook só avisa (revisão de segurança da versão, F3).
         self.assertNotIn("SubagentStart", perfis[0]["hooks"])
         subagente = perfis[1]["hooks"]["SubagentStart"]
-        self.assertEqual([g["matcher"] for g in subagente], ["*"])
+        self.assertEqual([g["matcher"] for g in subagente], ["*", "*"])  # 1.7.11: o segundo é o regras_codigo.py (P7)
+        self.assertEqual(subagente[1]["hooks"][0]["args"],
+                         ["-I", "-B", "/tmp/raiz-ficticia/.claude/hooks/regras_codigo.py"])
+        self.assertEqual(subagente[1]["hooks"][0]["onFailure"], "continue")
         self.assertEqual(subagente[0]["hooks"][0]["args"],
                          ["-I", "-B", "/tmp/raiz-ficticia/.claude/hooks/sinais_sessao.py"])
         self.assertEqual(subagente[0]["hooks"][0]["onFailure"], "block")

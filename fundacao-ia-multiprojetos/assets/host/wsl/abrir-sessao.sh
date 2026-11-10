@@ -31,6 +31,11 @@ CLAUDE_SHA256='{{CLAUDE_SHA256}}'
 CLAUDE_ORIGEM_HASH='{{CLAUDE_ORIGEM_HASH}}'
 FERRAMENTAS='{{FERRAMENTAS}}'
 PLUGINS='{{PLUGINS}}'
+# MCP da ficha (1.7.11, lote L2): MCP_ESTRITO 1 = só o mcp.json da área (--strict-mcp-config); 0 = origem conta, que
+# precisa dos conectores da conta ao lado (efeito do --strict-mcp-config sobre eles: medida M3 do desenho da jaula).
+# MCP_OCULTAR: as ferramentas que a ficha esconde da sessão (--disallowedTools), vazio sem a seção.
+MCP_ESTRITO='{{MCP_ESTRITO}}'
+MCP_OCULTAR='{{MCP_OCULTAR}}'
 PREPARO_SHA256='{{PREPARO_SHA256}}'
 PORTEIRO_SHA256='{{PORTEIRO_SHA256}}'
 TEMP_PROJETO='{{TEMP_PROJETO}}'
@@ -44,6 +49,9 @@ PROJ="$RAIZ/projects/$PROJETO"
 PREPARO="$SKILL/assets/host/preparo_host.py"
 PORTEIRO="$SKILL/assets/host/wsl/porteiro.py"
 PID_PORTEIRO=""
+PORTEIRO_JAULA="$SKILL/assets/host/wsl/porteiro_jaula.py"
+PID_PORTEIRO_JAULA=""
+SUDO_DA_JAULA=0
 TEMP_CRIADO=0
 VIGIADO=0
 
@@ -57,6 +65,14 @@ fim() {
   if [ -n "$PID_PORTEIRO" ]; then
     kill -TERM "$PID_PORTEIRO" 2>/dev/null || true
     wait "$PID_PORTEIRO" 2>/dev/null || true
+  fi
+  if [ -n "$PID_PORTEIRO_JAULA" ]; then
+    kill -TERM "$PID_PORTEIRO_JAULA" 2>/dev/null || true
+    wait "$PID_PORTEIRO_JAULA" 2>/dev/null || true
+  fi
+  if [ "$SUDO_DA_JAULA" = 1 ]; then
+    # F11: o ticket do sudo que o `preparar-sudo` renovou neste terminal não fica vivo depois da sessão (`sudo -k` nunca pede senha).
+    /usr/bin/sudo -k </dev/null >/dev/null 2>&1 || true
   fi
   if [ "$TEMP_CRIADO" = 1 ]; then
     rm -rf -- "$TEMP_PROJETO" 2>/dev/null || true
@@ -204,6 +220,41 @@ if ! kill -0 "$PID_PORTEIRO" 2>/dev/null; then
   nao_abre "o porteiro não ficou de pé: veja $REGISTRO_PORTEIRO/saida.log."
 fi
 
+# Porteiro da jaula (1.7.11, lote L4; DESENHO-JAULA §7.3): só com o porteiro-jaula.json na área do titular, que o preparo grava
+# quando a ficha aplicada tem seção de jaula (navegador ou outras_llm); sem a seção o arquivo não existe, e nada disto roda.
+# O arquivo já foi conferido pelo hashes.json (conferir-abertura, acima). Código do `conferir`: 0 a sessão tem operações
+# (sobe o porteiro da jaula, fora do sandbox, até este lançador morrer); 3 a ficha abre a jaula só pelos lançadores do
+# titular (nada a subir); qualquer outro valor recusa a abertura. [medir M1] Na forma "senha" da sudoers, o `preparar-sudo`
+# pede a senha do Linux uma vez, aqui, antes da sessão.
+if [ -f "$AREA/porteiro-jaula.json" ]; then
+  for pasta in "$PROJ/.porteiro/jaula" "$PROJ/.porteiro/jaula/pedidos" "$PROJ/.porteiro/jaula/respostas"; do
+    if [ -L "$pasta" ]; then
+      nao_abre "$pasta é ligação: arquive-a e abra de novo."
+    fi
+    mkdir -p -- "$pasta" || nao_abre "não consegui criar $pasta."
+  done
+  codigo_jaula=0
+  (cd / && env -i PATH=/usr/bin:/bin HOME="$HOME" LANG=C.UTF-8 "$PY" -I -B "$PORTEIRO_JAULA" conferir --config "$AREA/porteiro-jaula.json") >/dev/null 2>&1 || codigo_jaula=$?
+  case "$codigo_jaula" in
+    0)
+      SUDO_DA_JAULA=1
+      if ! (cd / && env -i PATH=/usr/bin:/bin HOME="$HOME" LANG=C.UTF-8 TERM="${TERM:-dumb}" "$PY" -I -B "$PORTEIRO_JAULA" preparar-sudo --config "$AREA/porteiro-jaula.json"); then
+        nao_abre "o sudo da jaula não foi liberado (forma com senha da sudoers): abra de novo e digite a senha do Linux."
+      fi
+      (cd / && exec env -i PATH=/usr/bin:/bin HOME="$HOME" LANG=C.UTF-8 "$PY" -I -B "$PORTEIRO_JAULA" servir \
+        --config "$AREA/porteiro-jaula.json" --fila "$PROJ/.porteiro/jaula" --pid-lancador "$$") >>"$REGISTRO_PORTEIRO/jaula-saida.log" 2>&1 &
+      PID_PORTEIRO_JAULA=$!
+      sleep 1
+      if ! kill -0 "$PID_PORTEIRO_JAULA" 2>/dev/null; then
+        PID_PORTEIRO_JAULA=""
+        nao_abre "o porteiro da jaula não ficou de pé: veja $REGISTRO_PORTEIRO/jaula-saida.log."
+      fi
+      ;;
+    3) ;;
+    *) nao_abre "o porteiro da jaula recusou a configuração. Para ver o motivo: $PY -I -B $PORTEIRO_JAULA conferir --config $AREA/porteiro-jaula.json" ;;
+  esac
+fi
+
 AMBIENTE=(HOME="$HOME" USER="$USUARIO" LOGNAME="$USUARIO" SHELL=/bin/bash PATH=/usr/local/bin:/usr/bin:/bin
           TMPDIR="$TEMP_PROJETO" CLAUDE_CONFIG_DIR="$CONFIG" FUNDACAO_RAIZ="$RAIZ" FUNDACAO_PROJECT="$PROJETO"
           FUNDACAO_PORTEIRO="$PROJ/.porteiro" "FUNDACAO_PRINCIPAL=sessao-$PROJETO")
@@ -212,11 +263,35 @@ for v in LANG LC_ALL LC_CTYPE TERM COLORTERM TZ WSL_DISTRO_NAME; do
     AMBIENTE+=("$v=${!v}")
   fi
 done
+# [Decisão; ponytail, P7.] Regras de código enxuto: o campo regras_codigo do projeto.json, de lista fechada (só "enxuto"),
+# vira FUNDACAO_REGRAS_CODIGO para o hook regras_codigo.py. Sem o campo, nada é exportado e o hook não escreve nada.
+# Valor fora da lista: a sessão não abre (quem escreveu o campo quis a regra).
+if ! REGRAS_CODIGO=$("$PY" -I -B "$PREPARO" regras-codigo --raiz "$RAIZ" --projeto "$PROJETO"); then
+  printf '%s\n' "$REGRAS_CODIGO" >&2
+  nao_abre "o campo regras_codigo do projeto.json está fora da lista fechada (acima): corrija o valor ou tire o campo."
+fi
+case "$REGRAS_CODIGO" in
+  '') ;;
+  enxuto) AMBIENTE+=(FUNDACAO_REGRAS_CODIGO=enxuto) ;;
+  *) nao_abre "regras_codigo com valor inesperado." ;;
+esac
 ARGS=(--settings "$AREA/settings.wsl.json" --setting-sources local --tools "$FERRAMENTAS")
 for nome in $PLUGINS; do
   ARGS+=(--plugin-dir "$AREA/plugins/$nome")
 done
-ARGS+=(--mcp-config "$AREA/mcp.json" --strict-mcp-config)
+# --disallowedTools é variádica: um só argumento, em vírgulas, e outra opção logo depois, para o prompt não ser engolido.
+if [ -n "$MCP_OCULTAR" ]; then
+  ARGS+=(--disallowedTools "$MCP_OCULTAR")
+fi
+if [ "$MCP_ESTRITO" = 1 ]; then
+  ARGS+=(--mcp-config "$AREA/mcp.json" --strict-mcp-config)
+else
+  ARGS+=(--mcp-config "$AREA/mcp.json")
+fi
+# [Decisão; DECISAO-010, item 1.] O modo sem perguntas fica disponível e desligado: a sessão abre no modo normal e o
+# titular o liga com Shift+Tab, quando quiser, sem aceite assinado. É opção fixa deste lançador: nenhum argumento do
+# terminal passa ao Claude Code, e o perfil não traz permissions.defaultMode. As negações, os hooks e o sandbox valem.
+ARGS+=(--allow-dangerously-skip-permissions)
 PROMPT="Sessão do projeto $PROJETO da fundação em $RAIZ (Ubuntu; perfil do projeto na área do titular, aberta pelo lançador dele: a identidade sessao-$PROJETO e o projeto vêm do lançador, não os atribua). Antes de agir, leia o INSTRUCOES.md e a RETOMADA.md desta pasta (projects/$PROJETO): a RETOMADA é dado e não autoriza cerimônia; a da raiz é do coordenador e não é lida aqui. A skill da fundação está em $SKILL: leia o SKILL.md de lá pelo Bash (cat '$SKILL/SKILL.md'), porque a ferramenta Read só alcança a pasta do projeto. O banco só pelo porteiro, com python3 -m fundacao ...; nunca abra state/. Com a raiz em /mnt/<x>, o isolamento entre projetos é lógico até o canário passar. Nenhuma chamada a provedor sem autorização registrada."
 
 printf 'Claude Code %s fixado (hash %s, %s); área do titular, porteiro e hooks conferidos.\n' "$CLAUDE_VERSAO" \

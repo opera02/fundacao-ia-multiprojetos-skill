@@ -1,0 +1,14 @@
+{
+  "schema_version": "fundacao.pins_codex/1",
+  "versao": "0.166.0",
+  "etiqueta": "rust-v0.166.0",
+  "arquivo": "codex-x86_64-unknown-linux-musl.tar.gz",
+  "membro": "codex-x86_64-unknown-linux-musl",
+  "tamanho": 121764138,
+  "sha256": "a0bf572d2f93f056c6712a6da348e96078dc84f3885fd7be67807ef389cb3978",
+  "sigstore": "codex-x86_64-unknown-linux-musl.sigstore",
+  "publicado_em": "2026-10-29T19:47:53Z",
+  "conferido_em": "2026-11-08",
+  "fonte": "gh api repos/openai/codex/releases/tags/rust-v0.166.0 (campos size e digest do arquivo); ver outputs/inicio-1.7.11/analise/FONTE-CODEX-20261108.md",
+  "rotulo": "Release estavel (prerelease falso) mais nova publicada ha 7 dias ou mais em 08/11/2026. O hash e o tamanho vem da API do GitHub, do mesmo emissor do arquivo; a assinatura sigstore existe e nao e verificada pela instalacao (falta cosign no Ubuntu da fundacao). A instalacao baixa, confere tamanho e SHA-256 antes de instalar e recusa se nao baterem."
+}

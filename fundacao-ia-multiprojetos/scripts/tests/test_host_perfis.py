@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import ntpath
+import shlex
 import shutil
 import subprocess
 import sys
@@ -61,6 +62,17 @@ def ganchos(comando: str, pasta: str, sep: str, wsl: bool = False) -> dict:
         inicio.append({"matcher": "startup|resume", "hooks": [{
             "type": "command", "command": comando, "args": ["-I", "-B", pasta + sep + "aviso_copia.py"], "timeout": 5,
             "statusMessage": "aviso_copia: idade da última cópia de segurança"}]})
+    # 1.7.11 (ponytail, P7): o hook das regras de código enxuto só no perfil do Ubuntu (no Windows nada liga o campo),
+    # sem bloquear (onFailure continue).
+    if wsl:
+        inicio.append({"matcher": "startup|resume|clear|compact", "hooks": [{
+            "type": "command", "command": comando, "args": ["-I", "-B", pasta + sep + "regras_codigo.py"], "timeout": 3,
+            "onFailure": "continue",
+            "statusMessage": "regras_codigo: regras de código enxuto (só com o campo do projeto ligado)"}]})
+    regras_subagente = {"matcher": "*", "hooks": [{
+        "type": "command", "command": comando, "args": ["-I", "-B", pasta + sep + "regras_codigo.py"], "timeout": 3,
+        "onFailure": "continue",
+        "statusMessage": "regras_codigo: regras de código enxuto para o subagente (só com o campo do projeto ligado)"}]}
     pre = [hook(comando, pasta + sep + "guarda_ferramentas.py", "guarda_ferramentas", "*",
                 "só as ferramentas da lista do projeto")] if wsl else []
     pre += [hook(comando, pasta + sep + "guarda_caminho.py", "guarda_caminho", "Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
@@ -78,7 +90,8 @@ def ganchos(comando: str, pasta: str, sep: str, wsl: bool = False) -> dict:
         return {"SessionStart": inicio, "PreToolUse": pre}
     subagente = [{"matcher": "*", "hooks": [{  # 1.7.10.2: as regras da sessão para o subagente
         "type": "command", "command": comando, "args": ["-I", "-B", pasta + sep + "sinais_sessao.py"], "timeout": 3,
-        "onFailure": "block", "statusMessage": "sinais_sessao: as regras da sessão para o subagente"}]}]
+        "onFailure": "block", "statusMessage": "sinais_sessao: as regras da sessão para o subagente"}]},
+        regras_subagente]
     return {"SessionStart": inicio, "SubagentStart": subagente, "PreToolUse": pre}
 
 
@@ -113,7 +126,9 @@ class PerfilWindows(unittest.TestCase):
         esperado = {
             "permissions": {"deny": NEGACOES_DA_RAIZ[:15] + complemento(m, m.MODELO_WINDOWS) + [
                 "Read(./state/**)", "Read(./projects/*/data/**)", "Read(~/.claude/.credentials.json)",
-                "Read(~/.codex/auth.json)", "Read(~/.ssh/**)", "WebFetch", "WebSearch", "Edit(./.claude/**)",
+                "Read(~/.codex/auth.json)", "Read(~/.ssh/**)", "WebFetch", "WebSearch",
+                "Monitor",  # revisão de segurança da 1.7.10, HOOK-F9: roda comando sem os hooks de Bash e PowerShell
+                "Edit(./.claude/**)",
                 "Edit(./registry/projetos-host.json)"]},  # 1.7.10: regra única, dados e web negados no Windows
             "claudeMdExcludes": ["**/projects/*/data/**"],  # 1.7.0: pasta de dados não vira instrução
             "env": {"FUNDACAO_MCP_PERMITIDAS": "mcp__ccd_*", "FUNDACAO_RAIZ": r"E:\Fundacao Exemplo",
@@ -125,6 +140,27 @@ class PerfilWindows(unittest.TestCase):
         self.assertEqual(perfil, esperado)
         self.assertNotIn("{{", m.texto_json(perfil))
         self.assertEqual(m.perfil_windows(raiz="E:/Fundacao Exemplo/", python="C:/Py/python.exe"), esperado)
+
+    def test_regras_de_codigo_fora_do_perfil_do_windows_e_inertes_la(self):
+        """1.7.11 (ponytail, P7): nada no Windows liga o campo, então o hook não é registrado no perfil dele (nem em
+        SubagentStart, que o Windows não tem); e, se rodasse, sem FUNDACAO_REGRAS_CODIGO sairia com 0 e sem emitir, com
+        ou sem FUNDACAO_PROJECT (o caso das sessões da raiz, que não têm projeto)."""
+        m = carregar()
+        perfil = m.perfil_windows(raiz=r"E:\Fundacao Exemplo", python=r"C:\Py\python.exe")
+        self.assertNotIn("regras_codigo", m.texto_json(perfil))
+        self.assertNotIn("SubagentStart", perfil["hooks"])
+        self.assertNotIn("regras_codigo.py", m.HOOKS_WINDOWS)
+        self.assertIn("regras_codigo.py", m.HOOKS)  # mas a raiz o recebe do preparar-maquina.ps1, para o Ubuntu
+        self.assertNotIn("FUNDACAO_REGRAS_CODIGO", perfil["env"])
+        self.assertNotIn("bypassPermissions", m.texto_json(perfil))
+        for projeto in (None, "caso-real"):
+            amb = {k: v for k, v in ENV.items() if not k.startswith("FUNDACAO_")}
+            if projeto:
+                amb["FUNDACAO_PROJECT"] = projeto
+            r = subprocess.run([sys.executable, "-I", "-B", str(SKILL / "assets" / "hooks" / "regras_codigo.py")],
+                               input=b'{"hook_event_name": "SessionStart", "source": "startup"}', capture_output=True,
+                               env=amb, timeout=10)
+            self.assertEqual((r.returncode, r.stdout, r.stderr), (0, b"", b""), projeto)
 
 
 # registry/projetos-host.json de ensaio (pastas fictícias; o registro só guarda a forma, não confere a existência aqui).
@@ -249,7 +285,12 @@ class PerfilWsl(unittest.TestCase):
         proj = raiz + "/projects/caso-real"
         outros = ("lab-a", "lab-b", "lab-c")
         nominais = [r for o in outros for r in (f"Read(/{raiz}/projects/{o}/**)", f"Read(/{raiz}/.claude/projetos/{o}/**)")]
-        nominais += ["Read(//mnt/d/**)", f"Read(/{perfil_win}/**)"] + [f"Read(~/{r})" for r in (
+        # Revisão de segurança da 1.7.10: a área root e o lançador de cada outro projeto (WSL-01) e o /mnt/wslg
+        # (HOOK-F8) também negados.
+        nominais += [r for o in outros for r in (f"Read(//etc/fundacao-ia/projetos/{o}/**)",
+                                                 f"Read(//usr/local/bin/abrir-fundacao-{o})",
+                                                 f"Read(//usr/local/bin/fundacao-skill-{o})")]  # 1.7.11, S3
+        nominais += ["Read(//mnt/d/**)", f"Read(/{perfil_win}/**)", "Read(//mnt/wslg/**)"] + [f"Read(~/{r})" for r in (
             ".claude/projects/**", ".claude/history.jsonl", ".claude/file-history/**", ".claude/paste-cache/**",
             ".claude/session-env/**", ".claude/sessions/**", ".claude/shell-snapshots/**", ".claude/todos/**",
             ".claude/plans/**", ".claude/backups/**", ".codex/**", ".fundacao/**", ".local/share/fundacao-ia/**")]
@@ -265,10 +306,12 @@ class PerfilWsl(unittest.TestCase):
                 "Edit(//mnt/c/ProgramData/FundacaoIA/**)", "Edit(//mnt/d/Origem Ç/**)"], "allow": []},
             "claudeMdExcludes": ["**/projects/*/data/**"],
             "syncClaudeAiSkills": False, "syncClaudeAiPlugins": False, "disableClaudeAiConnectors": True,
+            "disableSkillShellExecution": True,  # F8 da revisão final da 1.7.11
             "env": {"FUNDACAO_" + "PRINCIPAL": "sessao-caso-real", "FUNDACAO_PROJECT": "caso-real",
                     "FUNDACAO_RAIZ": raiz, "FUNDACAO_PORTEIRO": proj + "/.porteiro",
                     "FUNDACAO_FERRAMENTAS": "Bash,Read,Edit,Write,Glob,Grep,Skill,Agent,TodoWrite",
-                    "FUNDACAO_MCP_PERMITIDAS": "", "FUNDACAO_DOMINIOS_WEB": "", "DISABLE_AUTOUPDATER": "1",
+                    "FUNDACAO_MCP_PERMITIDAS": "", "FUNDACAO_MCP_FERRAMENTAS": "", "FUNDACAO_DOMINIOS_WEB": "", "DISABLE_AUTOUPDATER": "1",
+                    "FUNDACAO_SKILLS": "-",  # F8 e F13: sem ficha válida, nenhuma skill abre (valor não vazio)
                     "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1", "PYTHONPATH": raiz, "XDG_CACHE_HOME": proj + "/.cache",
                     "npm_config_cache": proj + "/.cache/npm", "PIP_CACHE_DIR": proj + "/.cache/pip",
                     "UV_CACHE_DIR": proj + "/.cache/uv", "CLAUDE_CODE_DISABLE_WEB_FETCH": "1"},
@@ -388,12 +431,36 @@ class PerfilWslConferidoPeloModelo(unittest.TestCase):
             "chave desconhecida": lambda p: p.update(statusLine={"type": "command", "command": "/tmp/x"}),
             "troca de identidade liberada": lambda p: p["env"].update(FUNDACAO_PERMITIR_TROCA_IDENTIDADE="1"),
             "verdadeiro como número": lambda p: p["sandbox"].update(allowUnsandboxedCommands=0),
+            "regras de código tiradas do início": lambda p: p["hooks"]["SessionStart"].pop(1),
+            "regras de código bloqueando": lambda p: p["hooks"]["SessionStart"][1]["hooks"][0].update(onFailure="block"),
+            "regras de código ligadas pelo perfil": lambda p: p["env"].update(FUNDACAO_REGRAS_CODIGO="enxuto"),
         }
         for nome, mudanca in casos.items():
             with self.subTest(nome):
                 self.assertTrue(self.conferir(self.alterado(mudanca)))
                 if nome != "outro projeto gravável":  # sem a lista de projetos da raiz, só a estrutura é conferida
                     self.assertTrue(self.m.conferir_perfil_wsl(self.alterado(mudanca), self.RAIZ))
+
+    def test_regras_de_codigo_registradas_sem_bloquear_e_o_campo_fica_com_o_lancador(self):
+        """1.7.11 (ponytail, P7): o hook entra nos eventos SessionStart e SubagentStart com prazo de 3 s e sem bloquear;
+        o perfil (de dono root, igual para o projeto inteiro) não liga a regra: o campo vem do `projeto.json`, pelo
+        lançador."""
+        grupos = [g for g in self.perfil["hooks"]["SessionStart"] + self.perfil["hooks"]["SubagentStart"]
+                  if "regras_codigo.py" in json.dumps(g)]
+        self.assertEqual([g["matcher"] for g in grupos], ["startup|resume|clear|compact", "*"])
+        for g in grupos:
+            h = g["hooks"][0]
+            self.assertEqual((h["command"], h["args"][:2], h["timeout"], h["onFailure"]),
+                             ("/usr/bin/python3", ["-I", "-B"], 3, "continue"))
+            self.assertEqual(h["args"][2], self.RAIZ + "/.claude/hooks/regras_codigo.py")
+        self.assertNotIn("FUNDACAO_REGRAS_CODIGO", self.perfil["env"])
+
+    def test_perfil_nao_liga_o_modo_sem_perguntas(self):
+        """DECISAO-010, item 1: o modo fica disponível pela opção do lançador, nunca pelo perfil."""
+        self.assertEqual(self.perfil["permissions"].get("defaultMode"), None)
+        self.assertNotIn("bypassPermissions", self.m.texto_json(self.perfil))
+        self.assertNotIn("dangerously", self.m.texto_json(self.perfil))
+        self.assertNotIn("disableBypassPermissionsMode", self.m.texto_json(self.perfil))
 
     def test_projeto_criado_depois_do_preparo_do_windows_e_acusado(self):
         problemas = self.conferir(self.perfil, outros=("lab-a", "lab-b", "lab-novo"))
@@ -740,6 +807,83 @@ class Lancador(unittest.TestCase):
                     self.assertFalse((pasta / "bin").exists())
         finally:
             shutil.rmtree(base, ignore_errors=True)
+
+
+class MensagemDeProjetoSemPreparo(unittest.TestCase):
+    """1.7.11 (C25): um projeto novo, ainda não preparado no Ubuntu (o caso de `estudio-de-video`), faz o
+    conferir-abertura recusar abrir os lançadores dos outros: o perfil de cada um ainda não nega a pasta dele. A recusa
+    continua; a mensagem passa a dizer, em português simples, qual projeto falta preparar e a trazer o comando pronto
+    do preparar-wsl.sh para o titular colar no terminal do Ubuntu."""
+
+    HASHES = {"raiz": "/mnt/e/Raiz D", "claude": {"versao": "2.1.302", "sha256": "a" * 64},
+              "parametros": {"perfil_windows": "/mnt/c/User" + "s/titular"}}
+
+    def setUp(self):
+        self.m = carregar()
+        self.base = Path(tempfile.mkdtemp(prefix="msg-sem-preparo-")).resolve()
+        self.projetos = self.base / "etc" / "fundacao-ia" / "projetos"
+        self.area = self.projetos / "criador"
+        self.area.mkdir(parents=True)
+        (self.projetos / "lab-a").mkdir()
+        (self.area / "porteiro.json").write_text(json.dumps({"assinante": "titular-ensaio"}), encoding="utf-8")
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def mensagem(self, sem_perfil, sem_area, hashes=None):
+        return self.m.mensagem_de_projeto_sem_preparo(self.area, self.HASHES if hashes is None else hashes,
+                                                      "criador", sem_perfil, sem_area)
+
+    def test_diz_qual_projeto_falta_e_traz_o_comando_pronto(self):
+        texto = self.mensagem(["estudio-de-video"], ["estudio-de-video"])
+        self.assertIn("o projeto estudio-de-video ainda não foi preparado no Ubuntu", texto)
+        self.assertIn("terminal do Ubuntu", texto)
+        self.assertIn("senha do sudo", texto)
+        self.assertIn("nenhum lançador abre", texto)
+        for jargao in ("hashes.json", "settings.wsl.json", "conferir-abertura", "área root"):
+            self.assertNotIn(jargao, texto)
+        comando = texto.splitlines()[-1].strip()
+        self.assertTrue(comando.startswith('/usr/bin/env -i HOME="$HOME" PATH=/usr/bin:/bin /usr/bin/bash --noprofile '
+                                           '--norc /mnt/c/User' + 's/titular/.claude/skills/fundacao-ia-multiprojetos/'
+                                           'assets/host/wsl/preparar-wsl.sh '), comando)
+        for trecho in ("--raiz '/mnt/e/Raiz D'", "--projeto criador --projeto estudio-de-video --projeto lab-a",
+                       "--titular titular-ensaio", "--perfil-windows /mnt/c/User" + "s/titular", "--claude-versao 2.1.302",
+                       "--claude-sha256 " + "a" * 64):
+            self.assertIn(trecho, comando)
+        self.assertNotIn("<", comando)  # nada para o titular preencher
+
+    def test_varios_projetos_novos_e_perfil_anterior_ao_preparo_de_outro(self):
+        texto = self.mensagem(["lab-a", "estudio-de-video", "mesa-x"], ["lab-a", "estudio-de-video", "mesa-x"])
+        self.assertIn("os projetos estudio-de-video, mesa-x ainda não foram preparados no Ubuntu", texto)
+        self.assertIn("o perfil desta sessão é anterior ao preparo de lab-a", texto)
+        comando = texto.splitlines()[-1]
+        self.assertIn("--projeto criador --projeto estudio-de-video --projeto lab-a --projeto mesa-x --titular", comando)
+
+    def test_valores_do_disco_vao_entre_aspas_e_nome_fora_da_forma_fica_de_fora(self):
+        hashes = {**self.HASHES, "raiz": "/mnt/e/Raiz $(rm -rf x) 'a'"}
+        texto = self.mensagem(["estudio-de-video", "Nome_Ruim"], ["estudio-de-video", "Nome_Ruim"], hashes)
+        comando = [l for l in texto.splitlines() if "preparar-wsl.sh" in l][0]
+        self.assertIn("--raiz " + shlex.quote(hashes["raiz"]) + " --projeto", comando)  # aspas de shell: não vira comando
+        self.assertNotIn("Nome_Ruim --", comando)
+        self.assertNotIn("--projeto Nome_Ruim", comando)
+        self.assertIn("Atenção: a pasta Nome_Ruim tem nome fora da forma do kit", texto)
+
+    def test_o_que_faltar_no_disco_vira_marcador_entre_aspas(self):
+        texto = self.mensagem(["estudio-de-video"], ["estudio-de-video"], hashes={})
+        (self.area / "porteiro.json").unlink()
+        sem_titular = self.mensagem(["estudio-de-video"], ["estudio-de-video"], hashes={})
+        comando = texto.splitlines()[-1]
+        self.assertIn('"<pasta da skill instalada>/assets/host/wsl/preparar-wsl.sh"', comando)
+        self.assertIn('--raiz "<pasta da fundação, vista do Ubuntu>"', comando)
+        self.assertIn('--perfil-windows "<sua pasta do Windows, vista do Ubuntu>"', comando)
+        self.assertIn('--claude-versao "<versão do Claude Code>"', comando)
+        self.assertIn('--claude-sha256 "<hash do manifesto assinado>"', comando)
+        self.assertIn("--titular titular-ensaio", comando)
+        self.assertIn('--titular "<seu nome de titular>"', sem_titular.splitlines()[-1])
+        ruim = {**self.HASHES, "claude": {"versao": "2.1; rm -rf /", "sha256": "xyz"}}
+        comando = self.mensagem(["estudio-de-video"], ["estudio-de-video"], ruim).splitlines()[-1]
+        self.assertNotIn("rm -rf", comando)
+        self.assertIn('--claude-versao "<versão do Claude Code>"', comando)
 
 
 if __name__ == "__main__":

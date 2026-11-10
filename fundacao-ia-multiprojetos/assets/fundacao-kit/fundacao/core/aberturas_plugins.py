@@ -5,25 +5,23 @@ Na 1.7.10 um plugin candidato (montado pela sessão em `projects/<p>/plugins-can
 §8.2) só vale com: `.claude-plugin/plugin.json` sem `hooks`, `mcpServers` nem `lspServers` e só com os campos de
 descrição (CAMPOS_DO_MANIFESTO); Markdown em `skills/`, `agents/` e `commands/`; README, LICENSE e CHANGELOG na raiz.
 Pasta `hooks/`, `.mcp.json`, executável ou script (pela extensão e, fora do Windows, pelo bit de execução): recusa
-"1.7.11". Numa montagem 9p ou drvfs sem a opção metadata (o DrvFs do WSL, /mnt/<letra>), todo arquivo aparece 0777 e o
-bit não prova nada: lá vale o conteúdo (`#!`, ELF ou MZ no começo), sem recusar pelo bit (emenda E9;
-`bit_de_execucao_vale` lê o /proc/mounts, sem executar programa, e acha a montagem pelo objeto aberto, não pelo caminho,
-que uma ligação posta depois da abertura desviaria); no ext4 e no Windows, a regra de antes. Ligação, vínculo físico,
-dispositivo ou FIFO: recusa. Nome que não é UTF-8, nome forte e pasta de segredo da regra única (as listas de
-core/manutencao.py, iguais às de scripts/regras_de_segredo.py por teste, comparadas como a regra única compara: NFKC,
-sem caixa, a barra invertida como separador): recusa sem ler, nem para o hash (integração, item I16: as recusas do
-scripts/plugin_candidato.py no caminho confiável). Nome que muda entre o Windows e o Ubuntu (`_nome_que_muda`): com
+"1.7.11". Só o `.py` de `skills/<s>/scripts/` e o `requirements.lock` de `skills/<s>/` que o item da ficha lista
+(`skills_com_scripts`, 1.7.11, lote S1; core/aberturas_scripts.py) valem; o resto de código recusa. Numa montagem 9p ou
+drvfs sem a opção metadata (o DrvFs do WSL, /mnt/<letra>), todo arquivo aparece 0777 e o bit não prova nada: lá vale o
+conteúdo (`#!`, ELF ou MZ no começo), sem recusar pelo bit (emenda E9; `bit_de_execucao_vale` lê o /proc/mounts, sem
+executar programa, e acha a montagem pelo objeto aberto, não pelo caminho); no ext4 e no Windows, a regra de antes.
+Ligação, vínculo físico, dispositivo ou FIFO: recusa. Nome que não é UTF-8, nome forte e pasta de segredo da regra única
+(as listas de core/manutencao.py, comparadas como a regra única compara: NFKC, sem caixa, a barra invertida como
+separador): recusa sem ler, nem para o hash (item I16). Nome que muda entre o Windows e o Ubuntu (`_nome_que_muda`): com
 caractere da área privada do Unicode, que o DrvFs troca por controle ou `" * : < > ? \\ |`, com um destes ou terminado
-em ponto ou espaço: recusa sem ler, para o mesmo candidato dar o mesmo resultado nos dois sistemas (reconferência da
-integração, rodada 2). Cada Markdown passa por core/aberturas_markdown.py: texto,
-cabeçalho, allowed-tools e menção `@` (emendas E4 e E8; item I16); a licença da raiz que não é Markdown, pelo
-`conferir_texto` de lá (texto UTF-8 sem controle; revisão da integração, rodada 2). O manifesto (caminho, tamanho e
-SHA-256 de cada arquivo) prende o conteúdo: o titular assina o `manifesto_sha256` na ficha, e o preparo do host
-confere a cópia por ele (scripts/copia_segura.py, com o SHA-256 de cada arquivo).
+em ponto ou espaço: recusa sem ler, para o mesmo candidato dar o mesmo resultado nos dois sistemas. Cada Markdown passa
+por core/aberturas_markdown.py: texto, cabeçalho, allowed-tools e menção `@` (emendas E4 e E8; item I16); a licença da
+raiz que não é Markdown, pelo `conferir_texto` de lá. O manifesto (caminho, tamanho e SHA-256 de cada arquivo) prende o
+conteúdo: o titular assina o `manifesto_sha256` na ficha, e o preparo do host confere a cópia por ele. Os agentes que o
+item da ficha nomeia (`agentes`, 1.7.11, lote A2) têm arquivo, SHA-256 e cabeçalho conferidos por aberturas_agentes.py.
 
 A leitura é a de core/aberturas_disco.py (a pasta aberta por descritor no POSIX; no Windows, pelo caminho conferido):
-`ler_arquivo`, `LeituraRecusada` e `e_ligacao` ficam também aqui, com os nomes de sempre, como os de
-core/aberturas_markdown.py que já moravam aqui (CHAVES_DO_FRONTMATTER e as expressões do texto).
+`ler_arquivo`, `LeituraRecusada` e `e_ligacao` ficam também aqui, como os nomes de core/aberturas_markdown.py.
 """
 
 from __future__ import annotations
@@ -37,10 +35,13 @@ import unicodedata
 from fnmatch import fnmatchcase
 from pathlib import Path
 
+from .aberturas_agentes import conferir_no_disco as conferir_agentes
 from .aberturas_disco import LeituraRecusada, Pasta, e_ligacao, ler_arquivo  # noqa: F401 (reexportados)
 from .aberturas_markdown import (CHAVES_DO_FRONTMATTER, _CONTEXTO_DINAMICO, _CONTROLE,  # noqa: F401 (reexportados)
-                                 _QUEBRA_ESCONDIDA, conferir_markdown, conferir_texto)
+                                 _QUEBRA_ESCONDIDA, conferir_markdown, conferir_python, conferir_texto)
 from .aberturas_regras import PASTAS_PROTEGIDAS, carregar, mostrar, problema_da_origem
+from .aberturas_scripts import caminhos, conferir_lock, conferir_no_disco as conferir_scripts
+from .aberturas_scripts import problema_do_caminho, sem_item
 from .contracts import PathEscape
 from .manutencao import NOMES_DE_SEGREDO, PASTAS_DE_SEGREDO
 
@@ -52,9 +53,8 @@ CAMPOS_DO_MANIFESTO = frozenset({"name", "version", "description", "author", "ho
 SO_NA_1711 = ("hooks", "mcpServers", "lspServers")
 EXECUTAVEIS = frozenset(".py .pyw .pyc .sh .bash .zsh .fish .ps1 .psm1 .bat .cmd .com .exe .dll .so .dylib .js .mjs "
                         ".cjs .ts .rb .pl .php .jar .bin .vbs .wsf .msi .scr".split())
-# Regra única de segredo (contratos §3; item I16): fortes + pastas, como a regra única compara (NFKC e sem caixa). Sem a
-# exceção dos exemplos (`*.example`, `*.sample`): no plugin, um arquivo assim já recusa pelo tipo, e uma pasta assim
-# com nome forte recusa aqui (mais estrito; o plugin_candidato a recusa também, pela regra do kit, por último).
+# Regra única de segredo (contratos §3; item I16): fortes + pastas, como ela compara (NFKC e sem caixa). Sem a exceção dos
+# exemplos (`*.example`, `*.sample`): mais estrito; o plugin_candidato a recusa também, pela regra do kit, por último.
 _PASTAS_DE_SEGREDO = frozenset(unicodedata.normalize("NFKC", p).casefold() for p in PASTAS_DE_SEGREDO)
 _NOMES_FORTES = tuple(unicodedata.normalize("NFKC", g).casefold() for g in NOMES_DE_SEGREDO)
 # Emenda E9: as montagens em que o bit de execução não prova nada (sem a opção metadata) e o que o Linux executa pelo
@@ -62,12 +62,10 @@ _NOMES_FORTES = tuple(unicodedata.normalize("NFKC", g).casefold() for g in NOMES
 MONTAGENS = "/proc/mounts"
 TIPOS_SEM_BIT = frozenset({"9p", "drvfs"})
 ASSINATURAS_DE_EXECUTAVEL = (b"#!", b"\x7fELF", b"MZ")
-# Nome que muda entre o Windows e o Ubuntu (reconferência da integração, rodada 2; sondado no DrvFs em 01/11/2026): o
-# DrvFs (/mnt/<letra> no WSL) guarda os controles e " * : < > ? \ | de um nome do Ubuntu como U+F000 mais o código
-# (área privada do Unicode), que é o que o Windows vê; e um nome do Windows com esses caracteres da área privada aparece
-# no Ubuntu com o caractere de volta (o U+F000 vira NUL e corta o nome). O Windows também não abre pelo nome o que
-# termina em ponto ou espaço (o Win32 os tira). O mesmo candidato teria outra recusa ou outro manifesto em cada lado:
-# as duas faces recusam.
+# Nome que muda entre o Windows e o Ubuntu (sondado no DrvFs em 01/11/2026): o DrvFs (/mnt/<letra> no WSL) guarda os
+# controles e " * : < > ? \ | de um nome do Ubuntu como U+F000 mais o código (área privada do Unicode, o que o Windows
+# vê); um nome do Windows com esses caracteres da área privada aparece no Ubuntu com o caractere de volta (o U+F000 vira
+# NUL e corta o nome); o Windows não abre pelo nome o que termina em ponto ou espaço. As duas faces recusam.
 _FACE_DO_UBUNTU = re.compile(r'[\x00-\x1f"*:<>?\\|]|[. ]\Z')
 
 
@@ -122,9 +120,8 @@ def bit_vale_na_montagem(alvo: str, montagens: str) -> bool:
 
 def _onde_esta(pasta) -> str:
     """O caminho em que se procura a montagem de `pasta` (um caminho ou uma Pasta aberta): com a Pasta aberta por
-    descritor (POSIX), o do objeto aberto (/proc/self/fd/<fd>), que trocar um componente do caminho por ligação depois
-    da abertura não desvia (revisão da integração, rodada 2: o realpath do caminho seguia a ligação, e uma pasta do ext4
-    passava por DrvFs, sem o bit); sem descritor, o caminho resolvido."""
+    descritor (POSIX), o do objeto aberto (/proc/self/fd/<fd>), que uma ligação posta depois da abertura não desvia (o
+    realpath do caminho a seguia, e uma pasta do ext4 passava por DrvFs, sem o bit); sem descritor, o caminho resolvido."""
     fd = getattr(pasta, "_fd", None)
     if fd is not None:
         try:
@@ -152,17 +149,20 @@ def executavel_pelo_conteudo(dados: bytes) -> bool:
     return dados.startswith(ASSINATURAS_DE_EXECUTAVEL)
 
 
-def _problema_do_arquivo(partes: tuple, st: os.stat_result, pelo_conteudo: bool) -> tuple[str | None, str | None]:
-    baixo = partes[-1].casefold()
+def _problema_do_arquivo(partes: tuple, st: os.stat_result, pelo_conteudo: bool,
+                         permitidos=frozenset()) -> tuple[str | None, str | None]:
+    baixo, listado = partes[-1].casefold(), "/".join(partes) in permitidos  # o .py e o lock da ficha (lote S1)
     if baixo == ".mcp.json":
         return "servidor MCP no plugin: só na 1.7.11 (MCP de terceiro roda fora do sandbox)", "1.7.11"
     if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
         return "não é arquivo comum de um nome só (dispositivo, FIFO ou vínculo físico)", None
-    if os.path.splitext(baixo)[1] in EXECUTAVEIS:
-        return "executável ou script no plugin: só na 1.7.11", "1.7.11"
+    if os.path.splitext(baixo)[1] in EXECUTAVEIS and not (listado and baixo.endswith(".py")):
+        return (sem_item(partes) or "executável ou script no plugin: só na 1.7.11"), "1.7.11"
     if os.name != "nt" and not pelo_conteudo and st.st_mode & 0o111:  # o porquê vai no motivo (revisão, defeito 5)
         return ("executável ou script no plugin: só na 1.7.11 (bit de execução; no DrvFs sem a opção metadata, como "
                 "/mnt/<letra> no WSL, o bit não prova nada e vale o conteúdo)"), "1.7.11"
+    if listado:
+        return problema_do_caminho(partes), None
     if len(partes) == 1:
         return (None, None) if baixo in NA_RAIZ_DO_PLUGIN else ("arquivo fora do formato aceito na 1.7.10", None)
     if partes[0] == ".claude-plugin":
@@ -239,7 +239,7 @@ def _percorrer(pasta: Pasta, partes: tuple, estado: dict, erro) -> None:
                 with filha:
                     _percorrer(filha, rel_partes, estado, erro)
             continue
-        motivo, versao = _problema_do_arquivo(rel_partes, st, estado["pelo_conteudo"])
+        motivo, versao = _problema_do_arquivo(rel_partes, st, estado["pelo_conteudo"], estado["permitidos"])
         if motivo:
             erro(rel, motivo, versao)
             continue
@@ -268,14 +268,17 @@ def _percorrer(pasta: Pasta, partes: tuple, estado: dict, erro) -> None:
                 estado["skills"].add(rel_partes[1])
             elif rel_partes[0] in ("agents", "commands"):
                 estado["agentes" if rel_partes[0] == "agents" else "comandos"].add(rel[len(rel_partes[0]) + 1:-3])
+        elif rel in estado["permitidos"]:  # o .py e o lock da ficha (lote S1): o texto aqui, a lista no fim
+            (conferir_python if n.endswith(".py") else conferir_lock)(rel, dados, erro)
+            estado["lidos"][rel] = dados
         else:  # só sobra a licença da raiz que não é Markdown (LICENSE, LICENSE.txt): texto, como no plugin_candidato
             conferir_texto(rel, dados, erro)
 
 
-def _conferir_aberta(pasta: Pasta, nome: str | None) -> dict:
+def _conferir_aberta(pasta: Pasta, nome: str | None, skills=None) -> dict:
     erros = []
     estado = {"nome": nome, "bytes": 0, "arquivos": [], "skills": set(), "agentes": set(), "comandos": set(),
-              "pelo_conteudo": False}
+              "pelo_conteudo": False, "permitidos": caminhos(skills), "lidos": {}}
 
     def erro(rel, motivo, versao=None):
         erros.append({"campo": f"plugin {nome or ''}: {rel or '.'}", "motivo": motivo,
@@ -291,7 +294,10 @@ def _conferir_aberta(pasta: Pasta, nome: str | None) -> dict:
     arquivos = sorted(estado["arquivos"], key=lambda a: a["caminho"])
     if not erros and not any(a["caminho"] == ".claude-plugin/plugin.json" for a in arquivos):
         erro(".claude-plugin/plugin.json", "plugin sem manifesto")
-    return {"erros": erros, "arquivos": arquivos, "manifesto_sha256": None if erros else sha256_do_manifesto(arquivos),
+    manifesto = None if erros else sha256_do_manifesto(arquivos)  # o erro da lista abaixo não o tira (como o dos agentes)
+    if skills is not None and not erros:  # 1.7.11, lote S1: o SKILL.md, o script e o lock contra a ficha
+        erros += conferir_scripts(nome, skills, arquivos, estado["lidos"])
+    return {"erros": erros, "arquivos": arquivos, "manifesto_sha256": manifesto,
             **{k: sorted(estado[k]) for k in ("skills", "agentes", "comandos")}}
 
 
@@ -299,16 +305,16 @@ class _Ausente:
     existe = False
 
 
-def conferir_pasta_do_plugin(pasta, nome: str | None = None) -> dict:
+def conferir_pasta_do_plugin(pasta, nome: str | None = None, skills=None) -> dict:
     """Confere no disco a pasta de um plugin candidato (sem seguir ligação) e calcula o manifesto. Devolve `erros`,
     `arquivos` ({caminho, bytes, sha256}), `manifesto_sha256` (None se houve erro), `skills`, `agentes` e
-    `comandos`."""
+    `comandos`. `skills`: o `skills_com_scripts` da ficha; sem ele, todo `.py` e todo lock recusam."""
     pasta = Path(pasta)
     try:
         with Pasta(pasta.parent, (pasta.name,)) as aberta:
-            return _conferir_aberta(aberta, nome)
+            return _conferir_aberta(aberta, nome, skills)
     except (PathEscape, OSError):
-        return _conferir_aberta(_Ausente(), nome)
+        return _conferir_aberta(_Ausente(), nome, skills)
 
 
 def conferir_plugin(pasta_projeto, item: dict) -> dict:
@@ -332,7 +338,9 @@ def conferir_plugin(pasta_projeto, item: dict) -> dict:
                 return recusa("origem do plugin fora da pasta do projeto")
             if not rel.parts or rel.parts[0].casefold() in PASTAS_PROTEGIDAS:
                 return recusa("origem do plugin resolve em data/ ou numa pasta protegida: " + mostrar(origem))
-            res = _conferir_aberta(aberta, nome)
+            res = _conferir_aberta(aberta, nome, item.get("skills_com_scripts"))
+            if item.get("agentes") and not res["erros"]:  # 1.7.11, lote A2: arquivo, hash e cabeçalho de cada agente
+                res["erros"] += conferir_agentes(aberta, nome, item["agentes"], res["arquivos"])
     except PathEscape:
         return recusa("ligação no caminho da origem do plugin: " + mostrar(origem))
     esperado = item.get("manifesto_sha256")

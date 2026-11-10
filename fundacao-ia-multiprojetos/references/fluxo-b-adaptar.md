@@ -454,6 +454,12 @@ pasta (`references/seguranca-isolamento.md` §8).
    B1; repetido, não copia de novo o que já está igual. Códigos: 0 feito; 1 diferença ou arquivo não copiado (o
    resultado diz qual); 2 recusa (nada copiado). O manifesto da importação guarda também o SHA-256 dos opacos: com
    senha curta, esse hash permite ataque por dicionário; ele é do projeto e não sai dele.
+5. [Decisão; 1.7.11.] O plano não importa uma cópia da fundação: ele poda, com aviso, a pasta com as marcas de uma raiz,
+   de uma cópia de segurança do kit, de um banco (`state/state.sqlite`), da última cópia do titular ou de um projeto
+   (`INSTRUCOES.md` com `data/` e `outputs/`: a cópia só de `projects/` ou de `projects/<outro>`), e recusa a origem que
+   é uma dessas pastas ou fica dentro de uma (menos o próprio projeto do destino, de dentro do qual a importação
+   continua). **Limite declarado:** a cópia compactada num arquivo só (`.zip`, `.tar`) não tem pasta para reconhecer e
+   entra como arquivo comum; não registre como origem a unidade que guarda cópias de segurança compactadas.
 
 ### Plugin candidato (skills, agentes e comandos do projeto)
 [Decisão; 1.7.10.] As skills, os agentes e os comandos que a origem trouxe só chegam à sessão do projeto como plugin

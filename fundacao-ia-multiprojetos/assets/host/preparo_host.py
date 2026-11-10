@@ -11,8 +11,9 @@ confinamento: os arquivos de dono root (a área `/etc/fundacao-ia` e o lançador
 
 Perfil do projeto no Ubuntu (`perfil_wsl`): plano A (`permissions.blockReadsOutsideWorkingDirectories` e
 `sandbox.network.strictAllowlist`) MAIS as negações nominais do plano B (state/, cada outro projeto e o
-`.claude/projetos/<outro>` da raiz, /mnt/d, a pasta do Windows do titular, as transcrições e o histórico do Claude
-Code, ~/.codex, ~/.fundacao e as configurações por projeto); segredos pela regra única (fortes + pastas, nunca os
+`.claude/projetos/<outro>` da raiz, a área root e o lançador de cada outro projeto, /mnt/d, a pasta do Windows do
+titular, o /mnt/wslg, as transcrições e o histórico do Claude Code, ~/.codex, ~/.fundacao e as configurações por
+projeto); segredos pela regra única (fortes + pastas, nunca os
 fracos: `scripts/regras_de_segredo.py`, importado pelo caminho); escrita só no projeto, com `denyWrite` e Edit negado
 em `projects/<p>/.porteiro/respostas` (nunca na pasta-mãe `.porteiro/`), `projects/<p>/.claude`, o `.claude` da raiz,
 `registry/` e a âncora; `state/` fora do sandbox (negado e sem allowRead nem allowWrite: a armadilha do tmpfs da v1);
@@ -33,31 +34,43 @@ de onde a forma do Ubuntu do comando do kit a roda. Em PreToolUse, `guarda_ferra
 
 Comandos (código 0 ok · 1 conferência com problemas, conflito ou recusa · 2 uso incorreto ou entrada inválida; fora
 do 0, nada é gravado):
-  perfil-windows --raiz R --python PY [--projeto P] [--negar-skill N]... [--somente-leitura D]... [--backups D]...
-                 [--saida F]
-  gerar-perfil-projeto --raiz R --projeto P --perfil-windows W [--area-raiz A] [--temp-base T] [--saida F]
+  perfil-windows --raiz R --python PY [--projeto P] [--negar-skill N]... [--negar-agente N]... [--somente-leitura D]...
+                 [--backups D]... [--saida F]
+  gerar-perfil-projeto --raiz R --projeto P --perfil-windows W [--area-raiz A] [--bin B] [--temp-base T] [--saida F]
                  (o antigo `perfil-wsl` é o mesmo comando)
-  conferir-perfil-wsl --perfil F --raiz R --projeto P [--perfil-windows W] [--area-raiz A] [--lancador L]
+  conferir-perfil-wsl --perfil F --raiz R --projeto P [--perfil-windows W] [--area-raiz A] [--bin B] [--lancador L]
   instalar-projeto --raiz R --projeto P --titular T --claude BIN --claude-versao V --claude-sha256 H
-                 --origem-hash TEXTO --perfil-windows W --casa C --usuario U [--simular] [--area-raiz A --bin B
-                 [--ferramenta-base F]]
+                 --origem-hash TEXTO --perfil-windows W --casa C --usuario U [--simular] [--registrar-aninhadas]
+                 [--area-raiz A --bin B [--ferramenta-base F] [--skills-base S]]
                  (o titular roda com sudo; sem root, só com --area-raiz e --bin explícitos, para ensaio; a cópia
-                 protegida da ferramenta do titular vai para /usr/local/lib/fundacao-ia ou, no ensaio, para F)
+                 protegida da ferramenta do titular vai para /usr/local/lib/fundacao-ia ou, no ensaio, para F; as rodas
+                 e a venv das skills com scripts, para /usr/local/lib/fundacao-ia/skills ou, no ensaio, para S)
   plano-ferramenta [--python PY]    (o preparar-maquina.ps1: a cópia protegida do Windows, com o Python fixado)
   instalar-canario --relatorio R [--area-raiz A] [--simular]   (titular, sudo: o relatório do ensaio real do canário)
+  plano-jaula --raiz R --projeto P... --usuario U [--sudo-senha] [--preparar-jaula]   (1.7.11, L4: o que a jaula instalaria)
+  instalar-jaula --raiz R --projeto P... --usuario U [--sudo-senha] [--preparar-jaula] [--simular]   (titular, sudo: o
+                 usuário fundacao-jaula, as pastas, os programas de dono root e a sudoers conferida com visudo)
+  instalar-canario-jaula --relatorio R... [--simular]   (titular, sudo: as respostas do canário da jaula, uma por modo)
+  instalar-codex-jaula --raiz R --projeto P... --usuario U [--preparar-jaula] [--simular]   (1.7.11, L6; titular, sudo: baixa o
+                 CLI do Codex fixado em pins-codex.json e confere tamanho e SHA-256 ANTES de instalar)
   conferir-abertura --raiz R --projeto P --area A [--limpar] [--texto]     (o lançador chama, como o usuário)
   limpar-marcadores --raiz R --projeto P --area A
+  regras-codigo --raiz R --projeto P     (o lançador: o campo regras_codigo do projeto.json, "" ou "enxuto")
   limpar-porteiro --raiz R --projeto P --casa C [--texto]   (o lançador: pastas de trabalho de porteiro morto)
   registrar-projeto --raiz R --projeto P --origem D [--origem D]... [--somente-leitura D]... [--negar-skill N]...
+                 [--negar-agente N]...   (o registro só cresce; esquema fundacao.projetos_host/2, que ainda lê o /1)
+  aninhadas-fora-do-registro --raiz R --projeto P [--registrar [--simular]]   (o preparar-projeto.ps1: as skills e os
+                 agentes aninhados em projects/P que o registro não nega; --registrar soma os que faltam)
   ler-projetos-host --raiz R [--projeto P]
-  fora-do-registro --raiz R [--somente-leitura D]... [--negar-skill N]...   (o preparar-maquina.ps1: o que o
+  fora-do-registro --raiz R [--somente-leitura D]... [--negar-skill N]... [--negar-agente N]...   (o preparar-maquina.ps1: o que o
                  registry/projetos-host.json não tem e o próximo preparar-projeto.ps1 tiraria do perfil)
   ultima-copia --raiz R     (os dois scripts do Windows: o destino de registry/ultima-copia.json, para o portão das cópias)
   identidade --titular T [--projeto P] [--atual F] [--estrito] [--sem-projeto] [--saida F]
   conferir-identidade --arquivo F --titular T --projeto P
   wsl-conf --arquivo F [--saida F]                                          (JSON com "mudou" e "texto")
 Pastas de dados não viram instrução (análise do vibe-coding-toolkit, 21/10/2026): os perfis trazem `claudeMdExcludes`
-para `**/projects/*/data/**`, e skill aninhada sai em `permissions.deny` como `Skill(<nome>)` (negação cumulativa:
+para `**/projects/*/data/**`, e skill aninhada sai em `permissions.deny` como `Skill(<nome>)` e agente aninhado como
+`Agent(<nome>)` (1.7.11, lote A3; negação cumulativa:
 `registry/projetos-host.json`, que só o titular grava, soma os nomes de todos os projetos). O perfil do Windows nega a
 leitura de cada outro projeto e de `projects/*/data/**`, nega WebFetch e WebSearch e registra os hooks com `-I -B`;
 lá não há sandbox, e os hooks são guarda-corpos rotulados.
@@ -96,14 +109,23 @@ MODELO_HOOKS = AQUI.parent / "hooks"  # os hooks da skill, que o preparo do Wind
 # Os hooks de cada perfil (contratos do lote 2, §7) e o marcador de cada um nos modelos.
 MARCADOR_DO_HOOK = {"sinais_sessao.py": "HOOK_SINAIS", "guarda_ferramentas.py": "HOOK_FERRAMENTAS",
                     "guarda_caminho.py": "HOOK_CAMINHO", "guarda_identidade.py": "HOOK_IDENTIDADE",
-                    "guarda_rede.py": "HOOK_REDE", "guarda_leitura.py": "HOOK_LEITURA", "aviso_copia.py": "HOOK_AVISO"}
+                    "guarda_rede.py": "HOOK_REDE", "guarda_leitura.py": "HOOK_LEITURA", "aviso_copia.py": "HOOK_AVISO",
+                    "regras_codigo.py": "HOOK_REGRAS"}
 HOOKS_WSL = ("sinais_sessao.py", "guarda_ferramentas.py", "guarda_caminho.py", "guarda_identidade.py",
-             "guarda_rede.py", "guarda_leitura.py")
+             "guarda_rede.py", "guarda_leitura.py", "regras_codigo.py")
 HOOKS_WINDOWS = ("sinais_sessao.py", "aviso_copia.py", "guarda_caminho.py", "guarda_identidade.py",
-                 "guarda_rede.py", "guarda_leitura.py")
+                 "guarda_rede.py", "guarda_leitura.py")  # regras_codigo.py: só o Ubuntu (no Windows nada liga o campo)
+# Os que o preparar-maquina.ps1 copia para <raiz>/.claude/hooks (os do Ubuntu também saem daqui, o regras_codigo.py
+# inclusive, mesmo sem registro no perfil do Windows):
 HOOKS = ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py", "guarda_ferramentas.py", "guarda_rede.py",
-         "guarda_leitura.py", "aviso_copia.py")  # os que o preparar-maquina.ps1 copia para <raiz>/.claude/hooks
+         "guarda_leitura.py", "aviso_copia.py", "regras_codigo.py")
+# [Decisão; ponytail, P7.] O hook de regras de código só orienta: falha dele não bloqueia a sessão (onFailure continue);
+# os outros bloqueiam. Sem o campo regras_codigo do projeto, ele não escreve nada.
+HOOKS_QUE_NAO_BLOQUEIAM = frozenset({"regras_codigo.py"})
+REGRAS_DE_CODIGO = frozenset({"enxuto"})  # lista fechada do campo regras_codigo do projeto.json
 GANCHOS_WSL = (("SessionStart", "compact", "sinais_sessao.py"), ("SubagentStart", "*", "sinais_sessao.py"),
+               ("SessionStart", "startup|resume|clear|compact", "regras_codigo.py"),
+               ("SubagentStart", "*", "regras_codigo.py"),
                ("PreToolUse", "*", "guarda_ferramentas.py"),
                ("PreToolUse", "Edit|Write|MultiEdit|NotebookEdit|mcp__.*", "guarda_caminho.py"),
                ("PreToolUse", "Bash|PowerShell", "guarda_identidade.py"),
@@ -147,6 +169,7 @@ CASA_NEGADA = (".claude/projects/**", ".claude/history.jsonl", ".claude/file-his
                ".claude/session-env/**", ".claude/sessions/**", ".claude/shell-snapshots/**", ".claude/todos/**",
                ".claude/plans/**", ".claude/backups/**", ".codex/**", ".fundacao/**", ".local/share/fundacao-ia/**")
 SOQUETES_NEGADOS = ("/tmp", "/run", "/var/run", "/mnt/wsl", "/mnt/wslg")  # sem o filtro seccomp, "sockets livres"
+WSLG = "/mnt/wslg"  # /mnt/wslg/distro: outra montagem do ext4 da distribuição (revisão de segurança da 1.7.10, HOOK-F8)
 MARCADORES_OBRIGATORIOS = (".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".profile", ".gitconfig",
                            ".gitmodules", ".ripgreprc")  # lista obrigatória do bwrap (sandbox-runtime, 31/10/2026)
 MARCADORES_PASTA = (".vscode", ".idea")
@@ -154,8 +177,11 @@ MARCADORES_RECUSADOS = (".mcp.json", "CLAUDE.local.md")  # com conteúdo, o lan�
 # Só limpeza: o sandbox 2.1.302 deixou estes de 0 byte na pasta de trabalho nas sondas de 31/10/2026, fora da lista
 # obrigatória. Arquivo comum de 0 byte, sem ligação: apagado; com conteúdo, é do projeto e fica (sem recusar). O canário
 # confirma a lista na versão fixada.
-MARCADORES_LIMPEZA = (".npmrc", ".yarnrc", ".yarnrc.yml")
-ESQUEMA_PROJETOS_HOST = "fundacao.projetos_host/1"
+MARCADORES_LIMPEZA = (".npmrc", ".yarnrc", ".yarnrc.yml", ".env", "bunfig.toml", "package.json", "package-lock.json",
+                      "pnpm-lock.yaml", "yarn.lock")  # 1.7.11: o resto dos nomes vistos no relatório do canário de 02/11
+ESQUEMA_PROJETOS_HOST = "fundacao.projetos_host/2"  # 1.7.11 (lote A3): `agentes_negados`; o /1 ainda se lê
+ESQUEMA_PROJETOS_HOST_1 = "fundacao.projetos_host/1"
+AGENTES_EMBUTIDOS = ("general-purpose", "web-fetch", "Explore", "Plan")  # tipos que o guarda aceita na Agent
 ESQUEMA_PORTEIRO = "fundacao.porteiro/1"
 ESQUEMA_HASHES = "fundacao.hashes_projeto/1"
 ESQUEMA_ABERTURAS = "fundacao.aberturas_instaladas/1"
@@ -174,10 +200,19 @@ SUFIXOS_IGNORADOS = (".pyc", ".sqlite")
 # Onde o `sudo npm install -g` põe o sandbox-runtime (Node do Ubuntu e do instalador oficial): caminhos fixos, sem
 # perguntar ao npm (a configuração dele, herdada do titular, decidiria o caminho; revisão do lote 2).
 SECCOMP_BASES = ("/usr/local/lib/node_modules", "/usr/lib/node_modules")
-RESERVADAS_1711 = ("mcp", "navegador", "git", "segredos", "outras_llm", "execucao", "leitura_liberada",
-                   "perfil_navegador_copiado")
+RESERVADAS_1711 = ("git", "segredos", "execucao", "leitura_liberada", "perfil_navegador_copiado")
+# Seções que a 1.7.11 abriu na ficha (DESENHO-JAULA §7): o preparo as LÊ e as valida pelo kit, mas ainda não as aplica
+# (a jaula vem nos lotes seguintes): nada no perfil, no lançador nem no sudoers muda por causa de navegador e
+# outras_llm. O `mcp` é aplicado desde o lote L2 (SECOES_APLICADAS).
+# Decisão do titular de 08/11/2026 (item 12): o navegador do projeto tem perfil NOVO, com os logins feitos por ele na janela;
+# não há cópia nem importação do perfil do Chrome do Windows (os logins dele não funcionam no Linux: DPAPI e App-Bound).
+RECUSA_DO_PERFIL_COPIADO = ("recusada: o titular escolheu em 08/11/2026 o perfil novo do projeto, com os logins feitos por "
+                            "ele na janela do navegador (abrir-navegador-<projeto> login <site>); esta versão não copia nem "
+                            "importa o perfil do Chrome do Windows")
+SECOES_1711 = ("mcp", "navegador", "outras_llm")
+SECOES_APLICADAS = ("mcp",)
 CAMPOS_DA_FICHA = {"schema_version", "ficha_id", "project_id", "versao", "motivo", "consequencias", "vigencia_ate",
-                   "rede", "webfetch", "websearch", "plugins", *RESERVADAS_1711}
+                   "rede", "webfetch", "websearch", "plugins", *SECOES_1711, *RESERVADAS_1711}
 # Domínios e plugins da ficha: a regra é a do validador do kit desta cópia da skill (aberturas_regras e
 # aberturas_plugins, carregados por modulos_do_kit), não uma réplica (emendas E3 e E4 dos contratos; folha da
 # integração, I5: a réplica do HOST era menos estrita que o kit nos domínios e no frontmatter).
@@ -186,13 +221,19 @@ FICHA_NOME = re.compile(r"^ficha-v([1-9][0-9]{0,5})\.json$")
 # FERRAMENTA_POSIX, REL_FERRAMENTA e ESQUEMA_HASHES; assets/host/fundacao_titular.py, conferir_copia): a mesma árvore da
 # skill, só a ferramenta e o pacote do kit, com o hashes.json ao lado, de dono root.
 FERRAMENTA_BASE = "/usr/local/lib/fundacao-ia"
+SKILLS_BASE = FERRAMENTA_BASE + "/skills"  # 1.7.11 (S2): <p>/<plugin>/<lock>/{rodas,venv} das skills com scripts
 ESQUEMA_FERRAMENTA = "fundacao.ferramenta_titular/1"
 REL_FERRAMENTA = "assets/host/fundacao_titular.py"
 REL_KIT_DA_FERRAMENTA = "assets/fundacao-kit/fundacao"
 VERSAO_DO_KIT = re.compile(r'^KIT_VERSION\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"\s*$', re.M)
 CHAVES_DO_LANCADOR = ("RAIZ", "PROJETO", "USUARIO", "AREA", "SKILL", "CLAUDE_BIN", "CLAUDE_VERSAO", "CLAUDE_SHA256",
-                      "CLAUDE_ORIGEM_HASH", "FERRAMENTAS", "PLUGINS", "PREPARO_SHA256", "PORTEIRO_SHA256",
-                      "TEMP_PROJETO", "SONDA_INTEROP_CMD", "SONDA_INTEROP_BINFMT")
+                      "CLAUDE_ORIGEM_HASH", "FERRAMENTAS", "PLUGINS", "MCP_ESTRITO", "MCP_OCULTAR", "PREPARO_SHA256",
+                      "PORTEIRO_SHA256", "TEMP_PROJETO", "SONDA_INTEROP_CMD", "SONDA_INTEROP_BINFMT")
+# O executor das skills com scripts (1.7.11, lote S3; assets/host/wsl/executor_skill.py): o lançador dele,
+# /usr/local/bin/fundacao-skill-<p>, e os três arquivos da cópia root da skill que ele carrega e o lançador confere.
+EXECUTOR_REL = "assets/host/wsl/executor_skill.py"
+ARQUIVOS_DO_EXECUTOR = {"EXECUTOR": EXECUTOR_REL, "PREPARO_SKILLS": "assets/host/preparo_skills.py",
+                        "COPIA_SEGURA": "scripts/copia_segura.py"}
 _SCRIPTS: dict = {}
 _PORTEIROS: dict = {}
 _KITS: dict = {}
@@ -325,6 +366,18 @@ def negar_skills(perfil: dict, nomes=()) -> dict:
     return perfil
 
 
+def negar_agentes(perfil: dict, nomes=()) -> dict:
+    """Acrescenta `Agent(<nome>)` às negações (agente aninhado em pasta de dados; 1.7.11, B25). Vem antes da trava do
+    `agent_type` do guarda, como defesa a mais (medida M-A6 no canário)."""
+    negacoes = perfil.setdefault("permissions", {}).setdefault("deny", [])
+    for nome in nomes:
+        if not NOME_DE_SKILL.fullmatch(str(nome)):
+            raise EntradaInvalida(f"nome de agente inválido: {nome!r}")
+        if f"Agent({nome})" not in negacoes:
+            negacoes.append(f"Agent({nome})")
+    return perfil
+
+
 def _sem_repetir(itens) -> list:
     return list(dict.fromkeys(itens))
 
@@ -452,7 +505,8 @@ def _confere_regra_unica(perfil, regras=None) -> list[str]:
 
 # ------------------------------------------------------------------ perfil do Windows
 def perfil_windows(*, raiz: str, python: str, projeto: str | None = None, outros_projetos=(), somente_leitura=(),
-                   backups=(), modelo: dict | None = None, negar=(), regras=None, registro: dict | None = None) -> dict:
+                   backups=(), modelo: dict | None = None, negar=(), regras=None, registro: dict | None = None,
+                   negar_agente=()) -> dict:
     """`.claude/settings.json` da raiz (sessões do Windows; sem sandbox, os hooks são guarda-corpos rotulados): o
     projeto das sessões no `env` (`-Projeto`, 1.7.10: sai do settings.local.json), Read negado de cada outro projeto,
     de `projects/*/data/**` e das cópias de segurança, WebFetch e WebSearch negados, Edit negado nas pastas só de
@@ -493,7 +547,7 @@ def perfil_windows(*, raiz: str, python: str, projeto: str | None = None, outros
     perfil = renderizar(modelo, valores, listas)
     if projeto:
         perfil.setdefault("env", {})[CHAVE_PROJETO] = projeto
-    return negar_skills(perfil, negar)
+    return negar_agentes(negar_skills(perfil, negar), negar_agente)
 
 
 def comando_status_windows(python: str, hook: str) -> str:
@@ -513,7 +567,22 @@ def comando_status_windows(python: str, hook: str) -> str:
 # ------------------------------------------------------------------ ficha de aberturas -> perfil (contratos, §6)
 def aberturas_fechadas(motivo: str = "sem ficha de aberturas válida: tudo fechado") -> dict:
     return {"valida": False, "motivo": motivo, "versao": None, "ficha_id": None, "arquivo": None, "sha256": None,
-            "sig_sha256": None, "vigencia_ate": None, "rede": [], "webfetch": [], "websearch": False, "plugins": []}
+            "sig_sha256": None, "vigencia_ate": None, "rede": [], "webfetch": [], "websearch": False, "plugins": [],
+            "mcp": [], "navegador": {"dominios": [], "logins": [], "modos": []}, "outras_llm": [],
+            "secoes_lidas_nao_aplicadas": []}
+
+
+def expandir_curingas(dominios) -> list:
+    """Cada `*.x` da ficha vira `x` e `*.x`, nessa ordem e sem repetir (DECISAO-010, item 5): o que o perfil gera para a
+    rede do sandbox, para as regras `WebFetch(domain:)` e para o FUNDACAO_DOMINIOS_WEB. Idempotente (a leitura do perfil
+    devolve a lista já expandida). A mesma regra do `aberturas_regras.expandir_curingas` do kit; o teste confere as duas.
+    O teto de 200 domínios conta os itens da ficha, não estes."""
+    saida: list = []
+    for d in dominios:
+        for item in ((d[2:], d) if isinstance(d, str) and d.startswith("*.") else (d,)):
+            if item not in saida:
+                saida.append(item)
+    return saida
 
 
 def problema_do_dominio(dominio, skill=SKILL) -> str | None:
@@ -548,7 +617,8 @@ def aberturas_da_ficha(resultado, projeto: str, hoje: date | None = None, skill=
         erros.append("versão da ficha inválida")
     for secao in RESERVADAS_1711:
         if ficha.get(secao):
-            erros.append(f"seção {secao} reservada para a 1.7.11")
+            erros.append(f"seção {secao} " + (RECUSA_DO_PERFIL_COPIADO if secao == "perfil_navegador_copiado"
+                                              else "reservada para a 1.7.11"))
     vigencia = ficha.get("vigencia_ate")
     if vigencia is not None:
         try:
@@ -583,15 +653,40 @@ def aberturas_da_ficha(resultado, projeto: str, hoje: date | None = None, skill=
     websearch = ficha.get("websearch", False)
     if not isinstance(websearch, bool):
         erros.append("websearch não é booleano")
+    novas = {}
+    com_agentes = any(isinstance(p, dict) and (p.get("agentes") or p.get("skills_com_scripts"))
+                      for p in _lista(ficha.get("plugins")))
+    if com_agentes or any(ficha.get(secao) for secao in SECOES_1711):  # as regras são as do kit (sem réplica)
+        try:
+            achados = modulos_do_kit(skill).regras.validar(ficha, projeto=projeto, hoje=hoje or date.today())["erros"]
+        except EntradaInvalida as exc:
+            return aberturas_fechadas(f"seções mcp, navegador, outras_llm e agentes não conferidas ({exc}): tudo fechado")
+        erros += [f"{e['campo']}: {e['motivo']}" for e in achados
+                  if re.split(r"[.\[]", str(e["campo"]), maxsplit=1)[0] in (*SECOES_1711, "plugins")]
+        novas = {secao: copy.deepcopy(ficha[secao]) for secao in SECOES_1711 if ficha.get(secao)}
+        try:  # a forma que o perfil e o hook usam (nome do servidor, ferramentas exatas); o resto é do kit
+            mcp_da_ficha({"mcp": novas.get("mcp", [])})
+        except EntradaInvalida as exc:
+            erros.append(str(exc))
     plugins = []
     for p in _lista(ficha.get("plugins")) if isinstance(ficha.get("plugins", []), list) else [None]:
         p = _objeto(p)
         nome, origem, sha = p.get("nome"), p.get("origem"), p.get("manifesto_sha256")
-        if (set(p) != {"nome", "origem", "manifesto_sha256"} or not isinstance(nome, str) or not IDENTIFICADOR.match(nome)
+        if (not {"nome", "origem", "manifesto_sha256"} <= set(p) <= {"nome", "origem", "manifesto_sha256", "agentes",
+                                                                       "skills_com_scripts"}
+                or not isinstance(nome, str) or not IDENTIFICADOR.match(nome)
                 or not isinstance(sha, str) or not SHA256.match(sha) or not _relativo_simples(origem)):
             erros.append(f"plugin fora da forma: {str(nome)[:60]!r}")
             continue
-        plugins.append({"nome": nome, "origem": origem, "manifesto_sha256": sha})
+        try:  # agentes de arquivo (lote A2): a forma que o perfil e o guarda usam; a regra da ficha é a do kit (acima)
+            agentes = agentes_do_plugin(nome, p.get("agentes", []))
+            scripts = preparo_skills().scripts_do_plugin(nome, p.get("skills_com_scripts", []))  # lote S2
+        except EntradaInvalida as exc:
+            erros.append(str(exc))
+            continue
+        plugins.append({"nome": nome, "origem": origem, "manifesto_sha256": sha,
+                        **({"agentes": agentes} if agentes else {}),
+                        **({"skills_com_scripts": scripts} if scripts else {})})
     if len({p["nome"] for p in plugins}) != len(plugins):
         erros.append("plugin repetido na ficha")
     if erros:
@@ -599,7 +694,9 @@ def aberturas_da_ficha(resultado, projeto: str, hoje: date | None = None, skill=
     return {"valida": True, "motivo": "ficha de aberturas assinada e vigente", "versao": versao,
             "ficha_id": ficha.get("ficha_id"), "arquivo": Path(str(resultado.get("arquivo") or "")).name or None,
             "sha256": resultado.get("sha256"), "sig_sha256": resultado.get("sig_sha256"), "vigencia_ate": vigencia,
-            "rede": rede, "webfetch": webfetch, "websearch": websearch, "plugins": plugins}
+            "rede": rede, "webfetch": webfetch, "websearch": websearch, "plugins": plugins,
+            "mcp": novas.get("mcp", []), "navegador": novas.get("navegador") or aberturas_fechadas()["navegador"],
+            "outras_llm": novas.get("outras_llm", []), "secoes_lidas_nao_aplicadas": sorted(set(novas) - set(SECOES_APLICADAS))}
 
 
 def _relativo_simples(rel) -> bool:
@@ -613,6 +710,288 @@ def _relativo_simples(rel) -> bool:
 def ferramentas_do_projeto(aberturas: dict | None) -> list[str]:
     ab = aberturas or aberturas_fechadas()
     return [*FERRAMENTAS_BASE, *(["WebFetch"] if ab["webfetch"] else []), *(["WebSearch"] if ab["websearch"] else [])]
+
+
+# ------------------------------------------------------------------ MCP do escritório pela ficha (1.7.11, lote L2)
+# DESENHO-JAULA §4 e §7.3. Um servidor, só as ferramentas que a ficha lista pelo nome (campo `ferramentas`: consulta e,
+# desde a decisão do titular de 08/11/2026, gravação: o que vale é estar listada). Origem `url`: o mcp.json da área traz o servidor e o
+# --strict-mcp-config segue. Origem `conta`: o conector da conta do claude.ai, sem arquivo.
+# O QUE SÓ A MEDIDA DECIDE (marcado onde vale):
+# - M3: o nome do servidor do conector da conta na CLI 2.1.302 (`claude_ai_<nome normalizado>` é a forma esperada; se for
+#   outra, o guarda nega tudo, que é a falha segura) e se o --strict-mcp-config deixa os conectores da conta de fora
+#   (pela documentação lida em 08/11/2026, deixa: por isso a rota conta abre sem ele);
+# - M4: se o conector aceita o OAuth do cliente da CLI (rota url);
+# - M5: hook deny e --disallowedTools sobre MCP, e MAX_MCP_OUTPUT_TOKENS, na 2.1.302.
+PREFIXO_DO_CONECTOR_DA_CONTA = "claude_ai_"  # [medir M3]
+ESTRITO_NA_ROTA_CONTA = False  # [medir M3] True se o --strict-mcp-config mantiver o conector da conta
+SAIDA_MAXIMA_MCP = "25000"  # MAX_MCP_OUTPUT_TOKENS [medir M5]
+CHAVE_MCP_PERMITIDAS, CHAVE_MCP_FERRAMENTAS, CHAVE_MCP_SAIDA = ("FUNDACAO_MCP_PERMITIDAS", "FUNDACAO_MCP_FERRAMENTAS",
+                                                                 "MAX_MCP_OUTPUT_TOKENS")
+TETO_MCP_FERRAMENTAS = 40
+NOME_DO_SERVIDOR_MCP = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
+NOME_DA_FERRAMENTA_MCP = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+URL_DO_MCP = re.compile(r"^https://[a-z0-9.-]+(?:/[A-Za-z0-9._~%!$&'()*+,;=:@/-]*)?$")
+
+
+def servidor_do_conector(conector) -> str:
+    """O nome do servidor da conta nas ferramentas `mcp__<servidor>__<f>` [medir M3]: `claude_ai_` e o nome do
+    conector com cada caractere fora de [A-Za-z0-9_-] trocado por `_`, repetidos juntos e sem `_` nas pontas."""
+    if not isinstance(conector, str) or not conector:
+        raise EntradaInvalida("mcp: conector da conta sem nome")
+    nome = re.sub(r"_+", "_", re.sub(r"[^A-Za-z0-9_-]", "_", conector)).strip("_")
+    if not nome:
+        raise EntradaInvalida("mcp: o nome do conector não tem letra nem número")
+    return PREFIXO_DO_CONECTOR_DA_CONTA + nome
+
+
+def _nomes_da_ferramenta_mcp(valor, campo: str, minimo: int) -> list[str]:
+    if not isinstance(valor, list) or not minimo <= len(valor) <= TETO_MCP_FERRAMENTAS:
+        raise EntradaInvalida(f"mcp.{campo}: lista de {minimo} a {TETO_MCP_FERRAMENTAS} nomes exatos")
+    for nome in valor:
+        if (not isinstance(nome, str) or not NOME_DA_FERRAMENTA_MCP.match(nome) or "__" in nome or nome.endswith("_")
+                or valor.count(nome) > 1):
+            raise EntradaInvalida(f"mcp.{campo}: nome de ferramenta fora da forma ou repetido: {str(nome)[:60]!r}")
+    return list(valor)
+
+
+def mcp_da_ficha(aberturas) -> dict | None:
+    """O MCP que a ficha abre, na forma que o perfil, o mcp.json e o lançador usam; None sem a seção. A regra da ficha é
+    a do kit (já aplicada em `aberturas_da_ficha`); aqui só a forma, para o perfil nunca levar o que o hook não entende.
+    `ferramentas` e `ocultar` já vêm com o nome completo `mcp__<servidor>__<ferramenta>`."""
+    lista = _lista(_objeto(aberturas).get("mcp"))
+    if not lista:
+        return None
+    item = lista[0]
+    if len(lista) != 1 or not isinstance(item, dict):
+        raise EntradaInvalida("mcp: um servidor só (o conector do escritório)")
+    nome, origem = item.get("nome"), item.get("origem")
+    if not isinstance(nome, str) or not re.fullmatch(r"[a-z0-9-]{1,32}", nome):
+        raise EntradaInvalida("mcp: nome do servidor fora da forma")
+    if origem == "conta":
+        servidor, url = servidor_do_conector(item.get("conector")), None
+    elif origem == "url":
+        url = item.get("url")
+        if not isinstance(url, str) or not URL_DO_MCP.match(url) or len(url) > 300:
+            raise EntradaInvalida("mcp: URL do servidor fora da forma (https, sem porta, usuário nem parâmetros)")
+        servidor = nome
+    else:
+        raise EntradaInvalida("mcp: origem é conta ou url")
+    if not NOME_DO_SERVIDOR_MCP.match(servidor) or "__" in servidor:
+        raise EntradaInvalida("mcp: nome do servidor com '__' ou fora da forma")
+    if "consulta" in item:
+        raise EntradaInvalida('mcp: o campo "consulta" foi renomeado para "ferramentas" (a lista tem as de consulta e as '
+                              "que gravam): troque o nome na ficha e assine de novo")
+    liberadas = _nomes_da_ferramenta_mcp(item.get("ferramentas"), "ferramentas", 1)
+    ocultar = _nomes_da_ferramenta_mcp(item.get("ocultar", []), "ocultar", 0)
+    if set(liberadas) & set(ocultar):
+        raise EntradaInvalida("mcp: ferramenta em ferramentas e em ocultar ao mesmo tempo")
+    return {"nome": nome, "origem": origem, "servidor": servidor, "url": url,
+            "ferramentas": [f"mcp__{servidor}__{f}" for f in liberadas],
+            "ocultar": [f"mcp__{servidor}__{f}" for f in ocultar],
+            "estrito": origem == "url" or ESTRITO_NA_ROTA_CONTA}
+
+
+def mcp_json(mcp) -> dict:
+    """O `mcp.json` da área: o servidor da ficha só na origem `url`; na `conta` e sem a seção, nenhum servidor."""
+    servidores = {mcp["nome"]: {"type": "http", "url": mcp["url"]}} if mcp and mcp["origem"] == "url" else {}
+    return {"mcpServers": servidores}
+
+
+def aplicar_mcp_no_perfil(perfil: dict, mcp: dict | None) -> dict:
+    """O que a seção `mcp` muda no perfil: o servidor e as ferramentas exatas para o guarda, as mesmas em
+    `permissions.allow` (não perguntar a cada chamada), as escondidas em `permissions.deny`, o teto da resposta e, na
+    origem `conta`, os conectores da conta ligados (o hook e a lista fecham tudo fora dela). Sem a seção, nada muda."""
+    if not mcp:
+        return perfil
+    env, permissoes = perfil.setdefault("env", {}), perfil.setdefault("permissions", {})
+    env[CHAVE_MCP_PERMITIDAS] = mcp["servidor"]
+    env[CHAVE_MCP_FERRAMENTAS] = ",".join(mcp["ferramentas"])
+    env[CHAVE_MCP_SAIDA] = SAIDA_MAXIMA_MCP
+    permissoes["allow"] = [*_lista(permissoes.get("allow")), *mcp["ferramentas"]]
+    permissoes["deny"] = [*_lista(permissoes.get("deny")), *mcp["ocultar"]]
+    if mcp["origem"] == "conta":
+        perfil["disableClaudeAiConnectors"] = False
+    return perfil
+
+
+def problemas_do_mcp_no_perfil(perfil, esperado=False) -> list[str]:
+    """Os invariantes do MCP no perfil (DESENHO-JAULA §7.3). `esperado`: False = só a coerência do próprio perfil; None =
+    a ficha não abre MCP (tudo fechado); um `mcp_da_ficha` = exatamente aquele servidor e aquelas ferramentas. Gravação
+    não é invariante: vale o que a ficha lista. Lista vazia: confere."""
+    perfil = _objeto(perfil)
+    env, permissoes = _objeto(perfil.get("env")), _objeto(perfil.get("permissions"))
+    servidor, lista = env.get(CHAVE_MCP_PERMITIDAS), env.get(CHAVE_MCP_FERRAMENTAS)
+    allow = [r for r in _lista(permissoes.get("allow")) if isinstance(r, str) and r.startswith("mcp__")]
+    deny = [r for r in _lista(permissoes.get("deny")) if isinstance(r, str) and r.startswith("mcp__")]
+    problemas = []
+    if not isinstance(servidor, str) or not isinstance(lista, str):
+        return [f"env.{CHAVE_MCP_PERMITIDAS} e env.{CHAVE_MCP_FERRAMENTAS} têm de existir (vazias sem a seção mcp)"]
+    nomes = [n.strip() for n in lista.split(",") if n.strip()]
+    if not servidor:
+        if nomes or lista.strip() or allow or deny or CHAVE_MCP_SAIDA in env:
+            problemas.append("MCP no perfil sem servidor liberado (FUNDACAO_MCP_PERMITIDAS vazia)")
+        conta = False
+    else:
+        conta = servidor.startswith(PREFIXO_DO_CONECTOR_DA_CONTA)
+        prefixo = f"mcp__{servidor}__"
+        if not NOME_DO_SERVIDOR_MCP.match(servidor) or "__" in servidor:
+            problemas.append(f"env.{CHAVE_MCP_PERMITIDAS}: um só servidor, pelo nome exato (sem curinga nem vírgula)")
+        if not nomes or len(nomes) > TETO_MCP_FERRAMENTAS or len(set(nomes)) != len(nomes):
+            problemas.append(f"env.{CHAVE_MCP_FERRAMENTAS}: de 1 a {TETO_MCP_FERRAMENTAS} nomes exatos, sem repetir")
+        for n in nomes:
+            f = n[len(prefixo):]
+            if not n.startswith(prefixo) or not NOME_DA_FERRAMENTA_MCP.match(f) or "__" in f or f.endswith("_"):
+                problemas.append(f"env.{CHAVE_MCP_FERRAMENTAS}: '{n[:80]}' não é uma ferramenta exata do servidor liberado")
+        if allow != nomes:
+            problemas.append("permissions.allow com MCP diferente da lista exata de FUNDACAO_MCP_FERRAMENTAS")
+        if set(deny) & set(nomes):
+            problemas.append("ferramenta MCP na lista exata e também negada")
+        if env.get(CHAVE_MCP_SAIDA) != SAIDA_MAXIMA_MCP:
+            problemas.append(f"env.{CHAVE_MCP_SAIDA} tem de ser {SAIDA_MAXIMA_MCP}")
+    if perfil.get("disableClaudeAiConnectors") is not (not conta):
+        problemas.append("disableClaudeAiConnectors tem de ser true, salvo na origem conta da ficha (então false)")
+    if esperado is not False:
+        igual = (esperado is None and not servidor) or (esperado is not None and servidor == esperado["servidor"]
+                                                         and nomes == esperado["ferramentas"]
+                                                         and deny == esperado["ocultar"])
+        if not igual:
+            problemas.append("MCP do perfil diferente da seção mcp da ficha vigente (servidor, ferramentas exatas ou "
+                             "escondidas)")
+    return problemas
+
+
+# ------------------------------------------------------------------ agentes e skills dos plugins (1.7.11, lote A2)
+# Desenho de skills e agentes, §2.3 e §2.4. A ficha nomeia cada agente de arquivo (plugins[].agentes[] {nome, sha256,
+# ferramentas, modelo}); o perfil leva ao guarda_ferramentas.py duas variáveis, SEMPRE que há ficha válida (o
+# FUNDACAO_AGENTES vazio sem agente; o FUNDACAO_SKILLS com SEM_SKILLS sem skill): FUNDACAO_AGENTES,
+# `<plugin>:<agente>=Ferramenta|Ferramenta` separados por vírgula, e FUNDACAO_SKILLS, `<plugin>:<skill>` de cada skill dos
+# plugins da ficha. Sem ficha válida, o FUNDACAO_AGENTES fica fora do perfil e o FUNDACAO_SKILLS sai com SEM_SKILLS
+# (revisão final da 1.7.11, F8: nenhuma skill abre). O guarda não lê arquivo: o cabeçalho do agente e o hash dele são
+# conferidos aqui, pelo kit.
+CHAVE_AGENTES, CHAVE_SKILLS = "FUNDACAO_AGENTES", "FUNDACAO_SKILLS"
+# "Nenhuma skill" é um valor NÃO vazio (F13 da revisão final): o guarda só nega a Skill se a variável existe, e ninguém
+# mediu se o Claude Code repassa ao hook uma variável de ambiente de texto vazio (no Windows, atribuir texto vazio a uma
+# variável a apaga). Com "-" o valor segue o mesmo caminho das outras variáveis do perfil; o guarda lê "-" como nenhuma skill.
+SEM_SKILLS = "-"
+NOME_DO_AGENTE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+NOME_NO_GUARDA = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")  # cada metade de `<plugin>:<nome>`, como o guarda lê
+FERRAMENTA_DO_AGENTE = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,39}$")
+NUNCA_NO_AGENTE = frozenset({"Agent", "Task", "Skill", "NotebookEdit", "SubagentHandback"})
+MODELOS_DO_AGENTE = ("inherit", "sonnet", "opus", "haiku", "fable")
+TETO_AGENTES_FICHA, TETO_FERRAMENTAS_DO_AGENTE, TETO_VARIAVEL_DO_GUARDA = 20, 10, 8192
+
+
+def agentes_do_plugin(plugin: str, valor) -> list[dict]:
+    """Os `agentes` de um `plugins[]` da ficha na forma que o perfil usa, ou EntradaInvalida. A regra da ficha é a do kit
+    (já aplicada); aqui só a forma, para o perfil nunca levar ao guarda o que ele não entende."""
+    if valor is None or valor == []:
+        return []
+    if not isinstance(valor, list) or len(valor) > TETO_AGENTES_FICHA:
+        raise EntradaInvalida(f"plugin {plugin}: agentes fora da forma (lista de até {TETO_AGENTES_FICHA})")
+    saida = []
+    for a in valor:
+        if not isinstance(a, dict) or set(a) != {"nome", "sha256", "ferramentas", "modelo"}:
+            raise EntradaInvalida(f"plugin {plugin}: agente fora da forma (nome, sha256, ferramentas e modelo)")
+        nome, sha, ferramentas, modelo = a["nome"], a["sha256"], a["ferramentas"], a["modelo"]
+        if (not isinstance(nome, str) or not NOME_DO_AGENTE.match(nome) or nome in [x["nome"] for x in saida]
+                or not isinstance(sha, str) or not SHA256.match(sha) or modelo not in MODELOS_DO_AGENTE
+                or not isinstance(ferramentas, list) or not 1 <= len(ferramentas) <= TETO_FERRAMENTAS_DO_AGENTE
+                or any(not isinstance(f, str) or not FERRAMENTA_DO_AGENTE.match(f) or f in NUNCA_NO_AGENTE
+                       for f in ferramentas) or len(set(ferramentas)) != len(ferramentas)):
+            raise EntradaInvalida(f"plugin {plugin}: agente {str(nome)[:40]!r} fora da forma (nome, SHA-256, de 1 a "
+                                  f"{TETO_FERRAMENTAS_DO_AGENTE} ferramentas sem repetir, nunca Agent, Task, Skill ou "
+                                  "NotebookEdit, e modelo da lista)")
+        saida.append({"nome": nome, "sha256": sha, "ferramentas": list(ferramentas), "modelo": modelo})
+    return saida
+
+
+def valor_dos_agentes(plugins) -> str:
+    """O FUNDACAO_AGENTES dos plugins `{nome, agentes}` (a ficha ou o aberturas.json instalado), na ordem da ficha."""
+    itens = []
+    for p in _lista(plugins):
+        p = _objeto(p)
+        nome = p.get("nome")
+        if not isinstance(nome, str) or not NOME_NO_GUARDA.match(nome):
+            raise EntradaInvalida("agentes: nome de plugin fora da forma que o guarda lê")
+        itens += [f"{nome}:{a['nome']}={'|'.join(a['ferramentas'])}" for a in agentes_do_plugin(nome, p.get("agentes"))]
+    texto = ",".join(itens)
+    if len(itens) > TETO_AGENTES_FICHA or len(texto) > TETO_VARIAVEL_DO_GUARDA:
+        raise EntradaInvalida(f"agentes: mais de {TETO_AGENTES_FICHA} na ficha ou a lista passa de "
+                              f"{TETO_VARIAVEL_DO_GUARDA} caracteres")
+    return texto
+
+
+def valor_das_skills(skills) -> str:
+    """O FUNDACAO_SKILLS: cada `<plugin>:<skill>` na forma que o guarda lê, sem repetir; SEM_SKILLS ("-") sem skills."""
+    itens = _lista(skills)
+    if not all(isinstance(i, str) and i.count(":") == 1 and all(NOME_NO_GUARDA.match(m) for m in i.split(":"))
+               for i in itens) or len(set(itens)) != len(itens):
+        raise EntradaInvalida("skills dos plugins fora da forma <plugin>:<skill> (nomes sem espaço, sem repetir)")
+    texto = ",".join(itens)
+    if len(texto) > TETO_VARIAVEL_DO_GUARDA:
+        raise EntradaInvalida(f"skills dos plugins: a lista passa de {TETO_VARIAVEL_DO_GUARDA} caracteres")
+    return texto or SEM_SKILLS
+
+
+def skills_do_manifesto(plugin: str, manifesto) -> list[str]:
+    """As skills de um plugin pelo manifesto {rel: ...}: `skills/<x>/SKILL.md` (a regra do kit), como `<plugin>:<x>`.
+    Pasta de skill com nome que o guarda não lê fica de fora (não pode ser chamada)."""
+    return [f"{plugin}:{n}" for n in _pastas_de_skill(manifesto) if NOME_NO_GUARDA.match(n)]
+
+
+def _pastas_de_skill(manifesto) -> list[str]:
+    return sorted({p[1] for p in (rel.split("/") for rel in _objeto(manifesto)) if len(p) == 3 and p[0] == "skills"
+                   and p[2] == "SKILL.md"})
+
+
+def skills_fora_do_guarda(plugin: str, manifesto) -> list[str]:
+    """As pastas de skill do plugin que `skills_do_manifesto` deixa de fora (nome que o guarda não lê): a skill não abre, e
+    o titular não saberia por quê; o preparo avisa (lote A3)."""
+    return [f"{plugin}:{n}" for n in _pastas_de_skill(manifesto) if not NOME_NO_GUARDA.match(n)]
+
+
+def skills_da_area(area, plugins) -> list[str]:
+    """As skills dos plugins da ficha pela cópia na área root (`<area>/plugins/<p>/skills/<x>/SKILL.md`), sem seguir
+    ligação: a mesma regra de `skills_do_manifesto`. Cópia ausente: nenhuma skill (o perfil não confere)."""
+    saida = []
+    for p in _lista(plugins):
+        nome = _objeto(p).get("nome")
+        manifesto = {}
+        try:
+            for e in os.scandir(Path(area) / "plugins" / str(nome) / "skills"):
+                arquivo = os.path.join(e.path, "SKILL.md")
+                if e.is_dir(follow_symlinks=False) and os.path.lexists(arquivo) and stat.S_ISREG(os.lstat(arquivo).st_mode):
+                    manifesto[f"skills/{e.name}/SKILL.md"] = True
+        except OSError:
+            continue
+        saida += skills_do_manifesto(str(nome), manifesto)
+    return saida
+
+
+def env_dos_agentes(ab) -> dict:
+    """As variáveis do perfil para a ficha `ab`. Com ficha válida, as duas (o FUNDACAO_AGENTES talvez vazio; o
+    FUNDACAO_SKILLS com SEM_SKILLS sem skill). Sem ela, só o FUNDACAO_SKILLS, com SEM_SKILLS (revisão final da 1.7.11, F8 e
+    F13): com a variável presente o guarda nega toda a ferramenta Skill; sem ela a Skill seguia a lista do --tools e abria
+    a skill que a sessão plantasse numa subpasta do projeto. O valor não é vazio porque o repasse de variável vazia ao hook
+    não foi medido."""
+    ab = _objeto(ab)
+    if not ab.get("valida"):
+        return {CHAVE_SKILLS: SEM_SKILLS}
+    return {CHAVE_AGENTES: valor_dos_agentes(ab.get("plugins")), CHAVE_SKILLS: valor_das_skills(ab.get("skills"))}
+
+
+def problemas_dos_agentes_no_perfil(perfil, ab) -> list[str]:
+    """O perfil tem as variáveis dos agentes e das skills que a ficha `ab` manda (o FUNDACAO_SKILLS sempre, com SEM_SKILLS
+    sem skill ou sem ficha válida), e o FUNDACAO_AGENTES nunca sem ficha válida."""
+    env = _objeto(_objeto(perfil).get("env"))
+    try:
+        esperado = env_dos_agentes(ab)
+    except EntradaInvalida as exc:
+        return [str(exc)]
+    problemas = [f"env.{c} diferente da ficha vigente (agentes e skills dos plugins)" for c, v in esperado.items()
+                 if env.get(c) != v]
+    return problemas + [f"env.{c} sem ficha válida: tem de estar ausente" for c in (CHAVE_AGENTES, CHAVE_SKILLS)
+                        if c in env and c not in esperado]
 
 
 def _ferramentas_tem_web(perfil) -> tuple[bool, bool]:
@@ -651,36 +1030,70 @@ def forma_do_caminho(caminho: str, fs: str) -> str | None:
     return "ext4" if fs == "ext4" and not _dentro(caminho, "/mnt") else None
 
 
+_CANARIOS: dict = {}
+NOMES_DO_CANARIO = ("SONDAS_DO_CANARIO", "SONDAS_ADIADAS", "VEREDITOS_DO_CANARIO")
+
+
+def modulo_do_canario(skill=SKILL):
+    """A regra única do relatório do canário (`assets/fundacao-kit/fundacao/core/canario.py`, 1.7.11: o mesmo módulo
+    que a ferramenta do titular carrega para o aceite de risco). Do kit DESTA cópia da skill, nunca o da raiz da
+    fundação: compilado dos bytes lidos sem seguir ligação, e só define constantes e funções. Sem ele: EntradaInvalida
+    (as peças que o usam falham fechadas)."""
+    caminho = Path(skill) / "assets" / "fundacao-kit" / "fundacao" / "core" / "canario.py"
+    chave = os.path.abspath(caminho)
+    if chave not in _CANARIOS:
+        try:
+            dados = _ler_bytes_seguro(caminho, TETO_HASHES)
+        except (OSError, ValueError) as exc:
+            raise EntradaInvalida(f"o kit da skill não tem fundacao/core/canario.py legível (a regra do relatório do "
+                                  f"canário): {exc}") from None
+        modulo = types.ModuleType("_preparo_host_canario")
+        modulo.__file__ = chave
+        sys.dont_write_bytecode = True
+        try:
+            exec(compile(dados, chave, "exec"), modulo.__dict__)  # noqa: S102 - o kit da própria skill
+        except Exception as exc:  # noqa: BLE001 - módulo que não carrega: recusa com o motivo, sem traceback
+            raise EntradaInvalida(f"o canario.py do kit da skill não carregou ({type(exc).__name__}: {exc})") from None
+        if not all(hasattr(modulo, n) for n in (*NOMES_DO_CANARIO, "estrutura", "sondas_ausentes", "forma_do_relatorio")):
+            raise EntradaInvalida("o canario.py do kit da skill não tem a regra do relatório do canário")
+        _CANARIOS[chave] = modulo
+    return _CANARIOS[chave]
+
+
+def __getattr__(nome: str):
+    """`SONDAS_DO_CANARIO`, `SONDAS_ADIADAS` e `VEREDITOS_DO_CANARIO` vêm do kit (ver `modulo_do_canario`): os ids das
+    sondas e a classe de cada uma são os do scripts/ensaio_isolamento_wsl.py (SONDAS), com teste de igualdade (revisão
+    de segurança da 1.7.10, CAN-1). Sem o kit, o acesso levanta AttributeError (assim `hasattr` dá False); quem chama
+    `modulo_do_canario()` direto segue recebendo EntradaInvalida."""
+    if nome in NOMES_DO_CANARIO:
+        try:
+            return getattr(modulo_do_canario(), nome)
+        except EntradaInvalida as exc:
+            raise AttributeError(str(exc)) from None
+    raise AttributeError(f"module {__name__!r} has no attribute {nome!r}")
+
+
 def _forma_do_relatorio(relatorio: dict) -> str | None:
-    forma, fs = relatorio.get("forma"), relatorio.get("sistema_de_arquivos")
-    if not isinstance(forma, str) or not isinstance(fs, str):
-        return None
-    if forma == "ext4":
-        return "ext4" if fs == "ext4" else None
-    m = re.match(r"^drvfs:(/mnt/[a-z]/[^\n\r\0]*)$", forma)
-    return forma_do_caminho(m.group(1), fs) if m else None
+    return modulo_do_canario().forma_do_relatorio(relatorio)
+
+
+def sondas_ausentes(relatorio) -> list[str]:
+    """As sondas adiadas que o relatório (já com a estrutura aceita) não tem: as de um ensaio anterior, que contam como
+    não medidas (1.7.11, N1: sonda que falta só baixa a confiança, nunca a sobe)."""
+    return modulo_do_canario().sondas_ausentes(relatorio)
 
 
 def estrutura_do_relatorio_do_canario(relatorio) -> str | None:
-    """Motivo pelo qual o arquivo não é um relatório real do ensaio (`fundacao.ensaio_isolamento/1`), ou None. Não diz
-    se aprova: desde a 1.7.10.1 o relatório real que não aprova também é instalado, como revogação (a direção do CAN-2
-    do ramo v1710/seg-canario, do lote B, sem a recontagem dos itens do CAN-1). Real: o esquema, `simulado` false, a
-    versão e o SHA-256 do Claude Code, a conclusão true, false ou null e a forma de caminho que o canário prova, a mesma
-    no topo e na conclusão."""
-    if not isinstance(relatorio, dict) or relatorio.get("schema_version") != ESQUEMA_CANARIO:
-        return f"o arquivo não é um relatório do canário ({ESQUEMA_CANARIO})"
-    if relatorio.get("simulado") is not False:
-        return "relatório de simulação: só o ensaio real conta"
-    claude = _objeto(relatorio.get("claude"))
-    versao, sha = claude.get("versao"), claude.get("sha256")
-    if not (isinstance(versao, str) and VERSAO_CLAUDE.match(versao) and isinstance(sha, str) and SHA256.match(sha)):
-        return "relatório sem a versão e o SHA-256 do Claude Code que o canário rodou"
-    conclusao = relatorio.get("conclusao")
-    if not isinstance(conclusao, dict) or not any(conclusao.get("confina_comandos", 0) is v for v in (True, False, None)):
-        return "relatório sem a conclusão do ensaio (conclusao.confina_comandos: true, false ou null)"
-    if _forma_do_relatorio(relatorio) is None or conclusao.get("forma", relatorio.get("forma")) != relatorio.get("forma"):
-        return "relatório com uma forma de caminho que o canário não prova (só ext4 e drvfs:/mnt/<x>)"
-    return None
+    """Motivo pelo qual o arquivo não é um relatório real do ensaio, ou None (revisão de segurança da 1.7.10, CAN-1 e
+    CI-F2: o relatório de seis campos escrito à mão não passa; a regra é a do kit, `canario.estrutura`). Não diz se
+    aprova: o relatório real que não aprova também é instalado, como revogação (CAN-2; 1.7.10.1). Os itens têm o
+    conjunto dos ids das sondas (`SONDAS_DO_CANARIO`, sem repetir); só as `SONDAS_ADIADAS`, que o ensaio da 1.7.10 e da
+    1.7.10.1 não tinha, podem faltar (o relatório desses ensaios segue real, mas nunca aprova)."""
+    try:
+        kit = modulo_do_canario()
+    except EntradaInvalida as exc:
+        return f"sem a regra do relatório do canário, tudo fechado ({exc})"
+    return kit.estrutura(relatorio)
 
 
 def _canario_desta_raiz(relatorio: dict, *, claude_versao: str | None, claude_sha256: str | None,
@@ -702,22 +1115,47 @@ def conferir_relatorio_do_canario(relatorio, *, claude_versao: str | None = None
     """Motivo da recusa do relatório `fundacao.ensaio_isolamento/1`, ou None. Vale só o ensaio real (não simulado) com
     `conclusao.confina_comandos: true` — o canário só conclui isso com todos os itens de comando aprovados, o perfil
     gerado pelo preparo, o sandbox ligado e a forma medida igual à declarada —, do Claude Code fixado (versão e SHA-256,
-    quando dados) e da forma de caminho da raiz (quando dada)."""
+    quando dados) e da forma de caminho da raiz (quando dada). Revisão de segurança da 1.7.10, CAN-1: a conclusão é
+    recalculada pelos itens (`estrutura_do_relatorio_do_canario` e cada item de comando com `passou`, `perfil.gerado`,
+    `sandbox_ligado` e `temp.do_lancador` true), não lida do booleano. Limite: os campos são do próprio relatório; um
+    processo do mesmo usuário monta um relatório coerente (a procedência é a do arquivo que o titular instala).
+    1.7.11, N1: o relatório de um ensaio anterior, sem as `SONDAS_ADIADAS`, nunca aprova, qualquer que seja a conclusão
+    dele (sonda que falta só baixa a confiança, nunca a sobe); o reprovado antigo segue reprovado (o teste da conclusão
+    vem antes), e o aceite de risco assinado para ele segue valendo pelo SHA-256."""
     motivo = estrutura_do_relatorio_do_canario(relatorio)
     if motivo:
         return motivo
+    kit = modulo_do_canario()
     conclusao = relatorio["conclusao"]
     if conclusao["confina_comandos"] is not True:
         return ("o canário não provou que o sandbox confina os comandos ("
                 + str(conclusao.get("motivo") or "sem conclusão")[:160] + ")")
+    ausentes = kit.sondas_ausentes(relatorio)
+    if ausentes:
+        return ("relatório de um ensaio anterior, sem " + ", ".join(ausentes) + ": sonda que falta conta como não "
+                "medida e não prova o confinamento (rode o ensaio desta versão da skill)")
+    falhas = [i["id"] for i in relatorio["itens"]
+              if kit.SONDAS_DO_CANARIO[i["id"]] == "comando" and i["veredito"] != "passou"]
+    if falhas:
+        return ("a conclusão recalculada pelos itens não confina: itens de comando sem 'passou' ("
+                + ", ".join(falhas) + ")")
+    for falta, texto in ((_objeto(relatorio["perfil"]).get("gerado") is not True,
+                          "o perfil do projeto não foi gerado pelo preparo do host"),
+                         (relatorio.get("sandbox_ligado") is not True, "o sandbox não foi comprovadamente ligado"),
+                         (_objeto(relatorio["temp"]).get("do_lancador") is not True,
+                          "o temp das sessões não foi o do lançador")):
+        if falta:
+            return "a conclusão recalculada pelos itens não confina: " + texto
     return _canario_desta_raiz(relatorio, claude_versao=claude_versao, claude_sha256=claude_sha256, forma=forma)
 
 
 def portao_do_canario(area_raiz, *, claude_versao, claude_sha256, raiz_wsl: str, fs_raiz: str | None = None) -> dict:
     """Contratos, §0: nenhuma abertura vale sem o canário aprovado no ambiente real. Vale o relatório que o titular
     instalou (`instalar-canario`) em `<área>/canario/<versão>.json`, conferido contra o Claude Code fixado e a forma de
-    caminho da raiz (medida no /proc/mounts). Sem ele, `aprovado` False e o motivo (tudo fechado). O relatório real
-    que não aprova (false ou null), do Claude Code fixado e da forma da raiz, sai também em `reprovado` (o SHA-256 do
+    caminho da raiz (medida no /proc/mounts). Sem ele, `aprovado` False e o motivo (tudo fechado). O arquivo é o último
+    relatório instalado para a versão: o real que não aprova (false ou null) o substitui e revoga a aprovação anterior
+    (revisão de segurança da 1.7.10, CAN-2); a conclusão vem dos itens, não do booleano (CAN-1). O relatório real que
+    não aprova (false ou null), do Claude Code fixado e da forma da raiz, sai também em `reprovado` (o SHA-256 do
     arquivo, a conclusão e o Claude Code): é só a ele que um aceite de risco do titular se prende (1.7.10.1)."""
     base = {"aprovado": False, "arquivo": None, "sha256": None, "forma": None}
     if not (isinstance(claude_versao, str) and VERSAO_CLAUDE.match(claude_versao)):
@@ -739,9 +1177,11 @@ def portao_do_canario(area_raiz, *, claude_versao, claude_sha256, raiz_wsl: str,
     motivo = conferir_relatorio_do_canario(relatorio, claude_versao=claude_versao, claude_sha256=claude_sha256,
                                            forma=forma)
     if motivo:
-        saida = {**base, "forma": forma, "arquivo": arquivo.as_posix(), "motivo": motivo}
-        if (estrutura_do_relatorio_do_canario(relatorio) is None and _canario_desta_raiz(
-                relatorio, claude_versao=claude_versao, claude_sha256=claude_sha256, forma=forma) is None):
+        saida = {**base, "forma": forma, "arquivo": arquivo.as_posix(),
+                 "motivo": f"o relatório do canário instalado ({arquivo.name}) não aprova: {motivo}"}
+        if (estrutura_do_relatorio_do_canario(relatorio) is None and relatorio["conclusao"]["confina_comandos"] is not True
+                and _canario_desta_raiz(relatorio, claude_versao=claude_versao, claude_sha256=claude_sha256,
+                                        forma=forma) is None):
             saida["reprovado"] = {"sha256": hashlib.sha256(dados).hexdigest(),
                                   "confina_comandos": relatorio["conclusao"]["confina_comandos"],
                                   "claude_versao": claude_versao, "claude_sha256": claude_sha256,
@@ -957,42 +1397,63 @@ def temp_do_projeto(temp_base: str, projeto: str) -> str:
     return temp_base.rstrip("/") + "/fundacao-ia-" + projeto
 
 
-def leitura_negada_wsl(raiz_wsl: str, outros, perfil_windows: str, montagem: str = MONTAGEM) -> list[str]:
+def leitura_negada_wsl(raiz_wsl: str, outros, perfil_windows: str, montagem: str = MONTAGEM, *,
+                       area_raiz: str = AREA_RAIZ, bin_dir: str = BIN_DIR, areas=None) -> list[str]:
     """As negações nominais do plano B (DESENHO §1.3, "defesa em profundidade"): cada outro projeto e o
-    `.claude/projetos/<outro>` da raiz, as unidades do titular (salvo a da raiz), a pasta do Windows dele (salvo se a
-    raiz ficar nela) e, na casa, transcrições, histórico, login do Codex, porteiro e configurações por projeto. Uma
-    regra Read em deny vira denyRead do sandbox: cobre a ferramenta e o shell (documentação, 31/10/2026)."""
+    `.claude/projetos/<outro>` da raiz, a área root e o lançador de cada outro projeto (`areas`: os de `outros` e os
+    registrados ou já preparados), as unidades do titular (salvo a da raiz), a pasta do Windows dele (salvo se a raiz
+    ficar nela), o /mnt/wslg e, na casa, transcrições, histórico, login do Codex, porteiro e configurações por projeto.
+    Uma regra Read em deny vira denyRead do sandbox: cobre a ferramenta e o shell (documentação, 31/10/2026)."""
     regras = []
     for o in outros:
         regras += [f"Read(/{raiz_wsl}/projects/{o}/**)", f"Read(/{raiz_wsl}/.claude/projetos/{o}/**)"]
+    # Revisão de segurança da 1.7.10, WSL-01: a cópia dos plugins, a ficha, o perfil e o hashes.json de outro projeto
+    # (0755/0644 em /etc/fundacao-ia, de dono root, legíveis por qualquer conta) e o lançador dele. A própria área fica
+    # legível: o Claude Code lê dela o perfil, o mcp.json e os plugins da ficha, e um Markdown de apoio de plugin se lê
+    # pelo Bash, como o SKILL.md da cópia da skill.
+    area, binario = area_raiz.rstrip("/") or "/", bin_dir.rstrip("/") or "/"
+    for o in (outros if areas is None else areas):
+        # 1.7.11, lote S3: o executor das skills com scripts de outro projeto (fundacao-skill-<o>) também: com a raiz em
+        # /mnt/<x> o isolamento é lógico, e a trava do executor (pasta e FUNDACAO_PROJECT) é a segunda camada
+        regras += [f"Read(/{area}/projetos/{o}/**)", f"Read(/{binario}/abrir-fundacao-{o})",
+                   f"Read(/{binario}/fundacao-skill-{o})"]
     for unidade in UNIDADES_NEGADAS:
         alvo = montagem.rstrip("/") + "/" + unidade
         if not _dentro(raiz_wsl, alvo):
             regras.append(f"Read(/{alvo}/**)")
     if perfil_windows and not _dentro(raiz_wsl, perfil_windows):
         regras.append(f"Read(/{perfil_windows}/**)")
+    # Revisão de segurança da 1.7.10, HOOK-F8: /mnt/wslg/distro é outra montagem do ext4 da distribuição (a raiz
+    # inteira, com outro nome); o sandbox já nega o /mnt/wslg aos comandos, e esta regra o nega também à Read, ao Grep e
+    # ao Glob.
+    if not _dentro(raiz_wsl, WSLG):
+        regras.append(f"Read(/{WSLG}/**)")
     return regras + [f"Read(~/{rel})" for rel in CASA_NEGADA]
 
 
 def _montar_perfil_wsl(raiz_wsl: str, projeto: str, outros, perfil_windows: str, ancora_base: str, somente_leitura,
                        negar, aberturas: dict, temp_base: str = TEMP_BASE, montagem: str = MONTAGEM,
-                       modelo: dict | None = None, regras=None) -> dict:
-    """O modelo do WSL preenchido com caminhos já no formato do WSL (para gerar e para conferir)."""
+                       modelo: dict | None = None, regras=None, *, area_raiz: str = AREA_RAIZ,
+                       bin_dir: str = BIN_DIR, areas=None, negar_agente=()) -> dict:
+    """O modelo do WSL preenchido com caminhos já no formato do WSL (para gerar e para conferir). `areas`: os projetos
+    com a área root e o lançador negados (sem ela, os de `outros`)."""
     modelo = modelo or ler_modelo(MODELO_WSL)
     proj = f"{raiz_wsl}/projects/{projeto}"
     ab = aberturas
     pasta = raiz_wsl + "/.claude/hooks/"
     valores = {"RAIZ": raiz_wsl, "PROJETO": projeto, "PROJETO_DIR": proj, "PERFIL_WINDOWS": perfil_windows,
                "ANCORA_BASE": ancora_base, "TEMP_PROJETO": temp_do_projeto(temp_base, projeto),
-               "FERRAMENTAS": ",".join(ferramentas_do_projeto(ab)), "DOMINIOS_WEB": ",".join(ab["webfetch"]),
+               "FERRAMENTAS": ",".join(ferramentas_do_projeto(ab)),
+               "DOMINIOS_WEB": ",".join(expandir_curingas(ab["webfetch"])),
                **{MARCADOR_DO_HOOK[n]: pasta + n for n in HOOKS_WSL},
                "STATUS_SINAIS": PYTHON_LINUX + " -I -B " + shlex.quote(pasta + "sinais_sessao.py") + " --status-line"}
     web = [*([] if ab["webfetch"] else ["WebFetch"]), *([] if ab["websearch"] else ["WebSearch"])]
     listas = {"OUTROS_PROJETOS": list(outros), "SOMENTE_LEITURA": list(somente_leitura),
               "SEGREDOS_DA_REGRA_UNICA": complemento_de_segredos(modelo, regras),
-              "LEITURA_NEGADA": leitura_negada_wsl(raiz_wsl, outros, perfil_windows, montagem), "WEB_NEGADA": web,
-              "WEBFETCH_PERMITIDO": [f"WebFetch(domain:{d})" for d in ab["webfetch"]],
-              "REDE_PERMITIDA": list(ab["rede"])}
+              "LEITURA_NEGADA": leitura_negada_wsl(raiz_wsl, outros, perfil_windows, montagem, area_raiz=area_raiz,
+                                                   bin_dir=bin_dir, areas=areas), "WEB_NEGADA": web,
+              "WEBFETCH_PERMITIDO": [f"WebFetch(domain:{d})" for d in expandir_curingas(ab["webfetch"])],
+              "REDE_PERMITIDA": expandir_curingas(ab["rede"])}
     perfil = renderizar(modelo, valores, listas)
     perfil.setdefault("sandbox", {}).setdefault("filesystem", {}).setdefault("denyRead", []).extend(SOQUETES_NEGADOS)
     env = perfil.setdefault("env", {})
@@ -1000,14 +1461,21 @@ def _montar_perfil_wsl(raiz_wsl: str, projeto: str, outros, perfil_windows: str,
         env["FUNDACAO_WEBSEARCH"] = "1"
     if not ab["webfetch"]:
         env["CLAUDE_CODE_DISABLE_WEB_FETCH"] = "1"
-    return negar_skills(perfil, negar)
+    aplicar_mcp_no_perfil(perfil, mcp_da_ficha(ab))  # lote L2: só o servidor e as ferramentas que a ficha lista
+    env.update(env_dos_agentes(ab))  # lote A2: agentes de arquivo e skills dos plugins da ficha (só com ficha válida)
+    preparo_jaula().aplicar_jaula_no_perfil(perfil, proj, ab)  # lote L4: as respostas da fila da jaula não são graváveis
+    return negar_agentes(negar_skills(perfil, negar), negar_agente)
 
 
 def perfil_wsl(*, raiz: str, projeto: str, perfil_windows: str, outros_projetos, somente_leitura=(),
                ancora_base: str = ANCORA_BASE_WSL, montagem: str = MONTAGEM, modelo: dict | None = None, negar=(),
-               aberturas: dict | None = None, temp_base: str = TEMP_BASE, regras=None, backups=()) -> dict:
+               aberturas: dict | None = None, temp_base: str = TEMP_BASE, regras=None, backups=(),
+               area_raiz: str = AREA_RAIZ, bin_dir: str = BIN_DIR, projetos_registrados=(), negar_agente=()) -> dict:
     """Perfil da sessão do PROJETO no Ubuntu (`/etc/fundacao-ia/projetos/<p>/settings.wsl.json`; 1.7.10). Sem a ficha,
-    tudo fechado. `backups` saiu na 1.7.10 (as cópias de segurança não ficam graváveis por sessão nenhuma)."""
+    tudo fechado. `backups` saiu na 1.7.10 (as cópias de segurança não ficam graváveis por sessão nenhuma). A área root
+    (`<area_raiz>/projetos/<o>/**`) e o lançador (`<bin_dir>/abrir-fundacao-<o>`) ficam negados para cada outro
+    projeto: os de `outros_projetos` e os de `projetos_registrados` (o registry/projetos-host.json e as áreas já
+    gravadas; revisão de segurança da 1.7.10, WSL-01)."""
     if backups:
         raise EntradaInvalida("1.7.10: a sessão do projeto não grava cópias de segurança (-Backups saiu do perfil do "
                               "Ubuntu); a cópia é do kit, fora das sessões")
@@ -1016,6 +1484,11 @@ def perfil_wsl(*, raiz: str, projeto: str, perfil_windows: str, outros_projetos,
     if projeto in outros:
         raise EntradaInvalida(f"o projeto da sessão ({projeto}) não pode estar entre os projetos negados")
     raiz_wsl = caminho_wsl(raiz, montagem)
+    area_raiz, bin_dir = str(area_raiz).rstrip("/") or "/", str(bin_dir).rstrip("/") or "/"
+    for rotulo, pasta in (("área do titular", area_raiz), ("pasta do lançador", bin_dir)):
+        if not _caminho_de_vaga(pasta) or pasta == "/" or pasta == raiz_wsl + "/.claude":
+            raise EntradaInvalida(f"{rotulo} fora da forma (caminho absoluto do Linux, sem curinga): {pasta[:80]!r}")
+    areas = sorted(({*outros, *(projeto_valido(p, "projeto registrado") for p in projetos_registrados)}) - {projeto})
     leitura = _sem_repetir(caminho_wsl(s, montagem) for s in somente_leitura)
     for pasta in leitura:
         if _dentro(pasta, raiz_wsl):
@@ -1023,16 +1496,19 @@ def perfil_wsl(*, raiz: str, projeto: str, perfil_windows: str, outros_projetos,
     ab = aberturas or aberturas_fechadas()
     perfil = _montar_perfil_wsl(raiz_wsl, projeto, outros, caminho_wsl(perfil_windows, montagem),
                                 caminho_wsl(ancora_base, montagem), leitura, negar, ab, temp_base, montagem, modelo,
-                                regras)
-    problemas = invariantes_perfil_wsl(perfil, raiz_wsl, projeto, ab, regras=regras)
+                                regras, area_raiz=area_raiz, bin_dir=bin_dir, areas=areas, negar_agente=negar_agente)
+    problemas = invariantes_perfil_wsl(perfil, raiz_wsl, projeto, ab, regras=regras, area_raiz=area_raiz,
+                                       bin_dir=bin_dir)
     if problemas:
         raise EntradaInvalida("o modelo do perfil do WSL não garante: " + "; ".join(problemas))
     return perfil
 
 
 def invariantes_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None, aberturas: dict | None = None,
-                           regras=None) -> list[str]:
-    """O que o perfil do projeto tem de garantir (DESENHO §1.4 e a folha do HOST), ao gerar e ao conferir."""
+                           regras=None, area_raiz: str | None = None, bin_dir: str | None = None) -> list[str]:
+    """O que o perfil do projeto tem de garantir (DESENHO §1.4 e a folha do HOST), ao gerar e ao conferir. Com
+    `area_raiz` e `bin_dir`, a área root e o lançador de cada outro projeto negados são exatamente esses; sem eles, em
+    qualquer pasta absoluta (a forma)."""
     problemas = []
     perfil = _objeto(perfil)
     sandbox = _objeto(perfil.get("sandbox"))
@@ -1056,7 +1532,7 @@ def invariantes_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None, ab
     if rede.get("strictAllowlist") is not True:
         problemas.append("rede sem strictAllowlist: host fora da lista vira pergunta, não recusa")
     dominios = _lista(rede.get("allowedDomains"))
-    if aberturas is not None and dominios != list(aberturas["rede"]):
+    if aberturas is not None and dominios != expandir_curingas(aberturas["rede"]):
         problemas.append("rede do sandbox diferente da ficha: sandbox.network.allowedDomains tem de ser a lista exata "
                          "de rede.dominios da ficha vigente (sem ficha, vazia)")
     negados = [c for c in _lista(fs.get("denyWrite")) if isinstance(c, str)]
@@ -1068,10 +1544,27 @@ def invariantes_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None, ab
         if alvo in negados:
             problemas.append(f"denyWrite em {alvo[len(raiz) + 1:]}: a fila do porteiro deixaria de funcionar (só "
                              "respostas/ é negada)")
+    if aberturas is not None:
+        problemas += preparo_jaula().problemas_do_perfil(perfil, proj, aberturas)  # lote L4
     estado = raiz + "/state"
     negacoes = [n for n in _lista(perm.get("deny")) if isinstance(n, str)]
     if f"Read(/{estado}/**)" not in negacoes:
         problemas.append("ferramenta Read e shell com acesso a state/ (falta Read(//<raiz>/state/**))")
+    # Revisão de segurança da 1.7.10, WSL-01: cada outro projeto negado tem também a área root e o lançador negados.
+    prefixo = f"Read(/{raiz}/projects/"
+    for o in (r[len(prefixo):-len("/**)")] for r in negacoes if r.startswith(prefixo) and r.endswith("/**)")):
+        if area_raiz is not None and bin_dir is not None:
+            falta = {f"Read(/{area_raiz.rstrip('/')}/projetos/{o}/**)", f"Read(/{bin_dir.rstrip('/')}/abrir-fundacao-{o})",
+                     f"Read(/{bin_dir.rstrip('/')}/fundacao-skill-{o})"} - set(negacoes)
+        else:
+            vagas = _vagas_da_area(negacoes, raiz, estrito=False)
+            falta = set() if o in vagas["areas"] and o in vagas["lancadores"] and o in vagas["executores"] else {o}
+        if falta:
+            problemas.append(f"a área root, o lançador e o executor de skills do projeto {o} legíveis pela sessão (falta Read de "
+                             f"<área>/projetos/{o}/**, de <bin>/abrir-fundacao-{o} e de <bin>/fundacao-skill-{o})")
+    if not _dentro(raiz, WSLG) and f"Read(/{WSLG}/**)" not in negacoes:  # revisão de segurança da 1.7.10, HOOK-F8
+        problemas.append("o /mnt/wslg (outro caminho da raiz no ext4) legível pela Read, pelo Grep e pelo Glob (falta "
+                         "Read(//mnt/wslg/**))")
     for chave in ("allowRead", "allowWrite"):
         for c in _lista(fs.get(chave)):
             if isinstance(c, str) and (_dentro(c, estado) or _dentro(estado, c)):
@@ -1085,15 +1578,25 @@ def invariantes_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None, ab
                          "dados que o sandbox de rede não cobre)")
     if EXCLUSAO_DE_DADOS not in _lista(perfil.get("claudeMdExcludes")):
         problemas.append("instruções de pastas de dados (CLAUDE.md, AGENTS.md) carregáveis: falta claudeMdExcludes")
-    for chave, esperado in (("syncClaudeAiSkills", False), ("syncClaudeAiPlugins", False),
-                            ("disableClaudeAiConnectors", True)):
+    for chave, esperado in (("syncClaudeAiSkills", False), ("syncClaudeAiPlugins", False)):
         if perfil.get(chave) is not esperado:
             problemas.append(f"{chave} tem de ser {str(esperado).lower()}")
+    if perfil.get("disableSkillShellExecution") is not True:  # F8 da revisão final da 1.7.11: sem o `!` das skills
+        problemas.append("disableSkillShellExecution tem de ser true (o comando `!` do corpo de uma skill plantada na "
+                         "pasta do projeto rodaria sem o guarda)")
+    if CHAVE_SKILLS not in env:  # F8: sem a variável a ferramenta Skill segue a lista do --tools
+        problemas.append(f"env.{CHAVE_SKILLS} ausente: o perfil tem de levá-la ('-', nenhuma skill, sem ficha válida; o "
+                         "que nega toda skill)")
+    try:  # lote L2: o MCP do perfil é o da ficha (sem ficha, fechado); sem `aberturas`, só a coerência dele
+        problemas += problemas_do_mcp_no_perfil(perfil, False if aberturas is None else mcp_da_ficha(aberturas))
+    except EntradaInvalida as exc:
+        problemas.append(str(exc))
     esperado_env = {CHAVE_IDENTIDADE: f"sessao-{projeto}", CHAVE_PROJETO: projeto, "FUNDACAO_RAIZ": raiz,
-                    "FUNDACAO_PORTEIRO": proj + "/.porteiro", "FUNDACAO_MCP_PERMITIDAS": ""}
+                    "FUNDACAO_PORTEIRO": proj + "/.porteiro"}
     if aberturas is not None:
+        problemas += problemas_dos_agentes_no_perfil(perfil, aberturas)  # lote A2: agentes e skills da ficha
         esperado_env["FUNDACAO_FERRAMENTAS"] = ",".join(ferramentas_do_projeto(aberturas))
-        esperado_env["FUNDACAO_DOMINIOS_WEB"] = ",".join(aberturas["webfetch"])
+        esperado_env["FUNDACAO_DOMINIOS_WEB"] = ",".join(expandir_curingas(aberturas["webfetch"]))
     for chave, valor in esperado_env.items():
         if env.get(chave) != valor:
             problemas.append(f"env.{chave} diferente do esperado para o projeto {projeto}")
@@ -1108,7 +1611,8 @@ def invariantes_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None, ab
         alvo = f"{raiz}/.claude/hooks/{nome}"
         ok = any(_objeto(g).get("matcher") == matcher and any(
             _objeto(h).get("command") == PYTHON_LINUX and _objeto(h).get("args") == ["-I", "-B", alvo]
-            and _objeto(h).get("onFailure") == "block" for h in _lista(_objeto(g).get("hooks")))
+            and _objeto(h).get("onFailure") == ("continue" if nome in HOOKS_QUE_NAO_BLOQUEIAM else "block")
+            for h in _lista(_objeto(g).get("hooks")))
             for g in _lista(grupos.get(evento)))
         if not ok:
             problemas.append(f"hook {nome} da raiz ausente ou fora da forma ({evento} {matcher}, python3 -I -B)")
@@ -1119,6 +1623,37 @@ def _caminho_de_vaga(caminho) -> bool:
     """Caminho absoluto do Linux, normalizado, sem curinga nem quebra de linha (como o gerador o escreve)."""
     return (isinstance(caminho, str) and caminho.startswith("/") and not caminho.startswith("//")
             and posixpath.normpath(caminho) == caminho and not any(c in caminho for c in "*?\n\r\0"))
+
+
+_REGRA_DA_AREA = re.compile(r"Read\(/(/[^*?\n\r\0]+)/projetos/([a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?)/\*\*\)")
+_REGRA_DO_LANCADOR = re.compile(r"Read\(/(/[^*?\n\r\0]+)/abrir-fundacao-([a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?)\)")
+_REGRA_DO_EXECUTOR = re.compile(r"Read\(/(/[^*?\n\r\0]+)/fundacao-skill-([a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?)\)")
+
+
+def _vagas_da_area(negacoes, raiz: str, estrito: bool = True) -> dict:
+    """A área root e a pasta do lançador que as negações do perfil citam, com os projetos de cada uma (revisão de
+    segurança da 1.7.10, WSL-01). O `.claude/projetos/<o>` da raiz (o espelho) não conta. `estrito`: uma área e uma
+    pasta só, e os mesmos projetos nas duas listas; fora disso, EntradaInvalida."""
+    espelho = raiz.rstrip("/") + "/.claude"
+    bases, pastas, areas, lancadores, executores = [], [], [], [], []
+    for regra in (r for r in negacoes if isinstance(r, str)):
+        m = _REGRA_DA_AREA.fullmatch(regra)
+        if m and m.group(1) != espelho:
+            bases.append(m.group(1))
+            areas.append(m.group(2))
+        m = _REGRA_DO_LANCADOR.fullmatch(regra)
+        if m:
+            pastas.append(m.group(1))
+            lancadores.append(m.group(2))
+        m = _REGRA_DO_EXECUTOR.fullmatch(regra)  # lote S3: o executor mora na mesma pasta do lançador
+        if m:
+            pastas.append(m.group(1))
+            executores.append(m.group(2))
+    if estrito and (len(set(bases)) > 1 or len(set(pastas)) > 1 or areas != lancadores or areas != executores
+                    or not all(map(_caminho_de_vaga, bases + pastas))):
+        raise EntradaInvalida("perfil fora do formato do modelo (área root e lançador dos outros projetos)")
+    return {"area_raiz": bases[0] if bases else None, "bin_dir": pastas[0] if pastas else None, "areas": areas,
+            "lancadores": lancadores, "executores": executores}
 
 
 def parametros_do_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None) -> dict:
@@ -1146,12 +1681,16 @@ def parametros_do_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None) 
              "outros_projetos": [c[len(raiz) + len("/projects/"):] for c in _lista(fs.get("denyWrite"))
                                  if isinstance(c, str) and c.startswith(raiz + "/projects/") and not _dentro(c, proj)],
              "negar": [r[len("Skill("):-1] for r in _lista(_objeto(perfil.get("permissions")).get("deny"))
-                       if isinstance(r, str) and r.startswith("Skill(") and r.endswith(")")]}
+                       if isinstance(r, str) and r.startswith("Skill(") and r.endswith(")")],
+             "negar_agente": [r[len("Agent("):-1] for r in _lista(_objeto(perfil.get("permissions")).get("deny"))
+                              if isinstance(r, str) and r.startswith("Agent(") and r.endswith(")")]}
     for caminho in [vagas["perfil_windows"], vagas["ancora_base"], vagas["temp_base"], *vagas["somente_leitura"]]:
         if not _caminho_de_vaga(caminho):
             raise EntradaInvalida(f"caminho fora do formato do modelo no perfil: {str(caminho)[:80]!r}")
     for nome in vagas["outros_projetos"]:
         identificador(nome, "projeto negado no perfil")
+    area = _vagas_da_area(_lista(_objeto(perfil.get("permissions")).get("deny")), raiz)  # WSL-01
+    vagas.update(area_raiz=area["area_raiz"], bin_dir=area["bin_dir"], areas=area["areas"])
     rede = [d for d in _lista(_objeto(_objeto(perfil.get("sandbox")).get("network")).get("allowedDomains"))]
     webfetch = [r[len("WebFetch(domain:"):-1] for r in _lista(_objeto(perfil.get("permissions")).get("allow"))
                 if isinstance(r, str) and r.startswith("WebFetch(domain:") and r.endswith(")")]
@@ -1183,7 +1722,8 @@ def _primeira_diferenca(atual, esperado, caminho: str = "") -> str:
 
 def conferir_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None, outros_projetos=None, *,
                         parametros: dict | None = None, aberturas: dict | None = None, somente_leitura=None,
-                        negar=None, ferramentas_lancador: str | None = None, regras=None) -> list[str]:
+                        negar=None, ferramentas_lancador: str | None = None, regras=None,
+                        negar_agente=None) -> list[str]:
     """O perfil do projeto que o preparo fixa: os invariantes e, inteiro, igual ao que o modelo gera [Decisão; auditoria
     Codex Security da 1.7.6, #5]. Com `outros_projetos` (os da raiz), cada um tem de estar negado; com `parametros`,
     `aberturas`, `somente_leitura` e `negar` (do hashes.json, da ficha vigente e do registro), a comparação usa esses
@@ -1192,10 +1732,13 @@ def conferir_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None, outro
     WebFetch e o WebSearch que o próprio perfil declara não contam."""
     raiz = raiz_wsl.rstrip("/")
     ab = aberturas if aberturas is not None else aberturas_fechadas()
-    problemas = invariantes_perfil_wsl(perfil, raiz, projeto, ab, regras=regras)
+    confiaveis = parametros or {}
+    problemas = invariantes_perfil_wsl(perfil, raiz, projeto, ab, regras=regras, area_raiz=confiaveis.get("area_raiz"),
+                                       bin_dir=confiaveis.get("bin_dir"))
     da_sessao = projeto or _objeto(_objeto(perfil).get("env")).get(CHAVE_PROJETO)
     prefixo, negados = f"Read(/{raiz}/projects/", set()
-    for regra in _lista(_objeto(_objeto(perfil).get("permissions")).get("deny")):
+    negacoes = _lista(_objeto(_objeto(perfil).get("permissions")).get("deny"))
+    for regra in negacoes:
         if isinstance(regra, str) and regra.startswith(prefixo) and regra.endswith("/**)"):
             negados.add(regra[len(prefixo):-len("/**)")])
     if outros_projetos is not None:
@@ -1203,19 +1746,26 @@ def conferir_perfil_wsl(perfil, raiz_wsl: str, projeto: str | None = None, outro
         if faltam:
             problemas.append("projetos da raiz sem leitura e escrita negadas no perfil (criados depois do preparo?): "
                              + ", ".join(faltam))
+        sem_area = sorted(set(outros_projetos) - set(_vagas_da_area(negacoes, raiz, estrito=False)["areas"])
+                          - {da_sessao})
+        if sem_area:  # revisão de segurança da 1.7.10, WSL-01
+            problemas.append("projetos da raiz sem a área root e o lançador negados no perfil (criados depois do "
+                             "preparo?): " + ", ".join(sem_area))
     if da_sessao in negados:
         problemas.append(f"o projeto da sessão ({da_sessao}) está entre os projetos negados")
     try:
         vagas = parametros_do_perfil_wsl(perfil, raiz, projeto)
     except EntradaInvalida as exc:
         return problemas + [str(exc)]
-    p = {**vagas, **{k: v for k, v in (parametros or {}).items() if v is not None}}
+    p = {**vagas, **{k: v for k, v in confiaveis.items() if v is not None}}
     try:
         esperado = _montar_perfil_wsl(raiz, vagas["projeto"], vagas["outros_projetos"], p["perfil_windows"],
                                       p["ancora_base"],
                                       vagas["somente_leitura"] if somente_leitura is None else list(somente_leitura),
                                       vagas["negar"] if negar is None else list(negar), ab, p["temp_base"],
-                                      regras=regras)
+                                      regras=regras, area_raiz=p.get("area_raiz") or AREA_RAIZ,
+                                      bin_dir=p.get("bin_dir") or BIN_DIR, areas=vagas["areas"],
+                                      negar_agente=vagas["negar_agente"] if negar_agente is None else list(negar_agente))
     except EntradaInvalida as exc:
         return problemas + [str(exc)]
     if _canonico(perfil) != _canonico(esperado):
@@ -1233,6 +1783,25 @@ def projetos_da_raiz(raiz) -> list[str]:
     if not pasta.is_dir():
         return []
     return sorted(p.name for p in pasta.iterdir() if p.is_dir() and not p.name.startswith("."))
+
+
+def projetos_com_area(area_raiz) -> list[str]:
+    """Os projetos que já têm área root (`<area_raiz>/projetos/<p>/`, na forma do kit, sem seguir ligação): o perfil de
+    cada outro projeto nega a leitura delas, também a de um projeto que saiu de projects/ (revisão de segurança da
+    1.7.10, WSL-01). Pasta ausente ou ilegível: nenhum."""
+    pasta = Path(area_raiz) / "projetos"
+    try:
+        nomes = os.listdir(pasta)
+    except OSError:
+        return []
+    saida = []
+    for nome in filter(e_projeto, nomes):
+        try:
+            if stat.S_ISDIR(os.lstat(pasta / nome).st_mode):
+                saida.append(nome)
+        except OSError:
+            continue
+    return sorted(saida)
 
 
 # ------------------------------------------------------------------ registry/projetos-host.json (só o titular grava)
@@ -1258,27 +1827,38 @@ def _visao_local(caminho: str) -> Path:
     return Path(caminho_wsl(caminho)) if re.match(r"^[A-Za-z]:", caminho) else Path(caminho)
 
 
+def _nomes_do_registro(item, chave: str, nome: str) -> None:
+    if not isinstance(item[chave], list) or not all(isinstance(n, str) and NOME_DE_SKILL.fullmatch(n) for n in item[chave]):
+        raise EntradaInvalida(f"{REGISTRO_HOST}: {nome}.{chave} fora da forma")
+
+
 def _validar_registro(dados) -> dict:
-    if not isinstance(dados, dict) or dados.get("schema_version") != ESQUEMA_PROJETOS_HOST:
-        raise EntradaInvalida(f"{REGISTRO_HOST} fora do esquema {ESQUEMA_PROJETOS_HOST}")
+    """O registro no esquema /2 (ou /1, que ganha `agentes_negados` vazio na leitura: o que se grava é sempre o /2)."""
+    versao = dados.get("schema_version") if isinstance(dados, dict) else None
+    if versao not in (ESQUEMA_PROJETOS_HOST, ESQUEMA_PROJETOS_HOST_1):
+        raise EntradaInvalida(f"{REGISTRO_HOST} fora do esquema {ESQUEMA_PROJETOS_HOST} (ou {ESQUEMA_PROJETOS_HOST_1})")
     if set(dados) - {"schema_version", "projetos"} or not isinstance(dados.get("projetos"), dict):
         raise EntradaInvalida(f"{REGISTRO_HOST} com chaves a mais ou sem 'projetos'")
+    chaves = {"origens", "somente_leitura", "aninhadas_negadas"} | ({"agentes_negados"} if versao[-1] == "2" else set())
     for nome, item in dados["projetos"].items():
         projeto_valido(nome, f"projeto em {REGISTRO_HOST}")
-        if not isinstance(item, dict) or set(item) != {"origens", "somente_leitura", "aninhadas_negadas"}:
+        if not isinstance(item, dict) or set(item) != chaves:
             raise EntradaInvalida(f"{REGISTRO_HOST}: projeto {nome} fora da forma")
         for chave in ("origens", "somente_leitura"):
             if not isinstance(item[chave], list) or any(_absoluto_registrado(c) != c for c in item[chave]):
                 raise EntradaInvalida(f"{REGISTRO_HOST}: {nome}.{chave} fora da forma")
-        if not isinstance(item["aninhadas_negadas"], list) or not all(
-                isinstance(n, str) and NOME_DE_SKILL.match(n) for n in item["aninhadas_negadas"]):
-            raise EntradaInvalida(f"{REGISTRO_HOST}: {nome}.aninhadas_negadas fora da forma")
+        for chave in chaves - {"origens", "somente_leitura"}:
+            _nomes_do_registro(item, chave, nome)
+    if versao == ESQUEMA_PROJETOS_HOST_1:
+        dados["schema_version"] = ESQUEMA_PROJETOS_HOST
+        for item in dados["projetos"].values():
+            item["agentes_negados"] = []
     return dados
 
 
 def ler_projetos_host(raiz) -> dict:
     """`registry/projetos-host.json` (contratos do lote 2, §6): lido sem seguir ligação, até 256 KiB, no esquema
-    `fundacao.projetos_host/1`. Ausente: o registro vazio."""
+    `fundacao.projetos_host/2` (o /1 também; sai sempre na forma do /2). Ausente: o registro vazio."""
     raiz = Path(raiz)
     vazio = {"schema_version": ESQUEMA_PROJETOS_HOST, "projetos": {}}
     gravacao = _carregar_script("gravacao_segura")
@@ -1290,9 +1870,47 @@ def ler_projetos_host(raiz) -> dict:
     return _validar_registro(_ler_json_seguro(arquivo, TETO_REGISTRO))
 
 
-def registrar_projeto(raiz, projeto: str, origens, somente_leitura=(), negar=()) -> dict:
-    """Soma ao registro (só cresce) as origens, as pastas só de leitura e as skills aninhadas negadas do projeto; cada
-    pasta tem de existir e ficar fora da raiz. Grava inteiro ou nada (temporário e troca), em LF, sem seguir ligação."""
+def _item_vazio() -> dict:
+    return {"origens": [], "somente_leitura": [], "aninhadas_negadas": [], "agentes_negados": []}
+
+
+def motivo_de_nome_nao_registravel(nome: str, rotulo: str) -> str | None:
+    """Por que o registro de negações não aceita `nome` (revisão final da 1.7.11, F9), ou None. O registro vale para TODOS
+    os projetos: `:` é o separador de `<plugin>:<nome>` da ficha, e um nome com ele, plantado numa aninhada de um projeto,
+    fecharia a skill ou o agente da ficha de outro; o nome de agente embutido (AGENTES_EMBUTIDOS, a lista do guarda)
+    fecharia o embutido em todos os perfis. O arquivo plantado se neutraliza, não se nega pelo nome."""
+    if ":" in nome:
+        return "tem ':', o separador de <plugin>:<nome> da ficha de outro projeto"
+    if rotulo == "agente" and nome in AGENTES_EMBUTIDOS:
+        return "é nome de agente embutido: negá-lo fecharia o embutido em todos os projetos"
+    return None
+
+
+def _somar_nomes(item: dict, chave: str, nomes, rotulo: str) -> None:
+    """Soma `nomes` à lista `chave` do item: o registro só cresce, nenhum caminho tira nome dele. Nome fora do padrão do
+    preparo (o `NOME_DE_SKILL`), com ':' ou, no agente, de embutido: EntradaInvalida, e nada é gravado."""
+    for nome in nomes:
+        if not isinstance(nome, str) or not NOME_DE_SKILL.fullmatch(nome):
+            raise EntradaInvalida(f"nome de {rotulo} inválido: {str(nome)[:80]!r}")
+        motivo = motivo_de_nome_nao_registravel(nome, rotulo)
+        if motivo:
+            raise EntradaInvalida(f"nome de {rotulo} não vai ao registro ({nome}): {motivo}; neutralize o arquivo no "
+                                  "projeto (tire-o da cópia) em vez de negá-lo pelo nome")
+        if nome not in item[chave]:
+            item[chave].append(nome)
+
+
+def _gravar_registro(raiz: Path, dados: dict) -> None:
+    _validar_registro(dados)
+    gravacao = _carregar_script("gravacao_segura")
+    gravacao.pasta_sem_ligacao(raiz, "registry")
+    gravacao.publicar(raiz / REGISTRO_HOST, texto_json(dados).encode("utf-8"))
+
+
+def registrar_projeto(raiz, projeto: str, origens, somente_leitura=(), negar=(), negar_agente=()) -> dict:
+    """Soma ao registro (só cresce) as origens, as pastas só de leitura, as skills aninhadas negadas e os agentes
+    aninhados negados do projeto; cada pasta tem de existir e ficar fora da raiz. Grava inteiro ou nada (temporário e
+    troca), em LF, sem seguir ligação."""
     raiz = Path(raiz)
     projeto_valido(projeto)
     if not (raiz / "projects" / projeto).is_dir():
@@ -1300,7 +1918,7 @@ def registrar_projeto(raiz, projeto: str, origens, somente_leitura=(), negar=())
     if not origens:
         raise EntradaInvalida("informe ao menos uma --origem (pasta de onde o projeto veio, fluxo B)")
     dados = ler_projetos_host(raiz)
-    item = dados["projetos"].setdefault(projeto, {"origens": [], "somente_leitura": [], "aninhadas_negadas": []})
+    item = dados["projetos"].setdefault(projeto, _item_vazio())
     raiz_real = os.path.normcase(os.path.realpath(raiz))
     for chave, valores in (("origens", origens), ("somente_leitura", somente_leitura)):
         for valor in valores:
@@ -1318,49 +1936,193 @@ def registrar_projeto(raiz, projeto: str, origens, somente_leitura=(), negar=())
                                       f"não a contenha): {normal}")
             if normal not in item[chave]:
                 item[chave].append(normal)
-    for nome in negar:
-        if not NOME_DE_SKILL.match(str(nome)):
-            raise EntradaInvalida(f"nome de skill inválido: {nome!r}")
-        if nome not in item["aninhadas_negadas"]:
-            item["aninhadas_negadas"].append(nome)
-    _validar_registro(dados)
-    gravacao = _carregar_script("gravacao_segura")
-    gravacao.pasta_sem_ligacao(raiz, "registry")
-    gravacao.publicar(raiz / REGISTRO_HOST, texto_json(dados).encode("utf-8"))
+    _somar_nomes(item, "aninhadas_negadas", negar, "skill")
+    _somar_nomes(item, "agentes_negados", negar_agente, "agente")
+    _gravar_registro(raiz, dados)
     return dados
 
 
+def registrar_aninhadas(raiz, projeto: str, skills=(), agentes=()) -> dict:
+    """Soma ao registro, na mesma rodada do preparo (`--registrar-aninhadas`), as skills e os agentes aninhados do
+    projeto que `aninhadas_fora_do_registro` achou: sem pedir a origem de novo (um projeto que ainda não está no registro
+    entra só com os nomes). O registro só cresce, como no `registrar_projeto`; nome fora do padrão: EntradaInvalida e
+    nada gravado. Devolve o item do projeto."""
+    raiz = Path(raiz)
+    projeto_valido(projeto)
+    if not (raiz / "projects" / projeto).is_dir():
+        raise EntradaInvalida(f"o projeto {projeto} não existe em {raiz / 'projects'}")
+    dados = ler_projetos_host(raiz)
+    item = dados["projetos"].setdefault(projeto, _item_vazio())
+    antes = _canonico(dados)
+    _somar_nomes(item, "aninhadas_negadas", skills, "skill")
+    _somar_nomes(item, "agentes_negados", agentes, "agente")
+    if _canonico(dados) != antes:
+        _gravar_registro(raiz, dados)
+    return item
+
+
 def vagas_do_registro(registro: dict, projeto: str, montagem: str = MONTAGEM) -> dict:
-    """Do registro ao perfil do projeto: origens e pastas só de leitura dele (no formato do WSL) e as skills negadas
-    de TODOS os projetos (negação cumulativa: o que um projeto trouxe aninhado fica negado nos outros)."""
-    item = registro["projetos"].get(projeto, {"origens": [], "somente_leitura": [], "aninhadas_negadas": []})
-    negar = _sem_repetir(n for p in sorted(registro["projetos"]) for n in registro["projetos"][p]["aninhadas_negadas"])
+    """Do registro ao perfil do projeto: origens e pastas só de leitura dele (no formato do WSL) e as skills e os agentes
+    negados de TODOS os projetos (negação cumulativa: o que um projeto trouxe aninhado fica negado nos outros)."""
+    projetos = registro["projetos"]
+    item = {**_item_vazio(), **projetos.get(projeto, {})}
+
+    def nomes(chave):
+        return _sem_repetir(n for p in sorted(projetos) for n in projetos[p].get(chave, []))
+
     return {"somente_leitura": _sem_repetir(caminho_wsl(c, montagem) for c in [*item["origens"], *item["somente_leitura"]]),
-            "negar": negar}
+            "negar": nomes("aninhadas_negadas"), "negar_agente": nomes("agentes_negados")}
 
 
 def _chave_de_pasta(caminho: str) -> str:
     return ntpath.normcase(ntpath.normpath(str(caminho))).rstrip(BARRA_INVERTIDA)
 
 
-def fora_do_registro(registro: dict, somente_leitura=(), negar=()) -> dict:
+def fora_do_registro(registro: dict, somente_leitura=(), negar=(), negar_agente=()) -> dict:
     """Das negações dadas ao preparar-maquina.ps1, as que o registry/projetos-host.json não cobre (revisão da terceira
     rodada da integração, defeito 3): o perfil do Windows é refeito inteiro a cada preparo, e o preparar-projeto.ps1 o
     refaz só com o registro. Uma pasta de -SomenteLeitura fora de toda pasta registrada (origem ou só leitura, de
     qualquer projeto; `/mnt/<x>` vale pela unidade) e um nome de -NegarSkill que nenhum projeto registrou somem, em
     silêncio, no próximo preparo de qualquer projeto: o script deixa a pendência com eles."""
-    registradas, nomes = [], set()
+    registradas, nomes, agentes = [], set(), set()
     for item in _objeto(_objeto(registro).get("projetos")).values():
         registradas += [_chave_de_pasta(p) for p in map(pasta_do_windows, [*item["origens"], *item["somente_leitura"]])
                         if p]
         nomes.update(item["aninhadas_negadas"])
+        agentes.update(item.get("agentes_negados", []))
 
     def coberta(pasta) -> bool:
         chave = _chave_de_pasta(pasta)
         return any(chave == r or chave.startswith(r + BARRA_INVERTIDA) for r in registradas)
 
     return {"somente_leitura": [p for p in _sem_repetir(somente_leitura) if not coberta(p)],
-            "negar_skill": [n for n in _sem_repetir(negar) if n not in nomes]}
+            "negar_skill": [n for n in _sem_repetir(negar) if n not in nomes],
+            "negar_agente": [n for n in _sem_repetir(negar_agente) if n not in agentes]}
+
+
+def _comando_do_registro(raiz, projeto: str, item: dict, skills, agentes) -> str | None:
+    """O comando pronto do `registrar-projeto` com os nomes que faltam (as origens do projeto no registro, ou o aviso de
+    que falta uma). None se algum valor não se cita com segurança no terminal do titular (aí vale o --registrar-aninhadas)."""
+    try:
+        citar = _carregar_script("codigo_do_plano").citar_no_terminal
+        origens = [citar(o) for o in item.get("origens", [])] or ["'<pasta de origem do projeto>'"]
+        partes = ["python" if os.name == "nt" else "python3", citar(Path(__file__).resolve()), "registrar-projeto",
+                  "--raiz", citar(Path(raiz).resolve()), "--projeto", citar(projeto)]
+        partes += [x for o in origens for x in ("--origem", o)]
+        partes += [x for n in skills for x in ("--negar-skill", citar(n))]
+        partes += [x for n in agentes for x in ("--negar-agente", citar(n))]
+    except (ValueError, OSError, ImportError, AttributeError):  # o comando é um auxílio: sem ele, vale o --registrar-aninhadas
+        return None
+    return " ".join(partes)
+
+
+def _nao_registraveis(inventario: dict) -> list[dict]:
+    """As skills e os agentes do inventário com nome que o registro recusa (`motivo_de_nome_nao_registravel`, F9), o do
+    frontmatter ou o da pasta (skill) e do arquivo (agente), com o caminho a neutralizar. Nome fora do padrão do preparo
+    já vai para `neutralizar` pelo inventário; aqui só os que o padrão aceita."""
+    itens, saida = _objeto(inventario.get("itens")), []
+    for s in _lista(itens.get("skills")):
+        pasta = str(s.get("caminho", "")).rpartition("/")[0] or "."
+        for nome in sorted({n for n in (s.get("nome"), pasta.rpartition("/")[2]) if isinstance(n, str)}):
+            if NOME_DE_SKILL.fullmatch(nome) and motivo_de_nome_nao_registravel(nome, "skill"):
+                saida.append({"tipo": "skill", "nome": nome, "caminho": pasta})
+    for a in _lista(itens.get("agents")):
+        if "nome" not in a:  # só o .md é agente do host
+            continue
+        arquivo = str(a.get("caminho", ""))
+        for nome in sorted({n for n in (a.get("nome"), arquivo.rpartition("/")[2][:-len(".md")]) if isinstance(n, str)}):
+            if NOME_DE_SKILL.fullmatch(nome) and motivo_de_nome_nao_registravel(nome, "agente"):
+                saida.append({"tipo": "agente", "nome": nome, "caminho": arquivo})
+    return saida
+
+
+def aninhadas_fora_do_registro(raiz, projeto: str, *, registrar: bool = False, simular: bool = False,
+                               registro: dict | None = None) -> dict:
+    """Lote A3 (DESENHO-1.7.11, §4.4): confere as skills e os agentes aninhados em `projects/<p>/` (o inventário do
+    `instrucoes_aninhadas.listar`, com os tetos de hoje) com as negações acumuladas do registro (de TODOS os projetos). O
+    que falta sai em `avisos`, cada nome com o comando pronto do `registrar-projeto`; nome fora do padrão ou incerto vai
+    para `neutralizar`, com o aviso (o registro não o aceita); o nome com ':' ou de agente embutido também (F9 da
+    revisão final: `nao_registraveis`, com o arquivo a neutralizar); inventário parcial é aviso, não recusa. Com `registrar`
+    (e sem `simular`), soma os nomes que faltam ao registro na mesma rodada (só cresce); com `simular`, diz o que seria
+    somado. O `registro` dado é o já lido (um só, o do chamador)."""
+    raiz = Path(raiz)
+    projeto_valido(projeto)
+    registro = registro if registro is not None else ler_projetos_host(raiz)
+    res = {"projeto": projeto, "conferido": False, "completo": False, "skills": [], "agentes": [], "fora_do_padrao": [],
+           "agentes_fora_do_padrao": [], "neutralizar": [], "nao_registraveis": [], "comando": None, "registrado": None,
+           "avisos_de_recusa": [], "avisos": [], "parcial": None}
+    try:
+        if _carregar_script("gravacao_segura").com_ligacao(raiz, f"projects/{projeto}") or not (
+                raiz / "projects" / projeto).is_dir():
+            raise EntradaInvalida("a pasta do projeto não existe ou passa por ligação")
+        inventario = _carregar_script("instrucoes_aninhadas").listar((raiz / "projects" / projeto).resolve())
+    except (ValueError, OSError, RecursionError) as exc:
+        res["avisos"].append(f"skills e agentes aninhados em projects/{projeto} NÃO conferidos ({type(exc).__name__}: "
+                             f"{str(exc)[:120]}): rode de novo antes de abrir uma sessão ali")
+        res["parcial"] = res["avisos"][0]
+        return res
+    projetos = registro["projetos"].values()
+    ja_skills = {n for i in projetos for n in i.get("aninhadas_negadas", [])}
+    ja_agentes = {n for i in projetos for n in i.get("agentes_negados", [])}
+    sug = inventario["sugestoes"]
+    nao_reg = _nao_registraveis(inventario)
+    res.update(conferido=True, completo=inventario["completo"],
+               skills=[n for n in sug["negar_skills"] if n not in ja_skills
+                       and not motivo_de_nome_nao_registravel(n, "skill")],
+               agentes=[n for n in sug["negar_agentes"] if n not in ja_agentes
+                        and not motivo_de_nome_nao_registravel(n, "agente")],
+               fora_do_padrao=inventario["nomes_fora_do_padrao"], agentes_fora_do_padrao=inventario["agentes_fora_do_padrao"],
+               neutralizar=sorted({*inventario["neutralizar"], *(i["caminho"] for i in nao_reg)}), nao_registraveis=nao_reg)
+    faltam = res["skills"] or res["agentes"]
+    if faltam:
+        res["comando"] = _comando_do_registro(raiz, projeto, registro["projetos"].get(projeto, {}), res["skills"],
+                                              res["agentes"])
+        if registrar and projeto not in registro["projetos"]:
+            # lote S2 (A3): o registro não nasce sem a origem do projeto (a soma entrava com as origens vazias). Vale para o
+            # instalar-projeto e para o preparar-projeto.ps1, na simulação também; nada é gravado.
+            raise EntradaInvalida(
+                f"o projeto {projeto} ainda não está no registro de projetos (registry/projetos-host.json) e tem skills ou "
+                "agentes aninhados a negar: registrar as aninhadas não cria o projeto sem a pasta de origem dele. Registre-o "
+                "antes, com a origem" + (f", pelo comando: {res['comando']}" if res["comando"] else
+                                        " (preparo_host.py registrar-projeto --raiz R --projeto P --origem <pasta de origem> "
+                                        "--negar-skill <n> --negar-agente <n>)"))
+        if registrar and not simular:
+            registrar_aninhadas(raiz, projeto, res["skills"], res["agentes"])
+            res["registrado"] = {"skills": res["skills"], "agentes": res["agentes"]}
+        quais = [f"skill {n}" for n in res["skills"]] + [f"agente {n}" for n in res["agentes"]]
+        if res["registrado"]:
+            res["avisos"].append(f"skills e agentes aninhados em projects/{projeto} somados ao registro de negações "
+                                 f"(--registrar-aninhadas): {', '.join(quais)}")
+        elif registrar:  # simulação: o que a execução real somaria
+            res["avisos"].append(f"skills e agentes aninhados em projects/{projeto} FORA do registro de negações, que a "
+                                 f"execução real soma ao registro (--registrar-aninhadas): {', '.join(quais)}")
+        else:
+            como = ("rode de novo com --registrar-aninhadas (preparar-projeto.ps1: -RegistrarAninhadas)"
+                    + (f", ou registre pelo comando: {res['comando']}" if res["comando"] else ""))
+            res["avisos"].append(
+                f"skills e agentes aninhados em projects/{projeto} FORA do registro de negações ({', '.join(quais)}): o "
+                "Claude Code os carrega ao ler um arquivo daquela pasta, e sem a negação Skill(<nome>) ou Agent(<nome>) no "
+                f"perfil nada os exclui; {como}")
+            res["avisos_de_recusa"].append(res["avisos"][-1])  # a abertura recusa por ele e não o repete como aviso
+    if nao_reg:
+        res["avisos"].append(
+            f"{len(nao_reg)} skill(s) ou agente(s) aninhados em projects/{projeto} com nome que o registro de negações "
+            "recusa (com ':' ou de agente embutido: negá-lo pelo nome fecharia a skill ou o agente da ficha de outro "
+            "projeto, ou o embutido em todos): neutralize o arquivo na cópia do projeto (tire-o dali): "
+            + ", ".join(f"{i['tipo']} {i['nome']} em {i['caminho']}" for i in nao_reg[:10]))
+        res["avisos_de_recusa"].append(res["avisos"][-1])
+    if res["fora_do_padrao"] or res["agentes_fora_do_padrao"]:
+        res["avisos"].append(
+            f"{len(res['fora_do_padrao'])} skill(s) e {len(res['agentes_fora_do_padrao'])} agente(s) aninhados com nome "
+            "fora do padrão ou incerto: o registro não os aceita, e a negação pelo nome pode não cobri-los; antes de abrir "
+            "uma sessão ali, neutralize (tire da cópia do projeto, como o importar.py faz com .claude/skills): "
+            + ", ".join(res["neutralizar"][:10]))
+    if not res["completo"]:
+        res["parcial"] = (f"inventário das instruções aninhadas de projects/{projeto} parcial (ligação não seguida, "
+                          "teto, arquivo não lido ou pasta pulada): o que ficou de fora não foi conferido; rode "
+                          "scripts/instrucoes_aninhadas.py listar --raiz <pasta> para ver o quê")
+        res["avisos"].append(res["parcial"])
+    return res
 
 
 def _json_estrito(texto: str):
@@ -1858,6 +2620,45 @@ def _copiar_arvore(origem: Path, manifesto: dict, destino: Path, raiz_dono: bool
         raise
 
 
+# ------------------------------------------------------------------ jaula do Criador (1.7.11, lote L4)
+def preparo_jaula():
+    """O `assets/host/preparo_jaula.py` desta cópia da skill, ligado a este preparo (a classe de erro): o usuário
+    `fundacao-jaula`, os programas de dono root, a sudoers, o `porteiro-jaula.json`, o canário da jaula (DESENHO-JAULA
+    §2.1, §3.4, §7.3 e §7.4). Carregado pelo caminho, uma vez."""
+    if "preparo_jaula" not in _SCRIPTS:
+        caminho = AQUI / "preparo_jaula.py"
+        if not caminho.is_file():
+            raise EntradaInvalida(f"assets/host/preparo_jaula.py ausente em {AQUI}")
+        sys.dont_write_bytecode = True
+        spec = importlib.util.spec_from_file_location("_preparo_host_preparo_jaula", caminho)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        modulo.configurar(types.SimpleNamespace(EntradaInvalida=EntradaInvalida, sha256_arvore=sha256_arvore,
+                                                estrutura_do_relatorio_do_canario=estrutura_do_relatorio_do_canario))  # F5
+        _SCRIPTS["preparo_jaula"] = modulo
+    return _SCRIPTS["preparo_jaula"]
+
+
+def preparo_skills():
+    """O `assets/host/preparo_skills.py` desta cópia da skill, ligado a este preparo (1.7.11, lote S2): nome contra o
+    registro, rodas conferidas contra o lock, venv sem rede e a árvore dela no hashes.json (desenho de skills e agentes,
+    §3.5). Carregado pelo caminho, uma vez."""
+    if "preparo_skills" not in _SCRIPTS:
+        caminho = AQUI / "preparo_skills.py"
+        if not caminho.is_file():
+            raise EntradaInvalida(f"assets/host/preparo_skills.py ausente em {AQUI}")
+        sys.dont_write_bytecode = True
+        spec = importlib.util.spec_from_file_location("_preparo_host_preparo_skills", caminho)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        modulo.configurar(types.SimpleNamespace(
+            EntradaInvalida=EntradaInvalida, _pasta_area=_pasta_area, _dono=_dono, _carregar_script=_carregar_script,
+            _ler_bytes_seguro=_ler_bytes_seguro, _ler_json_seguro=_ler_json_seguro, modulos_do_kit=modulos_do_kit,
+            _pastas_de_skill=_pastas_de_skill, TETO_HASHES=TETO_HASHES))
+        _SCRIPTS["preparo_skills"] = modulo
+    return _SCRIPTS["preparo_skills"]
+
+
 # ------------------------------------------------------------------ cópia protegida da ferramenta do titular (I11)
 # O Python fixado que o hashes.json da cópia do Windows registra, na forma que o kit aceita
 # (core/aberturas_comando._PYTHON_WINDOWS; igual por teste).
@@ -2018,7 +2819,8 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
                         sonda_interop_binfmt: str = SONDA_INTEROP_BINFMT, skill=SKILL, seccomp=None, hoje=None,
                         aberturas: dict | None = None, gerenciadas: str = GERENCIADAS,
                         fs_raiz: str | None = None, ferramenta_base: str | None = FERRAMENTA_BASE,
-                        aceite: dict | None = None) -> dict:
+                        aceite: dict | None = None, jaula_base: str | None = None,
+                        skills_base: str | None = SKILLS_BASE) -> dict:
     """Tudo o que `instalar_projeto` grava, calculado sem gravar nada (também a simulação). Problema = EntradaInvalida.
     A ficha só é aplicada com o canário aprovado (`portao_do_canario`) ou, com ele reprovado, com o aceite de risco
     do titular da área (`conferir_aceite_de_risco`; `aceite` traz o da caixa de entrada na simulação); `fs_raiz`
@@ -2068,7 +2870,8 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
         raise EntradaInvalida(f"o SHA-256 do Claude Code ({sha_claude}) não confere com o informado ({claude_sha256})")
     if problemas:
         raise EntradaInvalida("; ".join(problemas))
-    registro = vagas_do_registro(ler_projetos_host(raiz), projeto, montagem)
+    registro_inteiro = ler_projetos_host(raiz)
+    registro = vagas_do_registro(registro_inteiro, projeto, montagem)
     area_raiz = Path(area_raiz)
     area = area_raiz / "projetos" / projeto
     canario = portao_do_canario(area_raiz, claude_versao=claude_versao, claude_sha256=claude_sha256,
@@ -2080,7 +2883,9 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
         aceite = conferir_aceite_de_risco(area / PASTA_DO_ACEITE, projeto, canario, hoje=hoje, skill=skill)
     # contratos, §0: sem o canário aprovado (ou, reprovado, sem o aceite de risco do titular), a ficha não é aplicada
     aberturas = com_canario(aberturas, canario, aceite)
-    plugins = []
+    plugins, skills_fora, skills_scripts = [], [], []
+    skills_mod, anterior = preparo_skills(), None
+    base_skills = Path(skills_base) if skills_base else area_raiz / "skills-ensaio"
     for p in aberturas["plugins"]:
         if gravacao.com_ligacao(proj, p["origem"]):  # segunda camada (interface do PLUGINS): o kit também recusa
             raise EntradaInvalida(f"plugin {p['nome']}: a origem passa por ligação")
@@ -2090,12 +2895,31 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
         if res["manifesto_sha256"] != p["manifesto_sha256"]:
             raise EntradaInvalida(f"plugin {p['nome']}: o manifesto da origem difere do manifesto_sha256 da ficha")
         manifesto = res["manifesto"]
-        plugins.append({**p, "origem_abs": proj.joinpath(*p["origem"].split("/")), "manifesto": manifesto,
+        origem_abs = proj.joinpath(*p["origem"].split("/"))
+        skills_mod.conferir_nomes(projeto, p["nome"], manifesto, origem_abs, p.get("agentes", []), registro_inteiro, skill)
+        if p.get("skills_com_scripts"):  # lote S2: o interpretador e, com pacotes, o lock e as rodas, sem gravar nada
+            anterior = skills_mod.registro_anterior(area) if anterior is None else anterior
+            skills_scripts += skills_mod.planejar(projeto, p["nome"], p["skills_com_scripts"], proj, origem_abs,
+                                                  base_skills, anterior, skill)
+        plugins.append({**p, "origem_abs": origem_abs, "manifesto": manifesto,
                         "arvore_sha256": sha256_manifesto(manifesto)})
-    outros = [o for o in projetos_da_raiz(raiz) if o != projeto]
+    if aberturas["valida"]:  # lote A2: as skills dos plugins da ficha (FUNDACAO_SKILLS), pelo manifesto conferido
+        aberturas = {**aberturas, "skills": [s for p in plugins for s in skills_do_manifesto(p["nome"], p["manifesto"])]}
+        skills_fora = [s for p in plugins for s in skills_fora_do_guarda(p["nome"], p["manifesto"])]
+    outros =[o for o in projetos_da_raiz(raiz) if o != projeto]
+    # Revisão de segurança da 1.7.10, WSL-01: a área root e o lançador dos projetos do registro e das áreas já gravadas
+    # (também o de um projeto que saiu de projects/) ficam negados, além dos de projects/.
+    registrados = [*registro_inteiro["projetos"], *projetos_com_area(area_raiz)]
     perfil = perfil_wsl(raiz=raiz_wsl, projeto=projeto, perfil_windows=perfil_windows, outros_projetos=outros,
                         somente_leitura=registro["somente_leitura"], ancora_base=ancora_base, montagem=montagem,
-                        negar=registro["negar"], aberturas=aberturas, temp_base=temp_base)
+                        negar=registro["negar"], negar_agente=registro["negar_agente"], aberturas=aberturas,
+                        temp_base=temp_base, area_raiz=caminho_wsl(area_raiz.as_posix(), montagem),
+                        bin_dir=caminho_wsl(Path(bin_dir).as_posix(), montagem), projetos_registrados=registrados)
+    mcp = mcp_da_ficha(aberturas)  # lote L2: None sem a seção (ou com a ficha fechada pelo portão do canário)
+    pjaula = preparo_jaula()  # lote L4: sem seção de jaula na ficha aplicada, nada disto existe
+    com_jaula = bool(pjaula.modos_da_ficha(aberturas))
+    programas_jaula = pjaula.programas_da_jaula(jaula_base) if com_jaula else None
+    config_jaula = pjaula.config_do_porteiro(raiz_wsl, projeto, aberturas, programas_jaula) if com_jaula else None
     manifesto_skill = manifesto_de_arvore(skill)
     sha_skill = sha256_manifesto(manifesto_skill)
     versao = versao_da_skill(skill)
@@ -2105,23 +2929,37 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
                 "porteiro.json": texto_json({"schema_version": ESQUEMA_PORTEIRO, "raiz": raiz_wsl, "projeto": projeto,
                                              "kit_sha256": kit_sha, "assinante": titular,
                                              "operacoes": {"fundacao": {}}}).encode("utf-8"),
-                "mcp.json": texto_json({"mcpServers": {}}).encode("utf-8"),
+                "mcp.json": texto_json(mcp_json(mcp)).encode("utf-8"),
                 "aberturas.json": texto_json({"schema_version": ESQUEMA_ABERTURAS, "projeto": projeto,
                                               **{k: v for k, v in aberturas.items() if k != "plugins"},
-                                              "plugins": [{"nome": p["nome"], "manifesto_sha256": p["manifesto_sha256"]}
+                                              "plugins": [{"nome": p["nome"], "manifesto_sha256": p["manifesto_sha256"],
+                                                           **({"agentes": p["agentes"]} if p.get("agentes") else {}),
+                                                           **({"skills_com_scripts": p["skills_com_scripts"]}
+                                                              if p.get("skills_com_scripts") else {})}
                                                           for p in plugins],
                                               "ferramentas": ferramentas_do_projeto(aberturas)}).encode("utf-8")}
+    if config_jaula:  # o porteiro da jaula: operações da sessão e tetos; fixado no hashes.json como os demais arquivos
+        arquivos["porteiro-jaula.json"] = texto_json(config_jaula).encode("utf-8")
     ferramentas = ",".join(ferramentas_do_projeto(aberturas))
     preparo_rel, porteiro_rel = "assets/host/preparo_host.py", "assets/host/wsl/porteiro.py"
     valores = {"RAIZ": raiz_wsl, "PROJETO": projeto, "USUARIO": usuario, "AREA": area.as_posix(),
                "SKILL": skill_copia.as_posix(), "CLAUDE_BIN": claude_copia.as_posix(), "CLAUDE_VERSAO": claude_versao,
                "CLAUDE_SHA256": claude_sha256, "CLAUDE_ORIGEM_HASH": origem_hash, "FERRAMENTAS": ferramentas,
                "PLUGINS": " ".join(p["nome"] for p in plugins),
+               "MCP_ESTRITO": "0" if mcp and not mcp["estrito"] else "1",
+               "MCP_OCULTAR": ",".join(mcp["ocultar"]) if mcp else "",
                "PREPARO_SHA256": manifesto_skill[preparo_rel]["sha256"],
                "PORTEIRO_SHA256": manifesto_skill.get(porteiro_rel, {}).get("sha256", "0" * 64),
                "TEMP_PROJETO": temp_do_projeto(temp_base, projeto), "SONDA_INTEROP_CMD": sonda_interop_cmd,
                "SONDA_INTEROP_BINFMT": sonda_interop_binfmt}
     texto_lancador = lancador(valores)
+    executor = None
+    if skills_scripts:  # lote S3: o executor das skills com scripts, fixado no hashes.json como o lançador
+        executor = {"caminho": Path(bin_dir) / f"fundacao-skill-{projeto}",
+                    "texto": executor_skill({"PROJETO": projeto, "AREA": area.as_posix(), "SKILL": skill_copia.as_posix(),
+                                             "SKILLS_BASE": base_skills.as_posix(),
+                                             **{f"{k}_SHA256": manifesto_skill.get(rel, {}).get("sha256", "")
+                                                for k, rel in ARQUIVOS_DO_EXECUTOR.items()}})}
     ficha = None
     if aberturas["valida"]:
         nome = aberturas["arquivo"]
@@ -2129,6 +2967,8 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
                  "sig_sha256": aberturas["sig_sha256"], "vigencia_ate": aberturas["vigencia_ate"]}
     rastreados = {**{(area / n).as_posix(): hashlib.sha256(b).hexdigest() for n, b in arquivos.items()}, **hooks,
                   claude_copia.as_posix(): claude_sha256}
+    if executor:  # o conferir-abertura reconfere o executor instalado
+        rastreados[executor["caminho"].as_posix()] = hashlib.sha256(executor["texto"].encode("utf-8")).hexdigest()
     if ficha:
         rastreados[(area / "ficha" / ficha["arquivo"]).as_posix()] = ficha["sha256"]
         rastreados[(area / "ficha" / (ficha["arquivo"] + ".sig")).as_posix()] = ficha["sig_sha256"]
@@ -2163,18 +3003,29 @@ def planejar_instalacao(*, raiz, projeto: str, titular: str, claude, claude_vers
               "parametros": {"perfil_windows": caminho_wsl(perfil_windows, montagem),
                              "ancora_base": caminho_wsl(ancora_base, montagem), "temp_base": temp_base,
                              "montagem": montagem},
-              "ferramentas": ferramentas, "arquivos": rastreados, "arvores": arvores, "ficha": ficha,
+              "ferramentas": ferramentas, "mcp": ({k: mcp[k] for k in ("nome", "origem", "servidor", "ferramentas",
+                                                                       "ocultar", "estrito")} if mcp else None),
+              "arquivos": rastreados, "arvores": arvores, "ficha": ficha,
               "marcadores": marcadores, "seccomp": sec, "gerenciadas": Path(gerenciadas).as_posix(),
               "canario": canario, "aceite_risco": aberturas.get("aceite_risco"),
               "claude": {"versao": claude_versao, "sha256": claude_sha256, "origem_hash": origem_hash},
               "lancador": {"caminho": (Path(bin_dir) / f"abrir-fundacao-{projeto}").as_posix(),
                            "sha256": hashlib.sha256(texto_lancador.encode("utf-8")).hexdigest()}}
+    if skills_scripts:  # lote S2: o interpretador de cada skill com scripts; a venv entra depois de montada
+        hashes["skills"] = skills_mod.registro_dos_hashes(skills_scripts)
+        hashes["executor"] = {"caminho": executor["caminho"].as_posix(),
+                              "sha256": rastreados[executor["caminho"].as_posix()]}
+    registro_jaula = pjaula.registro_da_jaula(skill, aberturas, programas_jaula) if com_jaula else None
+    if registro_jaula:  # onde a jaula fica e o SHA-256 de cada programa: o lançador o reconfere na abertura
+        hashes["jaula"] = registro_jaula
     return {"raiz": raiz, "raiz_wsl": raiz_wsl, "projeto": projeto, "area_raiz": area_raiz, "area": area,
             "bin": Path(bin_dir), "aberturas": aberturas, "plugins": plugins, "perfil": perfil, "arquivos": arquivos,
-            "hashes": hashes, "lancador": texto_lancador, "skill": skill, "manifesto_skill": manifesto_skill,
+            "hashes": hashes, "lancador": texto_lancador, "executor": executor, "skill": skill,
+            "manifesto_skill": manifesto_skill,
             "skill_copia": skill_copia, "claude": Path(claude), "claude_copia": claude_copia,
             "claude_sha256": claude_sha256, "seccomp": sec, "canario": canario, "ferramenta": ferramenta,
-            "aceite": aceite}
+            "aceite": aceite, "skills_fora_do_guarda": skills_fora, "skills": skills_scripts,
+            "skills_base": base_skills}
 
 
 def _literais_do_perfil(perfil) -> list[str]:
@@ -2198,16 +3049,24 @@ def instalar_projeto(*, simular: bool = False, ensaio: bool = False, **kw) -> di
     """Grava a área do titular do projeto (contratos do lote 2, §6): `/etc/fundacao-ia/projetos/<p>/` (perfil,
     porteiro.json, mcp.json, aberturas.json, ficha/, plugins/, hashes.json), as cópias conferidas da skill e do Claude
     Code e o lançador `/usr/local/bin/abrir-fundacao-<p>`, tudo de dono root; e o espelho legível em
-    `<raiz>/.claude/projetos/<p>/` (não autoritativo). Sem root, só em `ensaio` (área e lançador em pastas dadas)."""
+    `<raiz>/.claude/projetos/<p>/` (não autoritativo), gravado pelo usuário das sessões, pelo descritor da pasta. Sem
+    root, só em `ensaio` (área e lançador em pastas dadas); o ensaio não roda com root."""
     if os.name == "nt":
         raise EntradaInvalida("a área do titular é do Ubuntu (WSL2): rode o preparo no terminal do Ubuntu")
     raiz_dono = _e_root()
     if not simular and not raiz_dono and not ensaio:
         raise EntradaInvalida("a área do titular é de dono root: rode com sudo (no terminal do Ubuntu, o "
                               "preparar-wsl.sh faz isso e mostra o comando)")
+    if ensaio and raiz_dono:  # revisão de segurança da 1.7.10, WSL-02: o root não grava em pasta que a conta escolhe
+        raise EntradaInvalida("o ensaio (--area-raiz e --bin) roda sem root: com sudo, a área e o lançador vão só para "
+                              "/etc/fundacao-ia e /usr/local/bin (nada foi gravado)")
     vigente = kw.pop("vigente", None) or carregar_vigente(kw.get("skill", SKILL))
+    registrar = bool(kw.pop("registrar_aninhadas", False))  # lote A3: soma as aninhadas ao registro na mesma rodada
     raiz = Path(os.path.abspath(kw["raiz"]))
     projeto_valido(kw["projeto"])
+    registro = ler_projetos_host(raiz)
+    aninhadas = aninhadas_fora_do_registro(raiz, kw["projeto"], registrar=registrar, simular=True,
+                                           registro=registro)  # só confere
     area = Path(kw.get("area_raiz", AREA_RAIZ)) / "projetos" / kw["projeto"]
     # 1. Tudo conferido antes de gravar: a ficha que viria da caixa de entrada (a versão menor não volta), o aceite de
     # risco que viria dela (só o do relatório reprovado instalado) e o plano inteiro com eles e com o portão do
@@ -2225,14 +3084,23 @@ def instalar_projeto(*, simular: bool = False, ensaio: bool = False, **kw) -> di
                                      hoje=kw.get("hoje"), skill=kw.get("skill", SKILL))
     plano = planejar_instalacao(vigente=vigente, aberturas=previa, aceite=risco.get("previa"), **kw)
     if simular:
-        return _relatorio(plano, ficha, simular=True, risco=risco)
+        return _com_aninhadas(_relatorio(plano, ficha, simular=True, risco=risco), aninhadas)
+    if registrar:  # antes de refazer o plano: o perfil nasce já com as negações novas
+        aninhadas = aninhadas_fora_do_registro(raiz, kw["projeto"], registrar=True)
     # 2. A ficha e o aceite vão para a área root, e o plano é refeito a partir dela (a área é a fonte que vale).
     ficha = instalar_ficha(raiz, kw["projeto"], area, vigente, simular=False, raiz_dono=raiz_dono)
     risco = instalar_aceite_de_risco(raiz, kw["projeto"], area, canario, simular=False, raiz_dono=raiz_dono,
                                      hoje=kw.get("hoje"), skill=kw.get("skill", SKILL))
     plano = planejar_instalacao(vigente=vigente, **kw)
     acoes = _gravar_plano(plano, raiz_dono)
-    return _relatorio(plano, ficha, simular=False, acoes=acoes, risco=risco)
+    return _com_aninhadas(_relatorio(plano, ficha, simular=False, acoes=acoes, risco=risco), aninhadas)
+
+
+def _com_aninhadas(relatorio: dict, aninhadas: dict) -> dict:
+    """Os avisos e o resumo das skills e dos agentes aninhados fora do registro no relatório do preparo (lote A3)."""
+    relatorio["avisos"] = [*relatorio["avisos"], *aninhadas["avisos"]]
+    relatorio["aninhadas"] = {k: v for k, v in aninhadas.items() if k != "avisos"}
+    return relatorio
 
 
 def _gravar_plano(plano: dict, raiz_dono: bool) -> list[dict]:
@@ -2276,18 +3144,175 @@ def _gravar_plano(plano: dict, raiz_dono: bool) -> list[dict]:
             shutil.rmtree(destino)
         _copiar_arvore(p["origem_abs"], p["manifesto"], destino, raiz_dono)
         acoes.append({"item": f"plugin:{p['nome']}", "caminho": destino.as_posix(), "acao": "criar"})
+    if plano.get("skills"):  # lote S2: rodas na área root pela cópia conferida e a venv sem rede (sessões fechadas)
+        feitas, skills_mod = {}, preparo_skills()
+        for s in plano["skills"]:
+            acoes += skills_mod.construir(s, area, raiz_dono, feitas)
+        plano["hashes"]["skills"] = skills_mod.registro_dos_hashes(plano["skills"])  # agora com a árvore de cada venv
     for nome, dados in [*plano["arquivos"].items(), ("hashes.json", texto_json(plano["hashes"]).encode("utf-8"))]:
         acoes.append(_gravar_se_mudou(area / nome, dados, 0o644, raiz_dono, nome))
+    velho = area / "porteiro-jaula.json"  # lote L4: a ficha de agora não abre jaula, e o porteiro dela não pode sobrar
+    if "porteiro-jaula.json" not in plano["arquivos"] and os.path.lexists(velho):
+        os.unlink(velho)
+        acoes.append({"item": "porteiro-jaula.json", "caminho": velho.as_posix(), "acao": "remover"})
     acoes.append(_gravar_se_mudou(plano["bin"] / f"abrir-fundacao-{plano['projeto']}",
                                   plano["lancador"].encode("utf-8"), 0o755, raiz_dono, "lancador"))
+    executor = plano["bin"] / f"fundacao-skill-{plano['projeto']}"  # lote S3
+    if plano.get("executor"):
+        acoes.append(_gravar_se_mudou(executor, plano["executor"]["texto"].encode("utf-8"), 0o755, raiz_dono,
+                                      "executor-skill"))
+    elif os.path.lexists(executor):  # a ficha de agora não tem skill com scripts: o executor antigo não pode sobrar
+        os.unlink(executor)
+        acoes.append({"item": "executor-skill", "caminho": executor.as_posix(), "acao": "remover"})
+    acoes += preparo_skills().limpar_antigas(plano["skills_base"], plano["projeto"], plano.get("skills", []))  # S2
+    rel = f".claude/projetos/{plano['projeto']}"
     try:  # espelho legível na raiz (não autoritativo): falha vira aviso, não desfaz a área
-        rel = f".claude/projetos/{plano['projeto']}"
-        espelho = _carregar_script("gravacao_segura").pasta_sem_ligacao(plano["raiz"], rel)
-        for nome, dados in [*plano["arquivos"].items(), ("hashes.json", texto_json(plano["hashes"]).encode("utf-8"))]:
-            acoes.append(_gravar_se_mudou(espelho / nome, dados, 0o644, False, f"espelho:{nome}"))
+        # Revisão de segurança da 1.7.10, WSL-02: a pasta do espelho é gravável pela sessão; o root não grava nela por
+        # caminho (o chmod e a gravação seguiam uma ligação posta no meio). O espelho vai pelo descritor da pasta, num
+        # processo com o usuário das sessões.
+        arquivos = [*plano["arquivos"].items(), ("hashes.json", texto_json(plano["hashes"]).encode("utf-8"))]
+        acoes += _como_usuario(plano["hashes"]["usuario"], _gravar_espelho, plano["raiz"], plano["projeto"], arquivos)
     except OSError as exc:
         acoes.append({"item": "espelho", "caminho": rel, "acao": "aviso", "detalhe": str(exc)})
     return acoes
+
+
+def _abrir_pasta_sem_seguir(pasta, criar: int = 0) -> int:
+    """Descritor de `pasta`, aberta nível a nível desde "/" com O_DIRECTORY e O_NOFOLLOW: nenhum nível é ligação, e a
+    troca de um nível depois de aberto não desvia o que se grava pelo descritor. Os últimos `criar` níveis que faltarem
+    nascem com 0755 (revisão de segurança da 1.7.10, WSL-02). Só no POSIX."""
+    partes = Path(os.path.abspath(pasta)).parts[1:]
+    modo = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    fd = os.open("/", modo)
+    try:
+        for i, parte in enumerate(partes):
+            try:
+                novo = os.open(parte, modo, dir_fd=fd)
+            except FileNotFoundError:
+                if i < len(partes) - criar:
+                    raise
+                os.mkdir(parte, 0o755, dir_fd=fd)
+                novo = os.open(parte, modo, dir_fd=fd)
+            os.close(fd)
+            fd = novo
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _gravar_espelho(raiz, projeto: str, arquivos) -> list[dict]:
+    """O espelho legível em `<raiz>/.claude/projetos/<p>/` (não autoritativo), pelo descritor da pasta (revisão de
+    segurança da 1.7.10, WSL-02): o igual só ganha o modo pelo descritor do arquivo aberto (os.fchmod), o novo nasce
+    num temporário criado na pasta aberta, com o modo antes de ir para o lugar (os.replace entre descritores). Ligação
+    ou pasta no lugar de um arquivo: OSError, nada gravado nele."""
+    pasta = Path(raiz) / ".claude" / "projetos" / projeto
+    dfd = _abrir_pasta_sem_seguir(pasta, criar=3)
+    acoes = []
+    try:
+        for nome, dados in arquivos:
+            acoes.append(_gravar_no_espelho(dfd, nome, dados, (pasta / nome).as_posix()))
+    finally:
+        os.close(dfd)
+    return acoes
+
+
+def _gravar_no_espelho(dfd: int, nome: str, dados: bytes, mostrado: str) -> dict:
+    sha = hashlib.sha256(dados).hexdigest()
+    sem_seguir = os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(nome, os.O_RDONLY | os.O_NONBLOCK | sem_seguir, dir_fd=dfd)
+    except FileNotFoundError:
+        acao = "criar"
+    else:
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise OSError(f"{mostrado} não é arquivo comum: nada foi gravado nele")
+            lido = b""
+            while st.st_size == len(dados) and len(lido) <= len(dados):
+                pedaco = os.read(fd, len(dados) + 1 - len(lido))
+                if not pedaco:
+                    break
+                lido += pedaco
+            if st.st_nlink == 1 and lido == dados:  # vínculo físico: troca o nome, nunca o modo do alvo
+                if stat.S_IMODE(st.st_mode) != 0o644:
+                    os.fchmod(fd, 0o644)  # no arquivo aberto, nunca pelo caminho
+                return {"item": f"espelho:{nome}", "caminho": mostrado, "acao": "igual", "sha256": sha}
+        finally:
+            os.close(fd)
+        acao = "atualizar"
+    temp = f".{nome}.{secrets.token_hex(8)}.tmp"
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | sem_seguir, 0o600, dir_fd=dfd)
+    try:
+        vista = memoryview(dados)
+        while vista:
+            vista = vista[os.write(fd, vista):]
+        os.fchmod(fd, 0o644)
+        os.fsync(fd)
+        criado = os.fstat(fd)
+        os.close(fd)
+        fd = None
+        visto = os.stat(temp, dir_fd=dfd, follow_symlinks=False)
+        if (visto.st_dev, visto.st_ino) != (criado.st_dev, criado.st_ino) or visto.st_nlink != 1:
+            raise OSError(f"{mostrado}: temporário trocado antes de ir para o lugar; nada foi gravado")
+        try:
+            if not stat.S_ISREG(os.stat(nome, dir_fd=dfd, follow_symlinks=False).st_mode):
+                raise OSError(f"{mostrado} é ligação ou pasta: nada foi gravado nele")
+        except FileNotFoundError:
+            pass
+        os.replace(temp, nome, src_dir_fd=dfd, dst_dir_fd=dfd)
+    except BaseException:
+        if fd is not None:
+            os.close(fd)
+        try:
+            os.unlink(temp, dir_fd=dfd)  # tira só o nome
+        except OSError:
+            pass
+        raise
+    return {"item": f"espelho:{nome}", "caminho": mostrado, "acao": acao, "sha256": sha}
+
+
+def _como_usuario(usuario: str, funcao, *args):
+    """`funcao(*args)` num processo filho e o resultado dela (que vira JSON). Como root, o filho troca para o usuário
+    das sessões (`usuario`, sem grupos extras) antes de gravar: o que a sessão alcança não é gravado por root (revisão
+    de segurança da 1.7.10, WSL-02). Erro no filho: OSError com o motivo. Só no POSIX."""
+    conta = None
+    if _e_root():
+        import pwd  # só no POSIX
+        try:
+            conta = pwd.getpwnam(usuario)
+        except KeyError:
+            raise OSError(f"usuário do Linux inexistente para o espelho: {usuario}") from None
+    leitura, escrita = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # filho: nunca volta ao chamador
+        try:
+            os.close(leitura)
+            if conta is not None:
+                os.setgroups([])
+                os.setgid(conta.pw_gid)
+                os.setuid(conta.pw_uid)
+            resultado = {"ok": funcao(*args)}
+        except BaseException as exc:  # noqa: BLE001 - o motivo vai ao pai, que decide
+            resultado = {"erro": f"{type(exc).__name__}: {exc}"}
+        try:
+            saida = json.dumps(resultado, ensure_ascii=False).encode("utf-8")
+            while saida:
+                saida = saida[os.write(escrita, saida):]
+        finally:
+            os._exit(0)
+    os.close(escrita)
+    with os.fdopen(leitura, "rb") as f:
+        bruto = f.read()
+    _, situacao = os.waitpid(pid, 0)
+    try:
+        resultado = json.loads(bruto.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise OSError(f"o processo do usuário terminou sem resposta (situação {situacao})") from None
+    if "erro" in resultado:
+        raise OSError(resultado["erro"])
+    return resultado["ok"]
 
 
 def _gravar_se_mudou(destino: Path, dados: bytes, modo: int, raiz_dono: bool, item: str) -> dict:
@@ -2340,6 +3365,32 @@ def _relatorio(plano: dict, ficha: dict, *, simular: bool, acoes=None, risco: di
                       "apague a pasta e rode o preparo de novo")
     if ficha.get("aviso"):
         avisos.append(ficha["aviso"])
+    mcp = plano["hashes"].get("mcp")
+    if mcp:
+        avisos.append(f"MCP do escritório (origem {mcp['origem']}, servidor {mcp['servidor']}): passam só as "
+                      f"{len(mcp['ferramentas'])} ferramentas que a ficha lista pelo nome, as que gravam inclusive; o que o "
+                      "servidor faz com elas é do servidor, e as respostas entram como conteúdo de terceiros")
+        if mcp["origem"] == "conta":
+            avisos.append("MCP pela conta: o nome do servidor (claude_ai_<conector>) e o efeito do --strict-mcp-config "
+                          "sobre os conectores da conta ainda não foram medidos na versão fixada (medida M3); se o nome "
+                          "for outro, o guarda nega tudo, e os demais conectores da conta ficam na sessão, negados pelo "
+                          "guarda (medida M3 diz se há filtro)")
+        else:
+            avisos.append("MCP por URL: o login (OAuth) é seu, feito uma vez na sessão do projeto (/mcp); que o conector "
+                          "aceite esse login ainda não foi medido (medida M4)")
+    if plano.get("skills_fora_do_guarda"):
+        avisos.append("skills de plugin da ficha com nome de pasta que o guarda das ferramentas não lê, FORA do "
+                      f"FUNDACAO_SKILLS ({', '.join(plano['skills_fora_do_guarda'])}): a skill não abre na sessão; renomeie "
+                      "a pasta (letras, dígitos, '.', '_' ou '-', até 64 caracteres, começando por letra ou dígito) e refaça "
+                      "o plugin e a ficha")
+    if plano.get("skills"):  # lote S2: o que o titular precisa saber do código de terceiros que a venv traz
+        avisos += preparo_skills().avisos(plano["skills"])
+    jaula = plano["hashes"].get("jaula")
+    if jaula:
+        avisos.append(f"jaula (modos da ficha: {', '.join(jaula['modos'])}): o porteiro-jaula.json foi gravado; o usuário "
+                      "fundacao-jaula, os programas e a sudoers são do passo da jaula do preparar-wsl.sh (com sudo); os "
+                      "programa do navegador é do lote L5 (instalar-navegador-jaula, com os downloads mostrados antes); o do Codex "
+                      "é do L6 (instalar-codex-jaula: o download do CLI fixado, com o SHA-256 conferido antes de instalar)")
     f = plano.get("ferramenta")
     if f:  # a cópia protegida da ferramenta do titular (I11): a forma do Ubuntu do comando do kit roda dela
         ferramenta = {"caminho": Path(f["destino"]).as_posix(), "versao": f["versao"], "estado": f.get("estado"),
@@ -2350,22 +3401,85 @@ def _relatorio(plano: dict, ficha: dict, *, simular: bool, acoes=None, risco: di
     return {"projeto": plano["projeto"], "simulacao": simular, "area": plano["area"].as_posix(),
             "lancador": (plano["bin"] / f"abrir-fundacao-{plano['projeto']}").as_posix(), "ficha": ficha,
             "aberturas": {k: ab[k] for k in ("valida", "motivo", "versao", "rede", "webfetch", "websearch")},
+            "mcp": plano["hashes"].get("mcp"), "jaula": plano["hashes"].get("jaula"),
             "canario": {k: canario.get(k) for k in ("aprovado", "motivo", "arquivo", "forma", "reprovado")},
             "aceite_risco": {"aplicado": aceite, "instalacao": {k: v for k, v in (risco or {}).items() if k != "previa"}},
             "gerenciadas": gerenciadas, "plugins": [p["nome"] for p in plano["plugins"]],
             "ferramentas": plano["hashes"]["ferramentas"], "seccomp": plano["seccomp"], "avisos": avisos,
             "ferramenta_titular": ferramenta, "acoes": acoes or [],
+            **({"skills": preparo_skills().resumo(plano["skills"]),
+                "executor": plano["executor"]["caminho"].as_posix()} if plano.get("skills") else {}),
             "proximo_passo": f"abrir-fundacao-{plano['projeto']}"}
 
 
-def instalar_canario(relatorio, area_raiz=AREA_RAIZ, *, ensaio: bool = False, simular: bool = False) -> dict:
+def resumo_do_canario(conteudo: dict, sha: str, motivo: str | None) -> list[str]:
+    """O que o titular lê antes de o root gravar (revisão de segurança da 1.7.10, CAN-1): o SHA-256 do arquivo (o
+    mesmo que o `rodar` do ensaio mostrou ao gravá-lo), o Claude Code, a forma, cada item com o veredito e a conclusão
+    recalculada pelos itens, com o que o instalar faz."""
+    claude, sim = conteudo["claude"], {True: "sim", False: "não"}
+    linhas = [f"canário: relatório com SHA-256 {sha} (confira com o que o rodar do ensaio mostrou ao gravar)",
+              f"  Claude Code {claude['versao']} ({claude['sha256'][:12]}...), forma {conteudo['forma']}, sistema de "
+              f"arquivos {conteudo['sistema_de_arquivos']}"]
+    kit = modulo_do_canario()
+    linhas += [f"  {i['id']} ({kit.SONDAS_DO_CANARIO[i['id']]}): {i['veredito']}" for i in conteudo["itens"]]
+    linhas += [f"  {ident} ({kit.SONDAS_DO_CANARIO[ident]}): ausente (ensaio anterior; conta como não medido)"
+               for ident in kit.sondas_ausentes(conteudo)]
+    linhas.append(f"  perfil gerado: {sim.get(_objeto(conteudo['perfil']).get('gerado'), 'não medido')}; sandbox "
+                  f"ligado: {sim.get(conteudo.get('sandbox_ligado'), 'não medido')}; temp do lançador: "
+                  f"{sim.get(_objeto(conteudo['temp']).get('do_lancador'), 'não medido')}")
+    linhas.append("  conclusão recalculada pelos itens: " + (
+        "confina; vai como aprovação" if motivo is None else
+        f"não aprova ({motivo}); vai como revogação: o portão passa a recusar e o preparo dos projetos fecha as "
+        "aberturas"))
+    return linhas
+
+
+def classificar_relatorio_do_canario(dados: bytes) -> dict:
+    """O que o `instalar-canario` faz com estes bytes, sem gravar (revisão de segurança da 1.7.10, CAN-1 e CAN-2): o
+    arquivo que não é o relatório real do ensaio desta versão (`estrutura_do_relatorio_do_canario`; o de seis campos
+    escrito à mão, CI-F2) é recusado (`EntradaInvalida`); o real que aprova vai como aprovação; o real que não aprova
+    (conclusão false ou null) vai como revogação, no mesmo `<versão>.json`, e o portão passa a recusar. 1.7.11: o real
+    que diz true (`confina_comandos`) mas que o recálculo pelos itens não confirma (item de comando sem `passou`, sem
+    perfil, sandbox ou temp do lançador, ou de um ensaio anterior, sem as `SONDAS_ADIADAS`) é incoerente e também é
+    recusado, em vez de instalado como revogação. Devolve {conteudo, versao, aprovado, motivo, sha256, resumo}."""
+    try:
+        conteudo = json.loads(dados.decode("utf-8"))
+    except ValueError as exc:  # inclui o UnicodeDecodeError
+        raise EntradaInvalida(f"relatório do canário ilegível ({exc})") from None
+    estrutura = estrutura_do_relatorio_do_canario(conteudo)
+    if estrutura:
+        raise EntradaInvalida(f"relatório do canário recusado: {estrutura}")
+    motivo = conferir_relatorio_do_canario(conteudo)
+    if motivo and conteudo["conclusao"]["confina_comandos"] is True:
+        raise EntradaInvalida(f"relatório do canário recusado: a conclusão diz que confina, mas {motivo}")
+    sha = hashlib.sha256(dados).hexdigest()
+    return {"conteudo": conteudo, "versao": conteudo["claude"]["versao"], "aprovado": motivo is None,
+            "motivo": motivo, "sha256": sha, "resumo": resumo_do_canario(conteudo, sha, motivo)}
+
+
+def _mostrar_no_stderr(linhas) -> None:
+    """O resumo do canário no terminal do titular antes de o root gravar (CAN-1): no stderr, em UTF-8 qualquer que seja
+    o locale do sudo (o stdout fica com o JSON que o preparar-wsl.sh lê)."""
+    dados = ("\n".join(linhas) + "\n").encode("utf-8")
+    try:
+        sys.stderr.flush()
+        sys.stderr.buffer.write(dados)
+        sys.stderr.buffer.flush()
+    except (AttributeError, OSError):
+        pass
+
+
+def instalar_canario(relatorio, area_raiz=AREA_RAIZ, *, ensaio: bool = False, simular: bool = False,
+                     mostrar=None) -> dict:
     """`instalar-canario` (titular, com sudo): confere o relatório do ensaio real do canário
     (`scripts/ensaio_isolamento_wsl.py`, `fundacao.ensaio_isolamento/1`) e o copia, de dono root, para
     `<área>/canario/<versão do Claude Code>.json`. O `instalar-projeto` seguinte o confere contra o Claude Code fixado e
-    a forma de caminho da raiz, o fixa no hashes.json e só então aplica a ficha (contratos, §0). Desde a 1.7.10.1, o
-    relatório real que não aprova (false ou null) também é instalado, como revogação: substitui o aprovado da mesma
-    versão, e a ficha de cada projeto fecha, salvo onde o titular assinou o aceite de risco desse relatório. Só o que
-    não é relatório real do ensaio é recusado. Sem root, só em ensaio (--area-raiz explícita)."""
+    a forma de caminho da raiz, o fixa no hashes.json e só então aplica a ficha (contratos, §0). Revisão de segurança da
+    1.7.10: a conclusão é recalculada pelos itens, e o arquivo que não é relatório real do ensaio é recusado (CAN-1);
+    o real que não aprova (false ou null) vai como revogação (CAN-2; 1.7.10.1): substitui o aprovado da mesma versão, e
+    a ficha de cada projeto fecha, salvo onde o titular assinou o aceite de risco desse relatório. Sem root, só em
+    ensaio (--area-raiz explícita); `mostrar` recebe, antes de gravar, o resumo dos itens e o SHA-256 do arquivo (o
+    main o põe no stderr)."""
     if os.name == "nt":
         raise EntradaInvalida("o canário é do Ubuntu (WSL2): rode no terminal do Ubuntu")
     raiz_dono = _e_root()
@@ -2374,23 +3488,21 @@ def instalar_canario(relatorio, area_raiz=AREA_RAIZ, *, ensaio: bool = False, si
                               "faz isso)")
     try:
         dados = _ler_bytes_seguro(relatorio, TETO_JSON)
-        conteudo = json.loads(dados.decode("utf-8"))
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
         raise EntradaInvalida(f"relatório do canário ilegível ({exc})") from None
-    estrutura = estrutura_do_relatorio_do_canario(conteudo)
-    if estrutura:
-        raise EntradaInvalida(f"relatório do canário recusado: {estrutura}")
-    motivo = conferir_relatorio_do_canario(conteudo)
-    versao = conteudo["claude"]["versao"]
+    cl = classificar_relatorio_do_canario(dados)
+    versao, sha = cl["versao"], cl["sha256"]
     destino = Path(area_raiz) / "canario" / f"{versao}.json"
-    sha = hashlib.sha256(dados).hexdigest()
     proximo = ("rode de novo o preparar-wsl.sh de cada projeto: a ficha só vale com o canário da mesma versão do "
-               "Claude Code e da forma da raiz" if motivo is None else
+               "Claude Code e da forma da raiz" if cl["aprovado"] else
                "o relatório não aprova (false ou null) e vai como revogação: o preparo de cada projeto fecha as "
                "aberturas, salvo no projeto em que o titular assinar o aceite de risco deste relatório "
                "(fundacao_titular.py aceitar-risco) e rodar o preparo de novo")
-    saida = {"canario": destino.as_posix(), "versao": versao, "forma": conteudo.get("forma"), "sha256": sha,
-             "aprovado": motivo is None, "motivo": motivo, "simulacao": simular, "proximo_passo": proximo}
+    saida = {"canario": destino.as_posix(), "versao": versao, "forma": cl["conteudo"].get("forma"), "sha256": sha,
+             "aprovado": cl["aprovado"], "motivo": cl["motivo"], "resumo": cl["resumo"], "simulacao": simular,
+             "proximo_passo": proximo}
+    if mostrar is not None:
+        mostrar(cl["resumo"])
     if os.path.lexists(destino) and _sha_ou_motivo(destino) == sha:
         return {**saida, "acao": "igual"}
     acao = "atualizar" if os.path.lexists(destino) else "criar"
@@ -2417,7 +3529,9 @@ def aberturas_da_area(raiz, projeto: str, area_raiz, *, vigente=None, hoje=None)
     ab = aberturas_da_ficha(_consultar(vigente or carregar_vigente(), raiz, projeto, area / "ficha"), projeto, hoje)
     aceite = (conferir_aceite_de_risco(area / PASTA_DO_ACEITE, projeto, canario, hoje=hoje)
               if canario.get("reprovado") else None)
-    return com_canario(ab, canario, aceite)
+    ab = com_canario(ab, canario, aceite)
+    # lote A2: as skills dos plugins da ficha, pela cópia da área root (o que o preparo instalou e o hashes.json fixa)
+    return {**ab, "skills": skills_da_area(area, ab["plugins"])} if ab["valida"] else ab
 
 
 # ------------------------------------------------------------------ lançador (abrir-sessao.sh -> abrir-fundacao-<p>)
@@ -2428,7 +3542,8 @@ def _aspas_bash(valor: str) -> str:
 def lancador(valores: dict, modelo: str | None = None) -> str:
     """`abrir-sessao.sh` com os valores fixados. Cada marcador do modelo fica entre aspas simples, e o valor tem as
     aspas simples escapadas: um caminho com aspas ou espaços não vira comando."""
-    faltam = [k for k in CHAVES_DO_LANCADOR if k != "PLUGINS" and not str(valores.get(k, "")).strip()]
+    valores = {"MCP_ESTRITO": "1", "MCP_OCULTAR": "", **valores}  # sem a seção mcp: só o mcp.json da área, nada escondido
+    faltam = [k for k in CHAVES_DO_LANCADOR if k not in ("PLUGINS", "MCP_OCULTAR") and not str(valores.get(k, "")).strip()]
     if faltam or "PLUGINS" not in valores:
         raise EntradaInvalida("valores ausentes para o lançador: " + ", ".join(faltam or ["PLUGINS"]))
     for k in CHAVES_DO_LANCADOR:
@@ -2449,6 +3564,12 @@ def lancador(valores: dict, modelo: str | None = None) -> str:
         raise EntradaInvalida("FERRAMENTAS fora da forma (nomes separados por vírgula)")
     if not all(IDENTIFICADOR.match(n) for n in str(valores["PLUGINS"]).split()):
         raise EntradaInvalida("PLUGINS fora da forma (nomes de plugin separados por espaço)")
+    if str(valores["MCP_ESTRITO"]) not in ("0", "1"):
+        raise EntradaInvalida("MCP_ESTRITO é 0 ou 1")
+    ocultas = [n for n in str(valores["MCP_OCULTAR"]).split(",") if n]
+    if str(valores["MCP_OCULTAR"]) != ",".join(ocultas) or not all(
+            re.fullmatch(r"mcp__[A-Za-z0-9_.-]+__[a-z][a-z0-9_]{0,63}", n) for n in ocultas):
+        raise EntradaInvalida("MCP_OCULTAR fora da forma (mcp__<servidor>__<ferramenta> separados por vírgula)")
     modelo = modelo if modelo is not None else MODELO_LANCADOR.read_text(encoding="utf-8")
     for m in MARCADOR.finditer(modelo):
         if modelo[m.start() - 1:m.start()] != "'" or modelo[m.end():m.end() + 1] != "'":
@@ -2456,6 +3577,73 @@ def lancador(valores: dict, modelo: str | None = None) -> str:
     texto = renderizar(modelo, {k: _aspas_bash(str(v)) for k, v in valores.items()})
     if "\r" in texto or not texto.startswith("#!/usr/bin/env bash\n"):
         raise EntradaInvalida("modelo do lançador sem a primeira linha do bash ou com CR")
+    return texto
+
+
+# ------------------------------------------------------------------ executor das skills com scripts (lote S3)
+MODELO_EXECUTOR = r"""#!/usr/bin/env bash
+# Executor das skills com scripts de UM projeto da fundação (1.7.11, lote S3): /usr/local/bin/fundacao-skill-<projeto>, de dono
+# root, gerado pelo `preparo_host.py instalar-projeto`. Não edite à mão: rode de novo o preparar-wsl.sh.
+# Uso: fundacao-skill-<projeto> <plugin>:<skill> <script> [-- argumentos do script]
+# Confere pelo SHA-256 o executor e o que ele carrega (na cópia root da skill) e o chama com o python do sistema, SEM
+# privilégio: quem confere o script, o interpretador e a venv antes de cada execução é o executor_skill.py.
+set -euo pipefail
+PROJETO='{{PROJETO}}'
+AREA='{{AREA}}'
+SKILL='{{SKILL}}'
+SKILLS_BASE='{{SKILLS_BASE}}'
+EXECUTOR='{{EXECUTOR_REL}}'
+PATH=/usr/bin:/bin
+export PATH
+
+recusa() {
+  printf 'fundacao-skill-%s: recusado, nada rodou: %s\n' "$PROJETO" "$1" >&2
+  exit 2
+}
+
+confere() {  # arquivo da cópia root da skill, SHA-256 esperado
+  if [ ! -f "$SKILL/$1" ] || [ -L "$SKILL/$1" ]; then
+    recusa "$1 não existe ou é ligação na cópia root da skill ($SKILL): rode de novo o preparar-wsl.sh (com sudo)."
+  fi
+  local atual
+  atual=$(sha256sum -- "$SKILL/$1" | cut -d' ' -f1)
+  if [ "$atual" != "$2" ]; then
+    recusa "$1 mudou desde o preparo (esperado $2, encontrado $atual): rode de novo o preparar-wsl.sh (com sudo)."
+  fi
+}
+
+confere '{{EXECUTOR_REL}}' '{{EXECUTOR_SHA256}}'
+confere '{{PREPARO_SKILLS_REL}}' '{{PREPARO_SKILLS_SHA256}}'
+confere '{{COPIA_SEGURA_REL}}' '{{COPIA_SEGURA_SHA256}}'
+exec /usr/bin/python3 -I -B "$SKILL/$EXECUTOR" --projeto "$PROJETO" --area "$AREA" --skills-base "$SKILLS_BASE" -- "$@"
+"""
+
+
+def executor_skill(valores: dict, modelo: str | None = None) -> str:
+    """O lançador do executor com os valores fixados (cada marcador entre aspas simples, o valor com as aspas escapadas,
+    como o `lancador`). Os três SHA-256 são os da cópia root da skill; fora da forma, EntradaInvalida."""
+    shas = [f"{k}_SHA256" for k in ARQUIVOS_DO_EXECUTOR]
+    faltam = [k for k in ("PROJETO", "AREA", "SKILL", "SKILLS_BASE", *shas) if not str(valores.get(k, "")).strip()]
+    if faltam:
+        raise EntradaInvalida("valores ausentes para o executor das skills: " + ", ".join(faltam))
+    for k in ("PROJETO", "AREA", "SKILL", "SKILLS_BASE", *shas):
+        if any(c in str(valores[k]) for c in ("\n", "\r", "\0")):
+            raise EntradaInvalida(f"{k} com quebra de linha")
+    for k in ("AREA", "SKILL", "SKILLS_BASE"):
+        if not str(valores[k]).startswith("/"):
+            raise EntradaInvalida(f"{k} precisa ser caminho absoluto do Linux: {valores[k]!r}")
+    for k in shas:
+        if not SHA256.match(str(valores[k])):
+            raise EntradaInvalida(f"{k} não é um SHA-256 em hexadecimal minúsculo: {valores[k]!r}")
+    projeto_valido(str(valores["PROJETO"]))
+    modelo = MODELO_EXECUTOR if modelo is None else modelo
+    for m in MARCADOR.finditer(modelo):
+        if modelo[m.start() - 1:m.start()] != "'" or modelo[m.end():m.end() + 1] != "'":
+            raise EntradaInvalida(f"marcador fora de aspas simples no modelo do executor: {m.group(0)}")
+    fixos = {f"{k}_REL": rel for k, rel in ARQUIVOS_DO_EXECUTOR.items()}
+    texto = renderizar(modelo, {k: _aspas_bash(str(v)) for k, v in {**valores, **fixos}.items()})
+    if "\r" in texto or not texto.startswith("#!/usr/bin/env bash\n"):
+        raise EntradaInvalida("modelo do executor sem a primeira linha do bash ou com CR")
     return texto
 
 
@@ -2570,12 +3758,188 @@ def _marcadores(raiz: Path, projeto: str, nomes, limpar: bool) -> tuple[list, li
     return problemas, avisos, limpos
 
 
+def _mcp_json_acima(raiz: Path, projeto: str) -> list[str]:
+    """Revisão de segurança da 1.7.11, F4: sem o --strict-mcp-config (a ficha pede o MCP pela conta), o Claude Code 2.1.302
+    lê o `.mcp.json` de cada pasta acima da pasta de trabalho, até a raiz do disco, e um servidor plantado ali roda fora
+    do sandbox quando o titular aprova o diálogo. Qualquer `.mcp.json` (de qualquer tamanho, também ligação) em pasta
+    acima de `projects/<p>/` recusa a abertura; quem o tira é o titular. As pastas são as do caminho e as do caminho
+    real. O de dentro do projeto é de `_marcadores` (o marcador de 0 byte do sandbox)."""
+    proj = raiz / "projects" / projeto
+    achados, problemas = {}, []
+    for inicio in (proj, Path(os.path.realpath(proj))):
+        for pasta in inicio.parents:
+            alvo = pasta / ".mcp.json"
+            if alvo.as_posix() in achados:
+                continue
+            try:
+                os.lstat(alvo)
+                achados[alvo.as_posix()] = True
+            except FileNotFoundError:
+                achados[alvo.as_posix()] = False
+            except OSError as exc:  # sem poder olhar, não dá para afirmar que não há (nem abrir)
+                problemas.append(f"não consegui conferir {alvo.as_posix()} ({exc.strerror or exc}): a sessão não abre "
+                                 "sem isso; ajuste a permissão da pasta")
+                achados[alvo.as_posix()] = False
+    for caminho in sorted(c for c, existe in achados.items() if existe):
+        problemas.append(
+            f"achei {caminho}, numa pasta acima do projeto: sem o --strict-mcp-config a sessão leria esse arquivo e abriria "
+            "o servidor dele fora do sandbox. A sessão não decide isso: só o titular tira o arquivo (se for dele, "
+            f"guarde-o noutro lugar: mv -- {shlex.quote(caminho)} {shlex.quote(caminho + '.arquivado')}) e abre de novo")
+    return problemas
+
+
+NOVA_LINHA = chr(10)
+
+
+def comando_de_preparar_wsl(area, hashes, projetos) -> str:
+    """O comando do `preparar-wsl.sh` para o titular colar no terminal do Ubuntu (como o dele, sem sudo: o script pede a
+    senha), com o que o hashes.json e o porteiro.json da área root já guardam: a raiz, o titular (`assinante`), a pasta
+    do Windows, a versão e o SHA-256 do Claude Code fixado. O que faltar ou vier fora da forma fica como `<...>` para o
+    titular trocar. Cada `--projeto` é um projeto de nome válido; o script refaz o perfil e o lançador de cada um."""
+    hashes = _objeto(hashes)
+    claude, parametros = _objeto(hashes.get("claude")), _objeto(hashes.get("parametros"))
+    try:
+        assinante = _objeto(_ler_json_seguro(Path(area) / "porteiro.json", TETO_JSON)).get("assinante")
+    except (OSError, ValueError, EntradaInvalida):
+        assinante = None
+
+    def ou_marcador(valor, vale, marcador):  # o valor do disco, se estiver na forma; senão o marcador para trocar
+        return valor if isinstance(valor, str) and vale(valor) else marcador
+
+    janelas = ou_marcador(parametros.get("perfil_windows"), _caminho_de_vaga, "<sua pasta do Windows, vista do Ubuntu>")
+    skill = ("<pasta da skill instalada>" if janelas.startswith("<")
+             else janelas + "/.claude/skills/fundacao-ia-multiprojetos")
+    valores = {
+        "script": skill + "/assets/host/wsl/preparar-wsl.sh", "janelas": janelas,
+        "raiz": ou_marcador(hashes.get("raiz"), _caminho_de_vaga, "<pasta da fundação, vista do Ubuntu>"),
+        "titular": ou_marcador(assinante, lambda v: bool(IDENTIFICADOR.match(v)), "<seu nome de titular>"),
+        "versao": ou_marcador(claude.get("versao"), lambda v: bool(re.fullmatch(r"[0-9]+[.][0-9]+[.][0-9]+", v)),
+                              "<versão do Claude Code>"),
+        "sha": ou_marcador(claude.get("sha256"), lambda v: bool(SHA256.match(v)), "<hash do manifesto assinado>")}
+    # Valor que veio do disco: aspas simples de shell. Marcador para o titular trocar: aspas duplas.
+    q = {k: ('"' + v + '"' if v.startswith("<") else shlex.quote(v)) for k, v in valores.items()}
+    nomes = " ".join(f"--projeto {o}" for o in sorted(set(projetos)) if e_projeto(o))
+    return ('/usr/bin/env -i HOME="$HOME" PATH=/usr/bin:/bin /usr/bin/bash --noprofile --norc ' + q["script"]
+            + f" --raiz {q['raiz']} {nomes} --titular {q['titular']} --perfil-windows {q['janelas']}"
+            + f" --claude-versao {q['versao']} --claude-sha256 {q['sha']}")
+
+
+def mensagem_de_projeto_sem_preparo(area, hashes, projeto: str, sem_perfil, sem_area) -> str:
+    """Por que os lançadores recusam quando há projeto criado ou preparado depois do perfil deste (C25 da 1.7.11), em
+    português simples e com o comando pronto. `sem_perfil`: pastas de `projects/` que o perfil deste projeto não nega;
+    `sem_area`: projetos cuja área root e cujo lançador o perfil não nega. A recusa continua: as sessões dos outros
+    projetos ainda não negam a pasta do novo, e só o preparo (que refaz o perfil de cada um) fecha isso."""
+    area = Path(area)
+    com_area = set(projetos_com_area(area.parent.parent))
+    todos = sorted({*sem_perfil, *sem_area})
+    novos = [o for o in todos if o not in com_area]  # nunca preparados no Ubuntu
+    anteriores = [o for o in todos if o in com_area]  # preparados depois do perfil deste projeto
+    partes = []
+    if novos:
+        partes.append(("o projeto " if len(novos) == 1 else "os projetos ") + ", ".join(novos)
+                      + (" ainda não foi preparado" if len(novos) == 1 else " ainda não foram preparados") + " no Ubuntu")
+    if anteriores:
+        partes.append("o perfil desta sessão é anterior ao preparo de " + ", ".join(anteriores))
+    fora_da_forma = [o for o in todos if not e_projeto(o)]
+    comando = comando_de_preparar_wsl(area, hashes, [projeto, *com_area, *todos])
+    pasta = "da pasta dele" if len(todos) == 1 else "das pastas deles"
+    texto = ("; ".join(partes) + ". Enquanto isso, nenhum lançador abre: o perfil desta sessão ainda não impede a "
+             "leitura " + pasta + ". Nada foi perdido e os seus dados não "
+             "mudaram. Para liberar, copie este comando, cole no terminal do Ubuntu (ele pede a sua senha do sudo) e "
+             "depois abra a sessão de novo:" + NOVA_LINHA + "  " + comando)
+    if fora_da_forma:
+        texto += (NOVA_LINHA + "  Atenção: a pasta " + ", ".join(fora_da_forma) + " tem nome fora da forma do kit "
+                  "(minúsculas, dígitos e '-'): o comando não a inclui; renomeie-a ou tire-a de projects/.")
+    return texto
+
+
+def problemas_dos_agentes_da_abertura(area: Path) -> list[str]:
+    """Lote A2: o FUNDACAO_AGENTES e o FUNDACAO_SKILLS do perfil (já conferido pelo hash) saem do aberturas.json
+    instalado (os agentes da ficha e as skills dos plugins), e as skills dele são as da cópia dos plugins na área root
+    (a árvore de cada plugin é fixada pelo hashes.json). Sem ficha válida, as duas variáveis não podem existir."""
+    try:
+        perfil = _ler_json_seguro(area / "settings.wsl.json", TETO_JSON)
+        instaladas = _objeto(_ler_json_seguro(area / "aberturas.json", TETO_JSON))
+    except (OSError, ValueError) as exc:
+        return [f"agentes: perfil ou aberturas.json ilegível ({exc})"]
+    ab = {"valida": instaladas.get("valida") is True, "plugins": instaladas.get("plugins"),
+          "skills": instaladas.get("skills")}
+    problemas = [f"agentes e skills do perfil: {p}" for p in problemas_dos_agentes_no_perfil(perfil, ab)]
+    if ab["valida"] and skills_da_area(area, ab["plugins"]) != _lista(ab["skills"]):
+        problemas.append("as skills do aberturas.json diferem das da cópia dos plugins na área (rode de novo o preparo)")
+    return problemas
+
+
+def problemas_do_mcp_da_abertura(area: Path, hashes: dict, projeto: str) -> list[str]:
+    """O MCP na abertura (lote L2): o perfil (já conferido pelo hash) tem o servidor e as ferramentas exatas que o
+    hashes.json registrou, ou nada sem a seção; e, quando a origem conta abre sem o --strict-mcp-config, o
+    `.claude.json` da configuração do projeto não pode trazer servidores MCP próprios (de usuário ou locais), que a
+    sessão abriria ao lado do conector [medir M3: o arquivo e as chaves na versão fixada]."""
+    registro = hashes.get("mcp")
+    problemas = []
+    try:
+        perfil = _ler_json_seguro(area / "settings.wsl.json", TETO_JSON)
+        esperado = None
+        if registro is not None:
+            if not isinstance(registro, dict):
+                raise ValueError("registro do MCP fora da forma")
+            esperado = {"servidor": registro.get("servidor"), "ferramentas": registro.get("ferramentas"),
+                        "ocultar": registro.get("ocultar")}
+        problemas += [f"MCP do perfil: {p}" for p in problemas_do_mcp_no_perfil(perfil, esperado)]
+    except (OSError, ValueError) as exc:
+        return [f"MCP: perfil ou registro ilegível ({exc})"]
+    if registro is None or registro.get("estrito") is True:  # sem a chave, confere como sem strict
+        return problemas
+    casa = hashes.get("casa")
+    if not isinstance(casa, str) or not os.path.isabs(casa):
+        return problemas + ["MCP sem --strict-mcp-config: o hashes.json não diz a casa do usuário (rode de novo o preparo)"]
+    arquivo = Path(casa) / ".local" / "share" / "fundacao-ia" / "config" / projeto / ".claude.json"
+    if not os.path.lexists(arquivo):
+        return problemas
+    try:
+        dados = _ler_json_seguro(arquivo, 8 * 1024 * 1024)
+    except (OSError, ValueError) as exc:
+        return problemas + [f"{arquivo.as_posix()} ilegível ({str(exc)[:80]}): sem o --strict-mcp-config não dá para "
+                            "conferir que ele não traz servidores MCP"]
+    locais = [_objeto(v).get("mcpServers") for v in _objeto(_objeto(dados).get("projects")).values()]
+    if _objeto(dados).get("mcpServers") or any(locais):
+        problemas.append(f"{arquivo.as_posix()} traz servidores MCP próprios (usuário ou local): com o conector da conta "
+                         "a sessão abre sem o --strict-mcp-config e eles abririam junto. Remova-os (claude mcp remove, "
+                         "com CLAUDE_CONFIG_DIR apontando para essa pasta) e abra de novo")
+    return problemas
+
+
+def _aninhadas_na_abertura(raiz, projeto: str, agente_aberto: bool = False) -> tuple[list[str], list[str]]:
+    """F8 da revisão final da 1.7.11: a abertura refaz o inventário das skills e dos agentes aninhados em `projects/<p>/`
+    (`aninhadas_fora_do_registro`: o `instrucoes_aninhadas.listar`, com os tetos de hoje) e RECUSA quando algum nome falta
+    no registro de negações (com o comando pronto do `registrar-projeto`) ou quando o nome é um que o registro não aceita
+    (arquivo a neutralizar): a sessão pode ter plantado a skill ou o agente depois do preparo, e o perfil só nega o que o
+    registro tinha então. Inventário parcial (pasta de nome ignorado, profundidade ou itens acima do teto, arquivo não lido):
+    com a ferramenta Agent aberta no perfil (`agente_aberto`) RECUSA, porque um agente posto na parte não vista não seria
+    negado (3ª passada da revisão, F8); sem ela, continua só aviso, como no A3. Devolve (problemas, avisos)."""
+    try:
+        res = aninhadas_fora_do_registro(raiz, projeto)
+    except ValueError as exc:  # EntradaInvalida: o registro não se lê
+        return [f"registro de negações ({REGISTRO_HOST}) ilegível ({str(exc)[:120]}): as skills e os agentes aninhados em "
+                f"projects/{projeto} não foram conferidos; rode de novo o preparo"], []
+    problemas = [f"{t}; a abertura não segue com isso: registre, rode de novo o preparo (que refaz o perfil) e abra de novo"
+                 for t in res["avisos_de_recusa"]]
+    avisos = [a for a in res["avisos"] if a not in res["avisos_de_recusa"]]
+    if agente_aberto and res["parcial"]:
+        problemas.append(f"{res['parcial']}; o perfil abre a ferramenta Agent e um agente posto na parte não vista não seria "
+                         "negado: a abertura não segue. Tire do projeto o que impede a leitura inteira (pasta de nome ignorado, "
+                         "profundidade ou número de itens acima do teto) e abra de novo")
+        avisos = [a for a in avisos if a != res["parcial"]]
+    return problemas, avisos
+
+
 def conferir_abertura(raiz, projeto: str, area, *, limpar: bool = False, hoje: date | None = None) -> dict:
     """O que o lançador confere antes de abrir (contratos, §6; folha do HOST, item 4), como o usuário: tudo o que o
     hashes.json da área root fixa (Claude Code, perfil, porteiro.json, mcp.json, aberturas.json, ficha, hooks da raiz,
     cópia da skill, kit da raiz pela conta do porteiro, plugins e o relatório do canário que liberou a ficha), a ficha
     vencida, a trava de manutenção (só a existência de `state/manutencao.json`), as configurações e o `.mcp.json` do
-    projeto e os marcadores de 0 byte."""
+    projeto, o `.mcp.json` de qualquer pasta acima dele (F4 da 1.7.11), as skills e os agentes aninhados fora do registro
+    de negações (F8) e os marcadores de 0 byte."""
     raiz, area = Path(os.path.abspath(raiz)), Path(area)
     projeto_valido(projeto)
     problemas, avisos = [], []
@@ -2650,11 +4014,23 @@ def conferir_abertura(raiz, projeto: str, area, *, limpar: bool = False, hoje: d
             "permissions")).get("deny"))
         faltam = [o for o in projetos_da_raiz(raiz) if o != projeto
                   and f"Read(/{raiz.as_posix()}/projects/{o}/**)" not in negacoes]
-        if faltam:
-            problemas.append("projetos criados depois do preparo, sem leitura negada no perfil deste: "
-                             + ", ".join(faltam) + " (rode de novo o preparar-wsl.sh)")
+        # Revisão de segurança da 1.7.10, WSL-01: a área root e o lançador de cada outro projeto (de projects/ e das
+        # áreas já gravadas, como a de um projeto preparado depois deste) também negados.
+        lancador = str(_objeto(hashes.get("lancador")).get("caminho") or "")
+        pasta_lancador = posixpath.dirname(lancador) if lancador.startswith("/") else BIN_DIR
+        area_raiz = area.parent.parent.as_posix()
+        sem_area = [o for o in sorted({*projetos_da_raiz(raiz), *projetos_com_area(area.parent.parent)})
+                    if o != projeto and not {f"Read(/{area_raiz}/projetos/{o}/**)",
+                                             f"Read(/{pasta_lancador}/abrir-fundacao-{o})",
+                                             f"Read(/{pasta_lancador}/fundacao-skill-{o})"} <= set(negacoes)]
+        if faltam or sem_area:  # C25: uma mensagem só, em português simples, com o comando pronto
+            problemas.append(mensagem_de_projeto_sem_preparo(area, hashes, projeto, faltam, sem_area))
     except (OSError, ValueError) as exc:
         problemas.append(f"perfil da área ilegível ({exc})")
+    problemas += problemas_do_mcp_da_abertura(area, hashes, projeto)
+    problemas += problemas_dos_agentes_da_abertura(area)
+    problemas += preparo_jaula().problemas_da_abertura(hashes, _sha_ou_motivo)  # lote L4: a jaula instalada é a fixada
+    problemas += preparo_skills().problemas_da_abertura(hashes)  # lote S3: o interpretador e a venv das skills com scripts
     proj = raiz / "projects" / projeto
     copia = _carregar_script("copia_segura")
     for caminho in (raiz / "projects", proj):
@@ -2667,8 +4043,12 @@ def conferir_abertura(raiz, projeto: str, area, *, limpar: bool = False, hoje: d
     ferramentas = set(str(hashes.get("ferramentas", "")).split(","))
     nomes = [n for n in _lista(hashes.get("marcadores")) if isinstance(n, str) and "/" not in n and n not in ("", ".", "..")]
     p_marc, a_marc, limpos = _marcadores(raiz, projeto, nomes, limpar)
-    problemas += p_marc + conferir_configuracoes_do_projeto(raiz, projeto, ferramentas)
+    problemas += p_marc + conferir_configuracoes_do_projeto(raiz, projeto, ferramentas) + _mcp_json_acima(raiz, projeto)
     avisos += a_marc
+    # F8: a skill ou o agente plantado depois do preparo; o inventário parcial recusa quando o perfil abre a ferramenta Agent
+    p_aninhadas, a_aninhadas = _aninhadas_na_abertura(raiz, projeto, "Agent" in ferramentas)
+    problemas += p_aninhadas
+    avisos += a_aninhadas
     # I19: o canário não mede esta pasta. O `conclusao.carga_aninhada` cobre a skill e o agente de uma `.claude/` em
     # subpasta do projeto do ensaio (`aninhado/.claude/`), fora de `confina_comandos`; o ensaio não tem item para a
     # `.claude/` do próprio projeto (nem para comandos e hooks). Aqui é só aviso.
@@ -2692,6 +4072,35 @@ def conferir_abertura(raiz, projeto: str, area, *, limpar: bool = False, hoje: d
     if not com_filtro:
         avisos.append("sockets sem filtro: o filtro seccomp do sandbox não está instalado (ou mudou)")
     return {"ok": not problemas, "problemas": problemas, "avisos": avisos, "limpos": limpos}
+
+
+TETO_PROJETO_JSON = 64 * 1024
+
+
+def regras_de_codigo_do_projeto(raiz, projeto: str) -> tuple[str, list[str]]:
+    """O campo `regras_codigo` do `projects/<p>/projeto.json` ([Decisão; ponytail, P7.]), que o lançador exporta como
+    FUNDACAO_REGRAS_CODIGO para o hook `regras_codigo.py`. Devolve (valor, avisos): "" quando o arquivo ou o campo não
+    existe (a regra entra desligada) ou quando o arquivo é ilegível (com aviso: a regra fica desligada, a sessão abre);
+    senão um valor da lista fechada REGRAS_DE_CODIGO. Campo presente com valor fora da lista: EntradaInvalida (quem
+    escreveu o campo quis ligar a regra: o lançador não abre, em vez de abrir sem ela). Arquivo lido sem seguir ligação
+    nem vínculo físico, até 64 KiB; o texto da regra não vem do projeto."""
+    raiz = Path(os.path.abspath(raiz))
+    projeto_valido(projeto)
+    pasta = raiz / "projects" / projeto
+    arquivo = pasta / "projeto.json"
+    if not os.path.lexists(arquivo):
+        return "", []
+    try:
+        dados = json.loads(_ler_bytes_seguro(arquivo, TETO_PROJETO_JSON, pasta).decode("utf-8-sig"))
+    except (OSError, ValueError, EntradaInvalida) as exc:
+        return "", [f"projects/{projeto}/projeto.json ilegível ({str(exc)[:120]}): as regras de código ficam desligadas"]
+    if not isinstance(dados, dict) or "regras_codigo" not in dados:
+        return "", []
+    valor = dados["regras_codigo"]
+    if not isinstance(valor, str) or valor not in REGRAS_DE_CODIGO:
+        raise EntradaInvalida(f"regras_codigo em projects/{projeto}/projeto.json fora da lista fechada "
+                              f"({', '.join(sorted(REGRAS_DE_CODIGO))}): corrija o valor ou tire o campo")
+    return valor, []
 
 
 def limpar_marcadores(raiz, projeto: str, area) -> dict:
@@ -2902,20 +4311,113 @@ def _imprimir(dados) -> None:
     print(json.dumps(dados, ensure_ascii=False, default=str))
 
 
+def fundacao_que_contem(arquivo) -> Path | None:
+    """A raiz de fundação que contém `arquivo` (a pasta `projects` cujo pai tem `registry/`; o nome sem caixa, também
+    pelo caminho real), ou None: um programa dali é de uma pasta que as sessões dos projetos gravam (revisão de
+    segurança da 1.7.10, CI-F1)."""
+    for caminho in (os.path.abspath(arquivo), os.path.realpath(arquivo)):
+        for pasta in Path(caminho).parents:
+            if pasta.name.casefold() == "projects" and (pasta.parent / "registry").is_dir():
+                return pasta.parent
+    return None
+
+
+def _mesma_pasta(a, b) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def recusa_de_dentro_de_projects(a, arquivo=__file__) -> str | None:
+    """Revisão de segurança da 1.7.10, CI-F1: o preparo do host não roda de dentro de `<raiz>/projects/` (uma cópia da
+    skill que a sessão guardou ou mostrou num checklist): como root, nunca; e o que grava a área do titular ou o
+    registro (instalar-projeto, registrar-projeto) não roda contra a fundação que contém o arquivo, também em ensaio.
+    Devolve o motivo, com o programa da skill instalada, ou None."""
+    fundacao = fundacao_que_contem(arquivo)
+    if fundacao is None:
+        return None
+    contra_ela = a.cmd in ("instalar-projeto", "registrar-projeto") and _mesma_pasta(a.raiz, fundacao)
+    if not (_e_root() or contra_ela):
+        return None
+    return (f"este preparo_host.py fica dentro de {fundacao.as_posix()}/projects/, pasta que as sessões dos projetos "
+            "gravam: ele não roda daqui (nada foi alterado). Rode o da skill instalada, com o comando do modelo da "
+            "skill (nunca o de uma cópia que a sessão mostrou ou guardou num projeto): no Ubuntu, python3 /mnt/c/Users/<usuario>"
+            "/.claude/skills/fundacao-ia-multiprojetos/assets/host/preparo_host.py (troque <usuario> pelo seu "
+            "usuário do Windows); no "
+            "Windows, %USERPROFILE%\\.claude\\skills\\fundacao-ia-multiprojetos\\assets\\host\\preparo_host.py")
+
+
 def _parametros_confiaveis(a, area: Path) -> tuple[dict, list]:
-    """Vagas do perfil que a conferência compara: as da linha de comando, senão as do hashes.json da área root."""
+    """Vagas do perfil que a conferência compara: as da linha de comando, senão as do hashes.json da área root. A
+    área root é a de --area-raiz, e a pasta do lançador, a de --bin ou a do lançador que o hashes.json registra
+    (revisão de segurança da 1.7.10, WSL-01)."""
     avisos, p = [], {"perfil_windows": None, "ancora_base": None, "temp_base": None}
     try:
-        gravados = _objeto(_ler_json_seguro(area / "hashes.json", TETO_HASHES).get("parametros"))
+        hashes = _objeto(_ler_json_seguro(area / "hashes.json", TETO_HASHES))
     except (OSError, ValueError):
-        gravados = {}
+        hashes = {}
+    gravados = _objeto(hashes.get("parametros"))
     for chave, valor in (("perfil_windows", a.perfil_windows), ("ancora_base", a.ancora_base),
                          ("temp_base", a.temp_base)):
         p[chave] = (caminho_wsl(valor) if valor and chave != "temp_base" else valor) or gravados.get(chave)
     if any(v is None for v in p.values()):
         avisos.append("vagas lidas do próprio perfil (sem --perfil-windows e sem hashes.json da área): confira a pasta "
                       "do Windows e a âncora")
+    lancador = str(_objeto(hashes.get("lancador")).get("caminho") or "")
+    p["area_raiz"] = caminho_wsl(a.area_raiz)
+    p["bin_dir"] = caminho_wsl(a.bin) if a.bin else (posixpath.dirname(lancador) if lancador.startswith("/")
+                                                     else BIN_DIR)
     return p, avisos
+
+
+def _comando_da_jaula(a) -> int:
+    """`plano-jaula`, `instalar-jaula`, `instalar-canario-jaula` (lote L4), `instalar-navegador-jaula` (L5) e `instalar-codex-jaula` (L6). Códigos: 0 ok; 4 (só o plano) a ficha não abre
+    jaula em nenhum projeto; as recusas saem pelo tratamento comum do main (2)."""
+    pj = preparo_jaula()
+    if bool(a.ensaio_base) != bool(a.area_raiz):
+        raise EntradaInvalida("--ensaio-base e --area-raiz vão juntos (e só para ensaio, sem root)")
+    caminhos = pj.caminhos_de_ensaio(a.ensaio_base, a.area_raiz) if a.ensaio_base else pj.caminhos_reais(AREA_RAIZ)
+    if a.cmd == "instalar-canario-jaula":
+        res = pj.instalar_canario_jaula(a.relatorio, caminhos, simular=a.simular, raiz_dono=_e_root())
+        if a.texto:
+            print("\n".join(pj.texto_do_canario(res)))
+        else:
+            _imprimir(res)
+        return 0
+    plano = pj.montar_plano(SKILL, caminhos.etc, a.projeto, a.usuario, caminhos,
+                            forma_sudo="senha" if a.sudo_senha else "nopasswd", preparar=a.preparar_jaula)
+    visivel = {k: v for k, v in plano.items() if not k.startswith("_")}
+    visivel["lancadores"] = [{k: v for k, v in l.items() if k != "texto"} for l in plano["lancadores"]]  # sem o texto inteiro
+    if a.cmd == "instalar-navegador-jaula":  # lote L5: os downloads do navegador (apt, Playwright, Chromium), com sudo
+        res = pj.instalar_navegador_jaula(SKILL, caminhos, plano, preparar=a.preparar_jaula, simular=a.simular,
+                                          raiz_dono=_e_root())
+        if a.texto:
+            print("\n".join(pj.texto_do_navegador(res)))
+        else:
+            _imprimir(res)
+        return 0
+    if a.cmd == "instalar-codex-jaula":  # lote L6: o download do CLI do Codex fixado, com o SHA-256 conferido antes de instalar
+        res = pj.instalar_codex_jaula(SKILL, caminhos, plano, preparar=a.preparar_jaula, simular=a.simular, raiz_dono=_e_root())
+        if a.texto:
+            print("\n".join(pj.texto_do_codex(res)))
+        else:
+            _imprimir(res)
+        return 0
+    if a.cmd == "plano-jaula":
+        if a.texto:
+            print("\n".join(pj.texto_do_plano(plano)))
+        else:
+            _imprimir({**visivel, "texto": pj.texto_do_plano(plano)})
+        return 0 if plano["necessaria"] else 4
+    res = pj.instalar_jaula(plano, simular=a.simular, raiz_dono=_e_root())
+    if res.get("necessaria") and not a.simular and not caminhos.ensaio:
+        res["acessos"] = pj.acessos_da_jaula(Path(a.raiz).as_posix(), [i["projeto"] for i in plano["projetos"]])
+    if a.texto:
+        print("\n".join(pj.texto_da_instalacao(res, plano)))
+    else:
+        _imprimir({**res, "plano": visivel, "texto": pj.texto_do_plano(plano)})
+    return 0
 
 
 def main(argv: list | None = None) -> int:
@@ -2926,6 +4428,7 @@ def main(argv: list | None = None) -> int:
     w.add_argument("--python", required=True)
     w.add_argument("--projeto")
     w.add_argument("--negar-skill", action="append", default=[], help="skill aninhada em pasta de dados")
+    w.add_argument("--negar-agente", action="append", default=[], help="agente aninhado em pasta de dados")
     w.add_argument("--somente-leitura", action="append", default=[])
     w.add_argument("--backups", action="append", default=[])
     w.add_argument("--saida")
@@ -2935,17 +4438,19 @@ def main(argv: list | None = None) -> int:
         s.add_argument("--projeto", required=True)
         s.add_argument("--perfil-windows", required=True)
         s.add_argument("--area-raiz", default=AREA_RAIZ)
+        s.add_argument("--bin", default=BIN_DIR, help="pasta dos lançadores (só para ensaio)")
         s.add_argument("--temp-base", default=TEMP_BASE)
         s.add_argument("--ancora-base", default=ANCORA_BASE_WSL)
         s.add_argument("--montagem", default=MONTAGEM)
         s.add_argument("--somente-leitura", action="append", default=[], help="só para ensaio: soma ao registro")
         s.add_argument("--negar-skill", action="append", default=[], help="só para ensaio: soma ao registro")
+        s.add_argument("--negar-agente", action="append", default=[], help="só para ensaio: soma ao registro")
         s.add_argument("--backups", action="append", default=[], help="saiu na 1.7.10 (recusado)")
         s.add_argument("--saida")
     k = sub.add_parser("conferir-perfil-wsl", allow_abbrev=False)
     for nome in ("--perfil", "--raiz", "--projeto"):
         k.add_argument(nome, required=True)
-    for nome in ("--perfil-windows", "--ancora-base", "--temp-base", "--lancador"):
+    for nome in ("--perfil-windows", "--ancora-base", "--temp-base", "--lancador", "--bin"):
         k.add_argument(nome)
     k.add_argument("--area-raiz", default=AREA_RAIZ)
     n = sub.add_parser("instalar-projeto", allow_abbrev=False)
@@ -2953,16 +4458,36 @@ def main(argv: list | None = None) -> int:
                  "--perfil-windows", "--casa", "--usuario"):
         n.add_argument(nome, required=True)
     for nome in ("--area-raiz", "--bin", "--temp-base", "--sonda-interop-cmd", "--sonda-interop-binfmt",
-                 "--gerenciadas", "--ferramenta-base"):
+                 "--gerenciadas", "--ferramenta-base", "--jaula-base", "--skills-base"):
         n.add_argument(nome)
     pf = sub.add_parser("plano-ferramenta", allow_abbrev=False)  # o preparar-maquina.ps1 (cópia do Windows, I11)
     pf.add_argument("--python", help="python.exe fixado da cópia do Windows (só um instalado para todos os usuários)")
     n.add_argument("--ancora-base", default=ANCORA_BASE_WSL)
     n.add_argument("--simular", action="store_true")
+    n.add_argument("--registrar-aninhadas", action="store_true",
+                   help="soma ao registro as skills e os agentes aninhados do projeto que ainda não estão nele")
     cn = sub.add_parser("instalar-canario", allow_abbrev=False)
     cn.add_argument("--relatorio", required=True, help="relatório fundacao.ensaio_isolamento/1 do ensaio real")
     cn.add_argument("--area-raiz", help="só para ensaio, sem root (padrão: /etc/fundacao-ia, com sudo)")
     cn.add_argument("--simular", action="store_true")
+    for nome in ("plano-jaula", "instalar-jaula", "instalar-navegador-jaula", "instalar-codex-jaula"):  # lotes L4, L5 e L6
+        jp = sub.add_parser(nome, allow_abbrev=False)
+        for opcao in ("--raiz", "--usuario"):
+            jp.add_argument(opcao, required=True)
+        jp.add_argument("--projeto", action="append", required=True)
+        jp.add_argument("--area-raiz", help="só para ensaio, com --ensaio-base")
+        jp.add_argument("--ensaio-base", help="só para ensaio, sem root: programas, estado e sudoers sob esta pasta")
+        jp.add_argument("--sudo-senha", action="store_true", help="forma da sudoers com senha [medir M1]")
+        jp.add_argument("--preparar-jaula", action="store_true", help="instala mesmo sem seção de jaula na ficha")
+        jp.add_argument("--texto", action="store_true")
+        if nome != "plano-jaula":
+            jp.add_argument("--simular", action="store_true")
+    cj = sub.add_parser("instalar-canario-jaula", allow_abbrev=False)
+    cj.add_argument("--relatorio", action="append", required=True, help="a resposta do canário de um modo (repita)")
+    cj.add_argument("--area-raiz", help="só para ensaio, com --ensaio-base")
+    cj.add_argument("--ensaio-base", help="só para ensaio, sem root")
+    cj.add_argument("--simular", action="store_true")
+    cj.add_argument("--texto", action="store_true")
     for nome in ("conferir-abertura", "limpar-marcadores"):
         c = sub.add_parser(nome, allow_abbrev=False)
         for opcao in ("--raiz", "--projeto", "--area"):
@@ -2970,6 +4495,9 @@ def main(argv: list | None = None) -> int:
         if nome == "conferir-abertura":
             c.add_argument("--limpar", action="store_true")
             c.add_argument("--texto", action="store_true")
+    rc = sub.add_parser("regras-codigo", allow_abbrev=False)  # o lançador: o campo regras_codigo do projeto.json
+    for opcao in ("--raiz", "--projeto"):
+        rc.add_argument(opcao, required=True)
     lp = sub.add_parser("limpar-porteiro", allow_abbrev=False)
     for opcao in ("--raiz", "--projeto", "--casa"):
         lp.add_argument(opcao, required=True)
@@ -2980,6 +4508,12 @@ def main(argv: list | None = None) -> int:
     r.add_argument("--origem", action="append", required=True)
     r.add_argument("--somente-leitura", action="append", default=[])
     r.add_argument("--negar-skill", action="append", default=[])
+    r.add_argument("--negar-agente", action="append", default=[])
+    an = sub.add_parser("aninhadas-fora-do-registro", allow_abbrev=False)  # o preparar-projeto.ps1 (lote A3)
+    an.add_argument("--raiz", required=True)
+    an.add_argument("--projeto", required=True)
+    an.add_argument("--registrar", action="store_true", help="soma ao registro o que faltar (só cresce)")
+    an.add_argument("--simular", action="store_true", help="com --registrar: só diz o que seria somado")
     lr = sub.add_parser("ler-projetos-host", allow_abbrev=False)
     lr.add_argument("--raiz", required=True)
     lr.add_argument("--projeto")
@@ -2987,6 +4521,7 @@ def main(argv: list | None = None) -> int:
     fr.add_argument("--raiz", required=True)
     fr.add_argument("--somente-leitura", action="append", default=[])
     fr.add_argument("--negar-skill", action="append", default=[])
+    fr.add_argument("--negar-agente", action="append", default=[])
     uc = sub.add_parser("ultima-copia", allow_abbrev=False)  # o portão das cópias dos scripts do Windows (defeito 2)
     uc.add_argument("--raiz", required=True)
     i = sub.add_parser("identidade", allow_abbrev=False)
@@ -3003,25 +4538,34 @@ def main(argv: list | None = None) -> int:
     cw.add_argument("--arquivo", required=True)
     cw.add_argument("--saida")
     a = ap.parse_args(argv)
+    recusa = recusa_de_dentro_de_projects(a)  # revisão de segurança da 1.7.10, CI-F1
+    if recusa:
+        _imprimir({"erro": recusa})
+        return 2
     try:
         if a.cmd == "perfil-windows":
             registro = ler_projetos_host(a.raiz)  # um só: as skills negadas e as pastas de TODOS os projetos (I21)
             perfil = perfil_windows(raiz=a.raiz, python=a.python, projeto=a.projeto, outros_projetos=projetos_da_raiz(
                 a.raiz), somente_leitura=a.somente_leitura, backups=a.backups, registro=registro, negar=_sem_repetir(
-                [*a.negar_skill, *vagas_do_registro(registro, a.projeto or "-")["negar"]]))
+                [*a.negar_skill, *vagas_do_registro(registro, a.projeto or "-")["negar"]]),
+                negar_agente=_sem_repetir([*a.negar_agente, *vagas_do_registro(registro, a.projeto or "-")["negar_agente"]]))
             _entregar(texto_json(perfil), a.saida)
         elif a.cmd in ("gerar-perfil-projeto", "perfil-wsl"):
             existentes = projetos_da_raiz(a.raiz)
             if a.projeto not in existentes:
                 raise EntradaInvalida(f"projeto {a.projeto} ausente em {Path(a.raiz) / 'projects'}")
-            reg = vagas_do_registro(ler_projetos_host(a.raiz), a.projeto, a.montagem)
+            registro = ler_projetos_host(a.raiz)
+            reg = vagas_do_registro(registro, a.projeto, a.montagem)
             ab = aberturas_da_area(a.raiz, projeto_valido(a.projeto), a.area_raiz)
             perfil = perfil_wsl(raiz=a.raiz, projeto=a.projeto, perfil_windows=a.perfil_windows,
                                 outros_projetos=[p for p in existentes if p != a.projeto],
                                 somente_leitura=[*reg["somente_leitura"], *a.somente_leitura],
                                 ancora_base=a.ancora_base, montagem=a.montagem,
-                                negar=_sem_repetir([*reg["negar"], *a.negar_skill]), aberturas=ab,
-                                temp_base=a.temp_base, backups=a.backups)
+                                negar=_sem_repetir([*reg["negar"], *a.negar_skill]),
+                                negar_agente=_sem_repetir([*reg["negar_agente"], *a.negar_agente]), aberturas=ab,
+                                temp_base=a.temp_base, backups=a.backups,
+                                area_raiz=caminho_wsl(a.area_raiz, a.montagem), bin_dir=caminho_wsl(a.bin, a.montagem),
+                                projetos_registrados=[*registro["projetos"], *projetos_com_area(a.area_raiz)])
             _entregar(texto_json(perfil), a.saida)
         elif a.cmd == "conferir-perfil-wsl":
             perfil = json.loads(Path(a.perfil).read_text(encoding="utf-8"))
@@ -3040,7 +4584,8 @@ def main(argv: list | None = None) -> int:
                 ferramentas = m.group(1) if m else "(sem FERRAMENTAS no lançador)"
             problemas += conferir_perfil_wsl(perfil, raiz_wsl, a.projeto, [p for p in existentes if p != a.projeto],
                                              parametros=parametros, aberturas=ab, somente_leitura=reg["somente_leitura"],
-                                             negar=reg["negar"], ferramentas_lancador=ferramentas)
+                                             negar=reg["negar"], ferramentas_lancador=ferramentas,
+                                             negar_agente=reg["negar_agente"])
             try:  # as vagas vão no relatório
                 vagas = parametros_do_perfil_wsl(perfil, raiz_wsl, a.projeto)
             except EntradaInvalida:
@@ -3051,11 +4596,13 @@ def main(argv: list | None = None) -> int:
         elif a.cmd == "instalar-projeto":
             ensaio = bool(a.area_raiz and a.bin)
             if (a.sonda_interop_cmd or a.sonda_interop_binfmt or a.temp_base or a.gerenciadas
-                    or a.ferramenta_base) and not ensaio:
-                raise EntradaInvalida("--temp-base, --gerenciadas, --ferramenta-base e as sondas de interoperabilidade "
-                                      "são só para ensaio (com --area-raiz e --bin)")
+                    or a.ferramenta_base or a.jaula_base or a.skills_base) and not ensaio:
+                raise EntradaInvalida("--temp-base, --gerenciadas, --ferramenta-base, --jaula-base, --skills-base e as "
+                                      "sondas de interoperabilidade são só para ensaio (com --area-raiz e --bin)")
             if a.ferramenta_base and not os.path.isabs(a.ferramenta_base):
                 raise EntradaInvalida("--ferramenta-base precisa ser um caminho absoluto")
+            if a.skills_base and not os.path.isabs(a.skills_base):
+                raise EntradaInvalida("--skills-base precisa ser um caminho absoluto")
             relatorio = instalar_projeto(
                 simular=a.simular, ensaio=ensaio, raiz=a.raiz, projeto=a.projeto, titular=a.titular, claude=a.claude,
                 claude_versao=a.claude_versao, claude_sha256=a.claude_sha256, origem_hash=a.origem_hash,
@@ -3064,7 +4611,9 @@ def main(argv: list | None = None) -> int:
                 sonda_interop_cmd=a.sonda_interop_cmd or SONDA_INTEROP_CMD,
                 sonda_interop_binfmt=a.sonda_interop_binfmt or SONDA_INTEROP_BINFMT,
                 gerenciadas=a.gerenciadas or GERENCIADAS,
-                ferramenta_base=(a.ferramenta_base or None) if ensaio else FERRAMENTA_BASE)
+                ferramenta_base=(a.ferramenta_base or None) if ensaio else FERRAMENTA_BASE,
+                jaula_base=a.jaula_base, registrar_aninhadas=a.registrar_aninhadas,
+                skills_base=(a.skills_base or str(Path(a.area_raiz) / "skills-ensaio")) if ensaio else SKILLS_BASE)
             _imprimir(relatorio)
         elif a.cmd == "plano-ferramenta":
             python = None
@@ -3076,9 +4625,12 @@ def main(argv: list | None = None) -> int:
             f = plano_da_ferramenta(SKILL, None, python)
             _imprimir({"versao": f["versao"], "hashes_json": f["hashes_bytes"].decode("utf-8"), "sha256": f["sha256"],
                        "arquivos": f["hashes"]["arquivos"]})
-        elif a.cmd == "instalar-canario":
+        elif a.cmd == "instalar-canario":  # o resumo dos itens no stderr antes de gravar (CAN-1)
             _imprimir(instalar_canario(a.relatorio, a.area_raiz or AREA_RAIZ, ensaio=bool(a.area_raiz),
-                                       simular=a.simular))
+                                       simular=a.simular, mostrar=_mostrar_no_stderr))
+        elif a.cmd in ("plano-jaula", "instalar-jaula", "instalar-canario-jaula", "instalar-navegador-jaula",
+                       "instalar-codex-jaula"):
+            return _comando_da_jaula(a)
         elif a.cmd == "conferir-abertura":
             res = conferir_abertura(a.raiz, a.projeto, a.area, limpar=a.limpar)
             if a.texto:
@@ -3091,6 +4643,11 @@ def main(argv: list | None = None) -> int:
             else:
                 _imprimir(res)
             return 0 if res["ok"] else 1
+        elif a.cmd == "regras-codigo":  # stdout: só o valor ("" ou "enxuto"); os avisos vão ao stderr
+            valor, avisos = regras_de_codigo_do_projeto(a.raiz, a.projeto)
+            for linha in avisos:
+                print("aviso: " + linha, file=sys.stderr)
+            print(valor)
         elif a.cmd == "limpar-marcadores":
             _imprimir(limpar_marcadores(a.raiz, a.projeto, a.area))
         elif a.cmd == "limpar-porteiro":
@@ -3104,19 +4661,21 @@ def main(argv: list | None = None) -> int:
                 print(f"aviso: pastas de trabalho do porteiro mantidas em {res['pasta']} ({res['motivo']}): "
                       + ", ".join(res["mantidas"]))
         elif a.cmd == "registrar-projeto":
-            dados = registrar_projeto(a.raiz, a.projeto, a.origem, a.somente_leitura, a.negar_skill)
+            dados = registrar_projeto(a.raiz, a.projeto, a.origem, a.somente_leitura, a.negar_skill, a.negar_agente)
             _imprimir({"registro": (Path(a.raiz) / REGISTRO_HOST).as_posix(), "projeto": a.projeto,
                        **dados["projetos"][a.projeto]})
+        elif a.cmd == "aninhadas-fora-do-registro":
+            _imprimir(aninhadas_fora_do_registro(a.raiz, projeto_valido(a.projeto), registrar=a.registrar,
+                                                 simular=a.simular))
         elif a.cmd == "ler-projetos-host":
             dados = ler_projetos_host(a.raiz)
             if a.projeto:
                 projeto_valido(a.projeto)
                 dados = {"projeto": a.projeto, "registrado": a.projeto in dados["projetos"],
-                         **dados["projetos"].get(a.projeto, {"origens": [], "somente_leitura": [],
-                                                             "aninhadas_negadas": []})}
+                         **dados["projetos"].get(a.projeto, _item_vazio())}
             _imprimir(dados)
         elif a.cmd == "fora-do-registro":
-            _imprimir(fora_do_registro(ler_projetos_host(a.raiz), a.somente_leitura, a.negar_skill))
+            _imprimir(fora_do_registro(ler_projetos_host(a.raiz), a.somente_leitura, a.negar_skill, a.negar_agente))
         elif a.cmd == "ultima-copia":
             _imprimir(ultima_copia(a.raiz))
         elif a.cmd == "identidade":

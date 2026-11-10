@@ -206,6 +206,7 @@ class TestN8AncoraExterna(_Base):
 
     def test_8_codigo_diferente_sem_ancora_exige_decisao_explicita(self):
         init = self.root / "fundacao" / "__init__.py"
+        self.desvincular(init)
         init.write_text(init.read_text(encoding="utf-8") + "\n# personalização local (fictícia)\n", encoding="utf-8")
         snap = self.pasta("snap")
         backup.create_backup(self.root, snap, "a8-kit")

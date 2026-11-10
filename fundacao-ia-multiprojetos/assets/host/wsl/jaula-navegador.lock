@@ -1,0 +1,19 @@
+# Travas do navegador da jaula (1.7.11, lote L5; DESENHO-JAULA §5.4, requisito 1, e §7.4, passo 4).
+#
+# O venv de dono root da jaula (<programas>/navegador/venv) instala SÓ o que está aqui, pelo
+# `preparo_host.py instalar-navegador-jaula` (o preparar-wsl.sh do titular o roda com sudo, depois de mostrar o endereço e
+# o tamanho do que baixa), com `pip install --require-hashes --no-deps --only-binary :all:`. Só linhas
+# `nome==versão --hash=sha256:<64 hex>`: o preparo recusa qualquer outra opção do pip, URL e `-r` neste arquivo.
+#
+# FONTE (conferida pelo coordenador em 08/11/2026, só metadados; nada baixado): API JSON do PyPI, rodas do Linux x86_64 e
+# CPython 3.12, com o SHA-256 publicado (outputs/inicio-1.7.11/analise/FONTE-PYPI-NAVEGADOR-20261108.md). Nenhuma roda foi
+# retirada pelo autor. playwright 1.64.1 pede pyee>=13,<15 e greenlet>=3.1.1,<4; pyee 14.0.0 pede typing-extensions.
+#
+# ROTULO (honestidade): o Chromium NÃO tem hash aqui. O `playwright install chromium` do Playwright 1.64.1 baixa a revisão
+# 1248 (Chrome for Testing 156.0.8078.4) e o chromium-headless-shell, e o Playwright não publica hash nem tamanho deles: o
+# SHA-256 da árvore instalada é registrado na 1ª instalação (confiança no primeiro uso) em
+# <programas>/navegador/pins-navegador.json, e as seguintes só aceitam a mesma árvore.
+playwright==1.64.1 --hash=sha256:577b8d88778c245cfbd145ae17cf53044f084b1b46c55c69081d4069d56057e2
+pyee==14.0.0 --hash=sha256:3ac2d3229a9677f7de2c33d7f52fe25b638a46b19c413fea2edc8c6d0a644e4d
+greenlet==3.5.6 --hash=sha256:975736b002ed080d124cf81a79cb7e05cb26d6b3f5c7a7b651c0fcce70353aa1
+typing_extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8

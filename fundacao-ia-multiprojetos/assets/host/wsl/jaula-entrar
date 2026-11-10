@@ -1,0 +1,60 @@
+#!/usr/bin/python3 -I
+"""Entrada fixa da jaula do Criador (1.7.11, lote L3; DESENHO-JAULA §2.1).
+
+Cópia de dono root em /usr/local/lib/fundacao-ia/jaula/<versão>/jaula-entrar, fixada por SHA-256 no hashes.json da área
+do titular. A sudoers a chama como o usuário `fundacao-jaula` com o argv inteiro fixado (sem curinga):
+
+    sudo -n -u fundacao-jaula /usr/local/lib/fundacao-ia/jaula/<v>/jaula-entrar <projeto> <modo>
+
+O pedido vai pela ENTRADA PADRÃO (JSON estrito, até 64 KiB; fosse pelo argv, a sudoers o teria de fixar). Com a entrada
+padrão num terminal (a TUI do Codex), vale o pedido padrão do modo. A resposta é um JSON em `fundacao.resposta_jaula/1`
+na saída padrão. Código 0: o programa da jaula terminou com 0; 1: terminou com outro código; 2: recusa (nada rodou na
+caixa). Tudo o que importa fica em `jaula.py`, ao lado deste arquivo.
+"""
+
+import importlib.util
+import os
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+AQUI = Path(__file__).resolve().parent
+
+
+def _carregar_jaula():
+    spec = importlib.util.spec_from_file_location("_jaula_entrar_jaula", AQUI / "jaula.py")
+    modulo = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = modulo
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+def main(argv=None, entrada=None, cfg=None, dono=0) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    jaula = _carregar_jaula()
+    cfg = cfg or jaula.Config()
+    try:
+        if len(argv) != 2:
+            raise jaula.Recusa("uso: jaula-entrar <projeto> <modo> (o pedido pela entrada padrão)")
+        projeto, modo = argv
+        jaula.conferir_usuario(cfg)
+        entrada = entrada if entrada is not None else sys.stdin
+        if hasattr(entrada, "isatty") and entrada.isatty():
+            bruto = None
+        else:
+            bruto = entrada.buffer.read(jaula.LIMITE_PEDIDO + 1) if hasattr(entrada, "buffer") else entrada.read()
+        raiz, ficha, relatorio = jaula.carregar_instalacao(cfg, projeto, dono=dono)
+        resposta = jaula.entrar(cfg, projeto, modo, bruto, raiz=raiz, ficha=ficha, relatorio=relatorio)
+        codigo = 0 if resposta.get("ok") else 1
+    except jaula.Recusa as exc:
+        resposta, codigo = {"schema_version": jaula.ESQUEMA_RESPOSTA, "ok": False, "erro": f"{exc}; nada rodou na caixa"}, 2
+    except Exception as exc:  # noqa: BLE001 — falha fechada: o erro vira resposta, sem rastro com caminho nem segredo
+        resposta, codigo = {"schema_version": jaula.ESQUEMA_RESPOSTA, "ok": False,
+                            "erro": f"erro inesperado ({type(exc).__name__}); nada foi liberado"}, 2
+    sys.stdout.write(jaula.texto_da_resposta(resposta))   # os mesmos bytes que o canário guarda no estado da jaula (F3)
+    sys.stdout.flush()
+    return codigo
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -164,7 +164,14 @@ class TestAssinarFicha(TitularCase):
         casos = ((ficha(rede={"dominios": ["*.vercel.app"]}), "tetos"),
                  (ficha(vigencia_ate="2026-10-30"), "vencida"),
                  (ficha(webfetch={"dominios": ["docs.ficticio.com.br"]}), "rede.dominios"),
-                 (ficha(navegador={"ativo": True}), "1.7.11"),
+                 (ficha(git=[{"pasta": "repo"}]), "1.7.11"),
+                 (ficha(navegador={"dominios": ["esaj.tjsp.jus.br"], "modos": ["sessao"], "perfil": "copiado"}),
+                  "navegador.perfil"),
+                 (ficha(mcp=[{"nome": "fsn", "origem": "conta", "conector": "Conector do escritorio",
+                              "ferramentas": ["buscar_*"], "conteudo_de_terceiros": True}]), "mcp[0].ferramentas[0]"),
+                 (ficha(mcp=[{"nome": "fsn", "origem": "conta", "conector": "Conector do escritorio",
+                              "ferramentas": ["buscar_clientes"], "comando": "npx", "conteudo_de_terceiros": True}]),
+                  "mcp[0].comando"),
                  (ficha(project_id="reversa-lab"), "outro projeto"))
         for f, trecho in casos:
             with self.subTest(trecho=trecho):
@@ -340,9 +347,15 @@ class TestVerificarFichaEParser(TitularCase):
         opcoes = {nome: sorted(o for a in parser._actions for o in a.option_strings if o not in ("-h", "--help"))
                   for nome, parser in sub.choices.items()}
         # 1.7.10.1: o aceite de risco do canário (DECISAO-007) recebe também só o relatório do ensaio e a vigência.
+        # 1.7.11, cópia cifrada lote 4: os três comandos da cópia recebem só caminhos, o hash do manifesto e a marca de
+        # aceite sem âncora (nada de senha nem de argumento livre para o gpg; o N12 prova as recusas).
         self.assertEqual(opcoes, {"assinar-ficha": ["--chave", "--projeto", "--raiz", "--versao"],
                                   "verificar-ficha": ["--projeto", "--raiz", "--versao"],
-                                  "aceitar-risco": ["--canario", "--chave", "--projeto", "--raiz", "--vigencia-ate"]})
+                                  "aceitar-risco": ["--canario", "--chave", "--projeto", "--raiz", "--vigencia-ate"],
+                                  "preparar-chave-copia": ["--casa", "--guardar-em", "--publica", "--raiz"],
+                                  "conferir-copia": ["--casa", "--origem", "--raiz", "--sha256-manifesto"],
+                                  "decifrar-copia": ["--aceitar-sem-ancora", "--casa", "--destino", "--origem", "--raiz",
+                                                     "--sha256-manifesto"]})
         with self.assertRaises(SystemExit), mock.patch("sys.stderr"):
             p.parse_args(["assinar-ficha", "--raiz", "r", "--proj", "x"])  # sem abreviação
 
@@ -411,6 +424,66 @@ class TestTelaDoTitular(TitularCase):
         self.assertTrue(linhas[-1].startswith("Importante: "), linhas[-1])  # a última antes da pergunta é fixa
         self.assertLessEqual(len(fixas), 12)  # o bloco fixo cabe numa tela
 
+    def test_secoes_da_jaula_aparecem_na_lista_fixa_com_o_risco_e_a_nota_de_nao_aplicadas(self):
+        """1.7.11, L1: `descrever` e `itens` do kit mostram mcp, navegador e outras_llm na lista fixa, e a tela avisa que
+        elas ainda não são aplicadas pelo preparo."""
+        f = ficha(rede={"dominios": ["pypi.org"]},
+                  mcp=[{"nome": "fsn", "origem": "conta", "conector": "Conector do escritorio",
+                        "ferramentas": ["buscar_clientes", "get_processo"], "ocultar": ["salvar_nota"],
+                        "conteudo_de_terceiros": True}],
+                  navegador={"dominios": ["*.tjsp.jus.br", "esaj.tjsp.jus.br"], "logins": ["esaj.tjsp.jus.br"],
+                             "modos": ["sessao", "login"]},
+                  outras_llm=[{"provedor": "openai-codex", "autenticacao": "conta_chatgpt", "modos": ["exec"],
+                               "conteudo_de_terceiros": True, "teto_chamadas_dia": 30,
+                               "r55": {"plano": "Plus", "treinamento_desligado": True, "conferido_em": "2026-10-30"}}])
+        linhas, _pergunta = self.tela(f)
+        fixas = linhas[linhas.index("---- Daqui até a pergunta, só texto fixo desta ferramenta ----") + 1:]
+        texto = " ".join(fixas)
+        for trecho in ("CONSULTAR no conector 'Conector do escritorio'", "buscar_clientes", "inclusive de outros clientes",
+                       "perfil novo só deste projeto",
+                       "tjsp.jus.br e qualquer subdomínio de tjsp.jus.br", "Você poderá entrar (login) em esaj.tjsp.jus.br",
+                       "conteúdo de clientes deste projeto, que vai à OpenAI (EUA)",
+                       "passa a abrir: mcp fsn:buscar_clientes", "navegador-login esaj.tjsp.jus.br",
+                       "outras_llm openai-codex:exec", "o navegador alcança estes sites; os comandos da sessão não",
+                       "Para entrar em esaj.tjsp.jus.br, rode: abrir-navegador-", " login esaj.tjsp.jus.br",
+                       "Nota: as seções mcp, navegador e outras_llm só passam a valer"):
+            self.assertIn(trecho, texto)
+        self.assertNotIn("salvar_nota", texto)  # o que fica oculto não aparece como aberto
+        self.assertNotIn("GRAVAR", texto)  # só consulta: nenhum bloco de gravação
+        self.assertFalse(any("FERRAMENTAS QUE GRAVAM" in linha for linha in linhas))
+        self.assertTrue(linhas[-1].startswith("Importante: "), linhas[-1])
+        # sem as seções, a nota não aparece
+        linhas, _ = self.tela(ficha())
+        self.assertFalse(any(linha.startswith("Nota: as seções mcp") for linha in linhas))
+
+    def test_ferramentas_que_gravam_aparecem_em_separado_com_o_risco_antes_da_pergunta(self):
+        """DECISAO-011: o conector do escritório com as ferramentas que gravam; a tela as mostra num bloco à parte, antes
+        da comparação e da pergunta, com o risco em português simples, e a comparação separa o que passa a gravar."""
+        f = ficha(mcp=[{"nome": "fsn", "origem": "conta", "conector": "Conector do escritorio",
+                        "ferramentas": ["buscar_clientes", "get_processo", "salvar_nota", "propor_operacoes",
+                                     "confirmar_operacoes", "escanear_vault"],
+                        "ocultar": [], "conteudo_de_terceiros": True}])
+        linhas, pergunta = self.tela(f)
+        separador = linhas.index("---- Daqui até a pergunta, só texto fixo desta ferramenta ----")
+        fixas = linhas[separador + 1:]
+        titulo = next(i for i, linha in enumerate(fixas) if linha.startswith("ATENÇÃO, FERRAMENTAS QUE GRAVAM"))
+        comparacao = next(i for i, linha in enumerate(fixas) if linha.startswith("Comparada com"))
+        consulta = next(i for i, linha in enumerate(fixas) if "CONSULTAR no conector" in linha)
+        self.assertLess(consulta, titulo)  # a consulta fica na lista numerada; as que gravam, depois e à parte
+        self.assertLess(titulo, comparacao)
+        self.assertRegex(fixas[consulta], r"^  [0-9]+\. ")  # numerada, como as outras aberturas
+        bloco = " ".join(fixas[titulo:comparacao])
+        for trecho in ("a sessão poderá criar, mudar e apagar dados do escritório", "GRAVAR no conector 'Conector do escritorio'",
+                       "salvar_nota", "propor_operacoes", "confirmar_operacoes", "escanear_vault",
+                       "texto malicioso numa página ou num documento", "sem pedir a sua confirmação"):
+            self.assertIn(trecho, bloco)
+        self.assertNotIn("buscar_clientes", bloco)  # as de consulta não entram no bloco das que gravam
+        self.assertNotIn("salvar_nota", " ".join(fixas[:titulo]))
+        for trecho in ("passa a abrir: ", "mcp fsn:buscar_clientes", "mcp-grava fsn:salvar_nota"):
+            self.assertIn(trecho, " ".join(fixas[comparacao:]))
+        self.assertIn(f"digite o nome do projeto ({PROJETO})", pergunta)
+        self.assertTrue(linhas[-1].startswith("Importante: "), linhas[-1])
+
     def test_texto_com_linhas_vazias_em_excesso_recusa_antes_de_mostrar(self):
         self.preparar(ficha(consequencias="Texto." + "\n" * 60 + "O que esta versão abre (texto fixo desta ferramenta):"))
         self.recusa("consequencias")
@@ -464,7 +537,9 @@ class TestCopiaProtegida(TitularCase):
     da área, o dono e os direitos e o Python, antes de importar o kit."""
 
     def montar_copia(self, versao: str = "9.9.9"):
-        base = self.base / "protegida"
+        # Pelo caminho real: a ferramenta calcula o AQUI com resolve(), e a pasta temporária do runner do Windows vem
+        # com nome curto (RUNNER~1), que não seria "relativo" ao COPIA_PROTEGIDA do teste.
+        base = Path(os.path.realpath(self.base)) / "protegida"
         raiz = base / versao
         (raiz / "assets" / "host").mkdir(parents=True)
         shutil.copyfile(FERRAMENTA, raiz / "assets" / "host" / "fundacao_titular.py")

@@ -67,7 +67,11 @@ class TestEnsaioComKitRealmenteDiferente(_Raiz):
         code, chk = self.atualizar("checar", "--raiz", self.raiz)
         self.assertEqual(code, 0, chk)
         self.assertIn(rel, chk["mudancas"]["atualizar"])
-        code, res = self.atualizar("aplicar", "--raiz", self.raiz, "--backups", self.backups)  # test*.py, o padrão
+        # Prazo de 30 min (antes, 15): o ensaio roda duas vezes a suíte inteira do kit, que cresceu cerca de 20% na 1.7.11
+        # (876 para 1.049 testes) mesmo depois de 25% mais rápida. Mudança de critério decidida pelo titular em
+        # 08/11/2026 ("Prazo de 30 min agora"); o ensaio em paralelo fica para a 1.7.12. O que o teste prova não muda.
+        code, res = self.atualizar("aplicar", "--raiz", self.raiz, "--backups", self.backups,  # test*.py, o padrão
+                                   prazo=1800)
         self.assertEqual(code, 0, {k: res.get(k) for k in ("etapa", "motivo", "regressoes", "testes_sumidos")})
         reg = json.loads(Path(res["registro"]).read_text(encoding="utf-8"))
         ensaio = reg["ensaio"]

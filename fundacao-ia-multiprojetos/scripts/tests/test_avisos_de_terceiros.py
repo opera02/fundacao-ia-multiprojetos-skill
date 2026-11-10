@@ -134,7 +134,7 @@ class TestAvisosDeTerceiros(unittest.TestCase):
 
     def test_entradas_completas(self):
         self.assertEqual(self.problemas, [])
-        self.assertEqual(sorted(self.entradas), ["everything-claude-code", "harness2", "vibe-coding-toolkit"])
+        self.assertEqual(sorted(self.entradas), ["everything-claude-code", "harness2", "ponytail", "vibe-coding-toolkit"])
 
     def test_cada_origem_citada_tem_entrada_e_cada_entrada_e_citada(self):
         citadas = origens_citadas(textos_do_pacote_e_das_notas(), self.entradas)
@@ -148,6 +148,24 @@ class TestAvisosDeTerceiros(unittest.TestCase):
         self.assertIn("Copyright (c) 2026 Matheus Gomes", toolkit["corpo"])
         self.assertIn("The above copyright notice and this permission notice shall be included", toolkit["corpo"])
         self.assertIn("`assets/templates/REVISAO-SEGURANCA.md`", toolkit["Trechos, traduzidos e adaptados"])
+
+    def test_trecho_do_ponytail_traz_aviso_licenca_mit_e_as_propostas(self):
+        # 1.7.11 (ponytail, P6): a regra, a revisão, a auditoria e as dívidas vão traduzidas; o aviso viaja com elas.
+        ponytail = self.entradas["ponytail"]
+        self.assertEqual((ponytail["tipo"], ponytail["Licença"].split()[0]), ("trecho", "MIT"))
+        self.assertIn("`96608e0`", ponytail["Commit analisado"])
+        self.assertIn("Copyright (c) 2026 DietrichGebert", ponytail["corpo"])
+        self.assertIn("The above copyright notice and this permission notice shall be included", ponytail["corpo"])
+        for caminho in ("references/codigo-enxuto.md", "assets/plugins/codigo-enxuto/skills/", "assets/hooks/regras_codigo.py"):
+            self.assertIn(caminho, ponytail["Trechos, traduzidos e adaptados"])
+        self.assertEqual(propostas_registradas(ponytail), {1, 2, 3, 4, 5, 6, 7, 8})
+
+    def test_licenca_do_ponytail_igual_a_do_plugin_entregue(self):
+        # O plugin é instalado sozinho e só leva da raiz o LICENSE: o aviso do ponytail tem de estar nele, igual.
+        ponytail = self.entradas["ponytail"]["corpo"]
+        bloco = ponytail.split("```text\n", 1)[1].split("\n```", 1)[0].strip()
+        licenca = (SKILL / "assets" / "plugins" / "codigo-enxuto" / "LICENSE").read_text(encoding="utf-8")
+        self.assertIn(bloco, licenca)
 
     def test_harness2_e_everything_claude_code_so_como_ideia(self):
         harness, ecc = self.entradas["harness2"], self.entradas["everything-claude-code"]
@@ -174,7 +192,7 @@ class TestAvisosDeTerceiros(unittest.TestCase):
                   for n, arquivos in numeros.items()
                   if origem not in self.entradas or n not in propostas_registradas(self.entradas[origem])}
         self.assertEqual(faltam, {})
-        self.assertEqual(sorted(citadas), ["everything-claude-code", "harness2", "vibe-coding-toolkit"])
+        self.assertEqual(sorted(citadas), ["everything-claude-code", "harness2", "ponytail", "vibe-coding-toolkit"])
         self.assertEqual(propostas_registradas(self.entradas["everything-claude-code"]), {1, 3, 4, 5})
 
     def test_proposta_rotulada_sem_registro_e_acusada(self):

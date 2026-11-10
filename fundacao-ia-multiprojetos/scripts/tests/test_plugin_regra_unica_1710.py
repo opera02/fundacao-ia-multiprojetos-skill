@@ -579,5 +579,95 @@ class TestRegraDoKitPorUltimo(Base, unittest.TestCase):
                          (KIT / "fundacao" / "core" / "aberturas_plugins.py").resolve())
 
 
+# Skills com scripts (1.7.11, lote S1): conforme aqui, com --com-scripts, implica sem erro no kit com a sugestão da ficha.
+SKILL_BUSCA = "---\nname: busca\ndescription: Busca (skill fictícia).\n---\n\nChame o executor.\n"
+COM_SCRIPT = {"skills/busca/SKILL.md": SKILL_BUSCA, "skills/busca/scripts/buscar.py": "print('ok')\n"}
+LOCK_COM_RODAS = "# rodas: outputs/rodas-busca\nalfa==1.0 \\\n    --hash=sha256:" + "a" * 64 + "\n"
+ACEITOS_COM_SCRIPTS = {
+    "demo-s-sem-pacotes": {},
+    "demo-s-com-lock": {"skills/busca/requirements.lock": LOCK_COM_RODAS},
+    "demo-s-dois": {"skills/busca/scripts/coletar_tudo.py": "print(1)\n"},
+    "demo-s-bom-e-cookie": {"skills/busca/scripts/buscar.py": chr(0xFEFF) + "# coding: utf-8\nprint('ok')\n"},
+    "demo-s-crlf": {"skills/busca/scripts/buscar.py": "print('ok')\r\n"},
+    "demo-s-duas-skills": {"skills/outra/SKILL.md": SKILL_BUSCA.replace("busca", "outra"),
+                           "skills/outra/scripts/x.py": "print(2)\n"},
+}
+# Recusados aqui e no kit, mesmo que a ficha liste o arquivo: {nome: arquivos a mais}.
+RECUSADOS_COM_SCRIPTS = {
+    "demo-r-shebang": {"skills/busca/scripts/buscar.py": "#!/usr/bin/env python3\nprint(1)\n"},
+    "demo-r-fora-do-lugar": {"skills/busca/buscar.py": "print(1)\n"},
+    "demo-r-subpasta": {"skills/busca/scripts/sub/x.py": "print(1)\n"},
+    "demo-r-maiuscula": {"skills/busca/scripts/Coletar.py": "print(1)\n"},
+    "demo-r-init": {"skills/busca/scripts/__init__.py": "print(1)\n"},
+    "demo-r-agente": {"agents/x.py": "print(1)\n"},
+    "demo-r-shell": {"skills/busca/scripts/rodar.sh": "echo ficticio\n"},
+    "demo-r-js": {"skills/busca/scripts/rodar.js": "console.log(1)\n"},
+    "demo-r-pyc": {"skills/busca/scripts/rodar.pyc": "x"},
+    "demo-r-cookie": {"skills/busca/scripts/buscar.py": "# coding: latin-1\nprint(1)\n"},
+    "demo-r-direcao": {"skills/busca/scripts/buscar.py": "x = '" + chr(0x202e) + "'\n"},
+    "demo-r-cr": {"skills/busca/scripts/buscar.py": "x = 1\ry = 2\n"},
+    "demo-r-lock-opcao": {"skills/busca/requirements.lock": "# rodas: x\n-e .\n"},
+    "demo-r-lock-sem-hash": {"skills/busca/requirements.lock": "# rodas: x\nalfa==1.0\n"},
+    "demo-r-lock-url": {"skills/busca/requirements.lock": "# rodas: x\nalfa @ https://x.example/a.whl\n"},
+    "demo-r-lock-fora": {"skills/busca/sub/requirements.lock": LOCK_COM_RODAS},
+}
+
+
+class TestComScripts(Base, unittest.TestCase):
+    def sugestao(self, pasta: Path) -> tuple[dict, dict]:
+        pc = MOD.conferir(pasta, com_scripts=True)
+        return pc, {**self.item(pasta, pc["manifesto_sha256"]), "skills_com_scripts": pc["skills_com_scripts_para_a_ficha"]}
+
+    def lista_manual(self, pasta: Path) -> list:
+        """Uma lista que lista TODO .py e todo lock do disco, onde estiverem (o pior caso para o kit)."""
+        achados = {p.relative_to(pasta).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                   for p in pasta.rglob("*") if p.is_file()}
+        py = [r for r in achados if r.endswith((".py", ".sh", ".js", ".pyc"))]
+        locks = [r for r in achados if r.endswith("requirements.lock")]
+        dep = locks and {"lock": locks[0], "lock_sha256": achados[locks[0]], "rodas": "outputs/rodas", "python": "3.12",
+                         "pacotes": 1}
+        return [{"skill": "busca", "skill_md_sha256": achados.get("skills/busca/SKILL.md", "0" * 64),
+                 "scripts": [{"nome": "x", "caminho": r, "sha256": achados[r], "modo": "sessao"} for r in py],
+                 **({"dependencias": dep} if locks else {})}]
+
+    def test_conforme_aqui_implica_sem_erro_no_kit_com_a_sugestao(self):
+        for nome, extras in ACEITOS_COM_SCRIPTS.items():
+            with self.subTest(aceito=nome):
+                pasta = self.candidato({**COM_SCRIPT, **extras}, nome=nome)
+                pc, item = self.sugestao(pasta)
+                self.assertTrue(pc["conforme"], pc["motivos"])
+                kit = plugins.conferir_pasta_do_plugin(pasta, nome, item["skills_com_scripts"])
+                self.assertEqual(kit["erros"], [], nome)
+                self.assertEqual(pc["manifesto_sha256"], kit["manifesto_sha256"])
+                self.assertEqual(regras.validar(ficha_com(item), projeto="demo")["erros"], [], nome)
+                self.assertEqual(plugins.conferir_plugin(self.proj, item)["erros"], [], nome)
+                sem_lista = plugins.conferir_pasta_do_plugin(pasta, nome)  # o kit, sem o item da ficha, recusa o código
+                self.assertTrue(sem_lista["erros"], nome)
+                self.assertFalse(MOD.conferir(pasta)["conforme"], "sem --com-scripts o .py recusa também aqui")
+
+    def test_recusado_aqui_e_no_kit_mesmo_com_a_ficha_listando_o_arquivo(self):
+        for nome, extras in RECUSADOS_COM_SCRIPTS.items():
+            with self.subTest(recusado=nome):
+                pasta = self.candidato({**COM_SCRIPT, **extras}, nome=nome)
+                self.assertFalse(MOD.conferir(pasta, com_scripts=True)["conforme"], nome)
+                kit = plugins.conferir_pasta_do_plugin(pasta, nome, self.lista_manual(pasta))
+                self.assertTrue(kit["erros"], f"{nome}: o kit devia recusar mesmo listado")
+
+    def test_sem_os_arquivos_de_codigo_a_opcao_nao_muda_nada(self):
+        pasta = self.candidato(nome="demo-md")
+        a, b = MOD.conferir(pasta), MOD.conferir(pasta, com_scripts=True)
+        self.assertEqual({k: v for k, v in a.items()}, {k: v for k, v in b.items()})
+        self.assertEqual(b["skills_com_scripts_para_a_ficha"], [])
+
+    def test_montar_com_a_opcao_e_a_linha_da_ficha_que_o_kit_aceita(self):
+        origem = self.proj / "importado" / "busca"
+        escrever(origem, {"SKILL.md": SKILL_BUSCA, "scripts/buscar.py": "print('ok')\n"})
+        res = MOD.montar(self.raiz, "demo", "busca", origem, com_scripts=True)
+        item = {**res["ficha"], "skills_com_scripts": res["skills_com_scripts_para_a_ficha"]}
+        self.assertEqual(regras.validar(ficha_com(item), projeto="demo")["erros"], [])
+        self.assertEqual(plugins.conferir_plugin(self.proj, item)["erros"], [])
+        self.assertEqual(res["manifesto_sha256"], plugins.conferir_plugin(self.proj, item)["manifesto_sha256"])
+
+
 if __name__ == "__main__":
     unittest.main()

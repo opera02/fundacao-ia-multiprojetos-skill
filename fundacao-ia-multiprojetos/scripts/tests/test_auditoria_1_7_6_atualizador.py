@@ -88,10 +88,10 @@ class _Raiz(unittest.TestCase):
         init.write_text(init.read_text(encoding="utf-8").replace(atual, 'KIT_VERSION = "1.0.0"'), encoding="utf-8")
         self.registrar_hash("fundacao/__init__.py")
 
-    def atualizar(self, *args, script: Path | None = None, env: dict | None = None) -> tuple:
+    def atualizar(self, *args, script: Path | None = None, env: dict | None = None, prazo: int = 900) -> tuple:
         script = script or SCRIPTS / "atualizar_fundacao.py"
         r = subprocess.run([sys.executable, "-B", str(script), *map(str, args)], env=env or self.env,
-                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=prazo)
         try:
             return r.returncode, json.loads(r.stdout)
         except ValueError:

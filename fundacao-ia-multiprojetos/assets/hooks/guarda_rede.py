@@ -5,8 +5,8 @@ Contratos do lote 2 da 1.7.10, §2 e §7. Registro (pacote HOST, perfis WSL e Wi
 `python3 -I -B` (Windows: `python -I -B`) com o caminho absoluto `<raiz>/.claude/hooks/guarda_rede.py`.
 - WebFetch: só `http`/`https`, sem usuário ou senha na URL, sem porta além da padrão do esquema, sem IP literal (nem
   as formas numéricas abreviadas), sem `localhost`, `*.localhost`, `*.local` e `*.internal`, e só com o host em
-  FUNDACAO_DOMINIOS_WEB (vírgulas; `dominio` casa só ele; `*.dominio` casa os subdomínios, nunca o próprio domínio,
-  que precisa estar listado à parte). URL malformada, com espaço, controle, barra invertida ou `%` no host: nega.
+  FUNDACAO_DOMINIOS_WEB (vírgulas; `dominio` casa só ele; `*.dominio` casa o próprio domínio e os subdomínios,
+  DECISAO-010 item 5 da 1.7.11; nunca `outrodominio` nem `dominio.outro`). URL malformada, com espaço, controle, barra invertida ou `%` no host: nega.
   Nome internacional que o codec idna do Python e o Node do Claude Code leem diferente (ß, ς, letra posterior ao
   Unicode 3.2): nega, na URL e na lista (revisão do lote 2). Lista ausente ou vazia: nega todo WebFetch. A decisão
   é `deny`, nunca pergunta: os domínios de documentação pré-aprovados do Claude Code não passam por fora da lista
@@ -146,7 +146,7 @@ def decide(event: dict, env: dict) -> dict | None:
     if host is None:
         return deny(f"WebFetch negado: {motivo}")
     exatos, curingas = lista_de_dominios(env.get("FUNDACAO_DOMINIOS_WEB"))
-    if host in exatos or any(host.endswith("." + base) for base in curingas):
+    if host in exatos or host in curingas or any(host.endswith("." + base) for base in curingas):
         return None
     return deny(f"WebFetch negado: o domínio {host} não está na lista do projeto (FUNDACAO_DOMINIOS_WEB). Domínio "
                 "novo só entra pela ficha de aberturas assinada pelo titular (webfetch.dominios).")

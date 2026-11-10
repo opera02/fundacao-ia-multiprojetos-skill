@@ -252,6 +252,23 @@ class TestCaminhoDeHookDoOutroSistema(Base):
         self.assertEqual(trad("/home/u/.claude/hooks/x.py", "nt"), "/home/u/.claude/hooks/x.py")  # nativo não muda
         self.assertEqual(trad("/home/u/.claude/hooks/x.py", "posix"), "/home/u/.claude/hooks/x.py")
 
+    def test_raiz_dada_por_nome_diferente_do_real_continua_valendo(self):
+        """O runner do Windows entrega a pasta temporária com nome curto 8.3 (C:\\Users\\RUNNER~1\\...), e o realpath
+        do arquivo vem com o nome longo: a leitura contida compara com a pasta real, não com a pasta como foi dada.
+        O realpath é trocado por um que devolve outra forma do mesmo lugar (nada depende de haver nome curto aqui)."""
+        self._hooks()
+        self._config("settings.json", str(self.raiz / ".claude" / "hooks" / "guarda.py"))
+        original = os.path.realpath
+        dada = str(Path(original(self.raiz)))
+
+        def outra_forma(caminho, *args, **kw):
+            real = str(original(caminho, *args, **kw))
+            return dada + "-longo" + real[len(dada):] if real.startswith(dada) else real
+
+        with mock.patch("os.path.realpath", outra_forma):
+            ok, avisos = self.seguro()
+        self.assertTrue(ok, avisos)
+
     @unittest.skipUnless(os.name == "nt", "o /mnt/<l>/ do perfil do WSL só se traduz para unidade no Windows")
     def test_no_windows_hooks_do_wsl_e_do_windows_resolvem_na_raiz(self):
         self._hooks()

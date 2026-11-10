@@ -53,8 +53,11 @@ K = TITULAR.kit()
 PREPARO = carregar_preparo()
 
 
-def relatorio_reprovado(**mudancas) -> dict:
-    """Relatório real reprovado na forma drvfs, como o do titular em 02/11/2026 (ids e vereditos; valores fictícios)."""
+def relatorio_de_seis_itens(**mudancas) -> dict:
+    """O relatório reprovado do titular em 02/11/2026 como o teste da 1.7.10.1 o escrevia (ids e vereditos; valores
+    fictícios): seis itens, um deles com o id "Item Estranho;rm", e sem perfil, sandbox nem temp. NÃO é o formato do
+    ensaio real: o portão e a ferramenta o recusam (1.7.11, junção do lote B). Serve de base dos completos abaixo e dos
+    casos de recusa."""
     itens = [{"id": i, "classe": "comando", "veredito": "nao_medido", "canario": {"apareceu": False}}
              for i in ("leitura_outro_projeto", "leitura_state", "escrita_fora_do_projeto")]
     itens += [{"id": "plugin_setting_sources_local", "classe": "comando", "veredito": "falhou"},
@@ -65,6 +68,35 @@ def relatorio_reprovado(**mudancas) -> dict:
             "claude": {"versao": "2.1.302", "sha256": SHA_CLAUDE}, "itens": itens,
             "conclusao": {"forma": "drvfs:/mnt/e/Ensaio de IA", "sistema_de_arquivos": "9p",
                           "confina_comandos": False, "motivo": "itens de comando com falha"}}
+    base.update(mudancas)
+    return base
+
+
+def relatorio_completo(aprova: bool = False, **mudancas) -> dict:
+    """O mesmo relatório no formato do ensaio desta versão (revisão de segurança da 1.7.10, CAN-1: o portão recusa o
+    relatório sem as sondas, o perfil, o sandbox e o temp; a ferramenta do titular usa a mesma regra). Reprovado: as
+    sondas de comando que o de 02/11/2026 não mediu ou falhou continuam assim; aprovado: todas as de comando passam."""
+    itens = []
+    for ident, classe in PREPARO.SONDAS_DO_CANARIO.items():
+        veredito = "passou"
+        if not aprova and ident in ("plugin_setting_sources_local",):
+            veredito = "falhou"
+        elif not aprova and ident in ("leitura_outro_projeto", "leitura_state", "escrita_fora_do_projeto"):
+            veredito = "nao_medido"
+        itens.append({"id": ident, "classe": classe, "veredito": veredito, "canario": {"apareceu": False}})
+    base = relatorio_de_seis_itens(itens=itens, perfil={"gerado": True}, sandbox_ligado=True,
+                                   temp={"do_lancador": True})
+    if aprova:
+        base["conclusao"] = {**base["conclusao"], "confina_comandos": True}
+    base.update(mudancas)
+    return base
+
+
+def relatorio_anterior(aprova: bool = False, **mudancas) -> dict:
+    """O completo sem as duas sondas que o ensaio da 1.7.10 e da 1.7.10.1 não tinha (`SONDAS_ADIADAS`): o relatório que
+    já pode estar instalado na máquina do titular, com o aceite de risco dele (DECISAO-007)."""
+    base = relatorio_completo(aprova)
+    base["itens"] = [i for i in base["itens"] if i["id"] not in PREPARO.SONDAS_ADIADAS]
     base.update(mudancas)
     return base
 
@@ -112,37 +144,61 @@ class PecasDoAceite(unittest.TestCase):
                                                      "sistema_de_arquivos": "9p"}), "drvfs:/mnt/e")
 
     def test_resumo_do_relatorio_guarda_so_o_conferido(self):
-        rel = relatorio_reprovado()
+        rel = relatorio_completo()
         rel["itens"][0]["canario"]["apareceu"] = True
         r = TITULAR.resumo_do_relatorio(rel, bytes_de(rel))
         self.assertEqual(set(r), PREPARO.CAMPOS_DO_CANARIO_ACEITO)
         self.assertEqual(r["relatorio_sha256"], hashlib.sha256(bytes_de(rel)).hexdigest())
         self.assertEqual((r["claude_versao"], r["claude_sha256"], r["forma"], r["confina_comandos"]),
                          ("2.1.302", SHA_CLAUDE, "drvfs:/mnt/e", False))
-        self.assertEqual(r["falhou"], ["plugin_setting_sources_local"])  # o id fora da forma fica de fora
-        self.assertEqual(r["nao_medido"], ["escrita_fora_do_projeto", "leitura_outro_projeto", "leitura_state",
-                                           "skill_agente_aninhado"])
+        self.assertEqual(r["falhou"], ["plugin_setting_sources_local"])
+        self.assertEqual(r["nao_medido"], ["escrita_fora_do_projeto", "leitura_outro_projeto", "leitura_state"])
         self.assertEqual(r["vazou"], ["leitura_outro_projeto"])
-        nulo = relatorio_reprovado(conclusao={**relatorio_reprovado()["conclusao"], "confina_comandos": None})
+        nulo = relatorio_completo(conclusao={**relatorio_completo()["conclusao"], "confina_comandos": None})
         self.assertIsNone(TITULAR.resumo_do_relatorio(nulo, bytes_de(nulo))["confina_comandos"])
-        recusas = {"aprovado": relatorio_reprovado(conclusao={**rel["conclusao"], "confina_comandos": True}),
-                   "simulado": relatorio_reprovado(simulado=True),
+        recusas = {"aprovado": relatorio_completo(aprova=True),
+                   "simulado": relatorio_completo(simulado=True),
                    "sem a marca de real": {k: v for k, v in rel.items() if k != "simulado"},
-                   "outro esquema": relatorio_reprovado(schema_version="fundacao.ensaio_isolamento_simulado/1"),
-                   "sem o Claude Code": relatorio_reprovado(claude={"versao": "2.1.302"}),
-                   "sem a conclusão": relatorio_reprovado(conclusao={"forma": rel["forma"]}),
-                   "conclusão de outra forma": relatorio_reprovado(conclusao={**rel["conclusao"], "forma": "ext4"}),
-                   "forma que o canário não prova": relatorio_reprovado(forma="drvfs:/mnt/e/x", sistema_de_arquivos="ext4"),
-                   "não é objeto": ["x"]}
+                   "outro esquema": relatorio_completo(schema_version="fundacao.ensaio_isolamento_simulado/1"),
+                   "sem o Claude Code": relatorio_completo(claude={"versao": "2.1.302"}),
+                   "sem a conclusão": relatorio_completo(conclusao={"forma": rel["forma"]}),
+                   "conclusão de outra forma": relatorio_completo(conclusao={**rel["conclusao"], "forma": "ext4"}),
+                   "forma que o canário não prova": relatorio_completo(forma="drvfs:/mnt/e/x",
+                                                                       sistema_de_arquivos="ext4"),
+                   "não é objeto": ["x"],
+                   # 1.7.11: a ferramenta usa a regra do portão (antes aceitava qualquer lista de itens)
+                   "seis itens, um de id estranho (o formato antigo do teste)": relatorio_de_seis_itens(),
+                   "sem o perfil": relatorio_completo(perfil=None),
+                   "sem o temp": {k: v for k, v in relatorio_completo().items() if k != "temp"},
+                   "sem a chave do sandbox": {k: v for k, v in relatorio_completo().items() if k != "sandbox_ligado"},
+                   "item de fora": relatorio_completo(itens=[*relatorio_completo()["itens"],
+                                                             {"id": "sonda_inventada", "classe": "comando",
+                                                              "veredito": "falhou"}]),
+                   "falta uma sonda que não é adiada": relatorio_completo(itens=[
+                       i for i in relatorio_completo()["itens"] if i["id"] != "leitura_state"]),
+                   "item repetido": relatorio_completo(itens=[*relatorio_completo()["itens"],
+                                                              relatorio_completo()["itens"][0]]),
+                   "anterior que se diz aprovado": relatorio_anterior(aprova=True)}
         for nome, ruim in recusas.items():
             with self.subTest(nome):
                 with self.assertRaises(TITULAR.Recusa):
                     TITULAR.resumo_do_relatorio(ruim, b"{}")
 
+    def test_resumo_do_relatorio_anterior_conta_as_sondas_que_faltam_como_nao_medidas(self):
+        """1.7.11, N1: o relatório do ensaio da 1.7.10 e da 1.7.10.1 (sem as duas sondas novas) segue aceito para o
+        aceite de risco, e o titular vê as duas que faltam entre os itens não medidos."""
+        anterior = relatorio_anterior()
+        r = TITULAR.resumo_do_relatorio(anterior, bytes_de(anterior))
+        self.assertEqual(r["nao_medido"], sorted({"escrita_fora_do_projeto", "leitura_outro_projeto", "leitura_state",
+                                                  *PREPARO.SONDAS_ADIADAS}))
+        self.assertEqual(PREPARO.problemas_do_aceite(
+            {"schema_version": PREPARO.ESQUEMA_ACEITE, "project_id": PROJETO, "versao": 1, "aceito_em": "2026-11-02",
+             "vigencia_ate": "2027-01-31", "riscos": list(TITULAR.RISCOS), "canario": r}, PROJETO, HOJE), [])
+
     def aceite(self, **mudancas) -> dict:
         a = {"schema_version": PREPARO.ESQUEMA_ACEITE, "project_id": PROJETO, "versao": 1, "aceito_em": "2026-11-02",
              "vigencia_ate": "2027-01-31", "riscos": list(TITULAR.RISCOS),
-             "canario": TITULAR.resumo_do_relatorio(relatorio_reprovado(), bytes_de(relatorio_reprovado()))}
+             "canario": TITULAR.resumo_do_relatorio(relatorio_completo(), bytes_de(relatorio_completo()))}
         a.update(mudancas)
         return a
 
@@ -177,7 +233,7 @@ class PecasDoAceite(unittest.TestCase):
         self.addCleanup(shutil.rmtree, base, ignore_errors=True)
         arquivo = base / "canario" / "2.1.302.json"
         arquivo.parent.mkdir(parents=True)
-        arquivo.write_bytes(bytes_de(relatorio_reprovado()))
+        arquivo.write_bytes(bytes_de(relatorio_completo()))
         kw = dict(claude_versao="2.1.302", claude_sha256=SHA_CLAUDE, raiz_wsl="/mnt/e/Projeto Exemplo", fs_raiz="9p")
         p = PREPARO.portao_do_canario(base, **kw)
         self.assertFalse(p["aprovado"])
@@ -189,11 +245,82 @@ class PecasDoAceite(unittest.TestCase):
                             ("raiz no ext4", {**kw, "raiz_wsl": "/home/titular/f", "fs_raiz": "ext4"})):
             with self.subTest(nome):
                 self.assertNotIn("reprovado", PREPARO.portao_do_canario(base, **outro))
-        aprovado = relatorio_reprovado(conclusao={**relatorio_reprovado()["conclusao"], "confina_comandos": True})
-        arquivo.write_bytes(bytes_de(aprovado))
+        arquivo.write_bytes(bytes_de(relatorio_completo(aprova=True)))
         p = PREPARO.portao_do_canario(base, **kw)
         self.assertTrue(p["aprovado"])
         self.assertNotIn("reprovado", p)
+        # 1.7.11, N1: o relatório do ensaio anterior (sem as duas sondas novas) segue reprovado, com o mesmo SHA-256 para
+        # o aceite assinado; e, se se diz aprovado, nunca aprova nem vira reprovado.
+        arquivo.write_bytes(bytes_de(relatorio_anterior()))
+        p = PREPARO.portao_do_canario(base, **kw)
+        self.assertFalse(p["aprovado"])
+        self.assertEqual(p["reprovado"]["sha256"], sha(arquivo))
+        arquivo.write_bytes(bytes_de(relatorio_anterior(aprova=True)))
+        p = PREPARO.portao_do_canario(base, **kw)
+        self.assertFalse(p["aprovado"])
+        self.assertNotIn("reprovado", p)
+        self.assertIn("ensaio anterior", p["motivo"])
+
+    def test_o_titular_e_o_portao_concordam_no_que_e_um_relatorio_real(self):
+        """1.7.11, junção do lote B, item 4: a ferramenta do titular (aceitar-risco) e o preparo do host carregam a
+        mesma regra (fundacao/core/canario.py do kit). Para cada relatório que não aprova, o titular monta o aceite
+        exatamente quando o portão, com ele instalado, expõe o `reprovado` a que um aceite se prende; e o titular
+        nunca monta aceite para o que diz aprovar."""
+        regra = TITULAR.regra_do_canario()
+        modulo = PREPARO.modulo_do_canario()
+        self.assertEqual(regra.SONDAS_DO_CANARIO, PREPARO.SONDAS_DO_CANARIO)
+        self.assertEqual(regra.SONDAS_ADIADAS, PREPARO.SONDAS_ADIADAS)
+        self.assertEqual(regra.VEREDITOS_DO_CANARIO, PREPARO.VEREDITOS_DO_CANARIO)
+        self.assertEqual(Path(modulo.__file__).resolve(), (KIT / "fundacao" / "core" / "canario.py").resolve())
+        completo = relatorio_completo()
+        todos = completo["itens"]
+        sem_leitura_state = [i for i in todos if i["id"] != "leitura_state"]
+        casos = {
+            "completo": completo, "anterior": relatorio_anterior(),
+            "incoerente (false com tudo passou)": relatorio_completo(itens=[{**i, "veredito": "passou"} for i in todos]),
+            "conclusão null": relatorio_completo(conclusao={**completo["conclusao"], "confina_comandos": None}),
+            "seis itens": relatorio_de_seis_itens(), "sem o perfil": relatorio_completo(perfil=None),
+            "sem o sandbox": {k: v for k, v in completo.items() if k != "sandbox_ligado"},
+            "falta uma sonda que não é adiada": relatorio_completo(itens=sem_leitura_state),
+            "anterior sem uma sonda que não é adiada": relatorio_anterior(
+                itens=[i for i in relatorio_anterior()["itens"] if i["id"] != "leitura_state"]),
+            "item repetido": relatorio_completo(itens=[*todos, todos[0]]),
+            "id estranho": relatorio_completo(itens=[*todos, {"id": "Item Estranho;rm", "classe": "comando",
+                                                              "veredito": "falhou"}]),
+            "classe trocada": relatorio_completo(itens=[{**todos[0], "classe": "informativo"}, *todos[1:]]),
+            "veredito fora do ensaio": relatorio_completo(itens=[{**todos[0], "veredito": "ok"}, *todos[1:]]),
+            "simulado": relatorio_completo(simulado=True),
+            "outro esquema": relatorio_completo(schema_version="fundacao.ensaio_isolamento_simulado/1")}
+        base = Path(tempfile.mkdtemp(prefix="aceite-concorda-"))
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        arquivo = base / "canario" / "2.1.302.json"
+        arquivo.parent.mkdir(parents=True)
+        kw = dict(claude_versao="2.1.302", claude_sha256=SHA_CLAUDE, raiz_wsl="/mnt/e/Projeto Exemplo", fs_raiz="9p")
+        aceitos = set()
+        for nome, rel in casos.items():
+            with self.subTest(nome):
+                bruto = bytes_de(rel)
+                arquivo.write_bytes(bruto)
+                portao = PREPARO.portao_do_canario(base, **kw)
+                self.assertFalse(portao["aprovado"], nome)
+                try:
+                    TITULAR.resumo_do_relatorio(rel, bruto)
+                    aceita = True
+                    aceitos.add(nome)
+                except TITULAR.Recusa:
+                    aceita = False
+                self.assertEqual(aceita, "reprovado" in portao, f"{nome}: {portao.get('motivo')}")
+        self.assertEqual(aceitos, {"completo", "anterior", "incoerente (false com tudo passou)", "conclusão null"})
+        # o que se diz aprovado: o titular nunca monta o aceite; o portão aprova só o completo e coerente
+        com_falha = [{**i, "veredito": "falhou"} if i["classe"] == "comando" else i for i in todos]
+        for nome, rel in (("completo aprovado", relatorio_completo(aprova=True)),
+                          ("anterior aprovado", relatorio_anterior(aprova=True)),
+                          ("incoerente aprovado", relatorio_completo(aprova=True, itens=com_falha))):
+            with self.subTest(nome):
+                arquivo.write_bytes(bytes_de(rel))
+                with self.assertRaises(TITULAR.Recusa):
+                    TITULAR.resumo_do_relatorio(rel, bytes_de(rel))
+                self.assertEqual(PREPARO.portao_do_canario(base, **kw)["aprovado"], nome == "completo aprovado")
 
     def test_com_canario_sob_o_aceite(self):
         aberta = {**PREPARO.aberturas_fechadas(), "valida": True, "versao": 2, "rede": ["github.com"]}
@@ -241,7 +368,7 @@ class CerimoniaDoAceite(unittest.TestCase):
         self.addCleanup(padrao.stop)
         self.relatorio = self.base / "casa" / "canario-drvfs.json"
         self.relatorio.parent.mkdir()
-        self.relatorio.write_bytes(bytes_de(relatorio_reprovado()))
+        self.relatorio.write_bytes(bytes_de(relatorio_completo()))
         self.caixa = self.raiz / ".claude" / "projetos" / PROJETO / "risco"
         self.perguntas = []
 
@@ -295,6 +422,30 @@ class CerimoniaDoAceite(unittest.TestCase):
         self.assertTrue(r["valido"], r)
         self.assertEqual((r["relatorio_sha256"], r["vigencia_ate"]), (sha(self.relatorio), aceite["vigencia_ate"]))
         self.assertEqual(r["sha256"], hashlib.sha256(bruto).hexdigest())
+
+    def test_aceite_assinado_para_o_relatorio_anterior_continua_valido(self):
+        """1.7.11, N1 (revisão da junção): o aceite que o titular já assinou para o relatório do ensaio da 1.7.10 e da
+        1.7.10.1 (sem as duas sondas novas) segue válido depois do lote B: o relatório continua reprovado, com o mesmo
+        SHA-256, e a ficha abre sob o aceite. O aceite antigo é o que a ferramenta de antes montava (sem as sondas
+        ausentes entre as não medidas); o preparo não recalcula esse campo."""
+        anterior = relatorio_anterior()
+        self.relatorio.write_bytes(bytes_de(anterior))
+        with mock.patch.object(TITULAR.regra_do_canario(), "sondas_ausentes", return_value=[]):
+            codigo, texto = self.aceitar()
+        self.assertEqual(codigo, 0, texto)
+        area = self.base / "area"
+        (area / "canario").mkdir(parents=True)
+        (area / "canario" / "2.1.302.json").write_bytes(self.relatorio.read_bytes())
+        portao = PREPARO.portao_do_canario(area, claude_versao="2.1.302", claude_sha256=SHA_CLAUDE,
+                                           raiz_wsl="/mnt/e/Projeto Exemplo", fs_raiz="9p")
+        self.assertFalse(portao["aprovado"])
+        self.assertEqual(portao["reprovado"]["sha256"], sha(self.relatorio))
+        r = self.conferir(canario=portao)
+        self.assertTrue(r["valido"], r)
+        aberta = {**PREPARO.aberturas_fechadas(), "valida": True, "versao": 2, "rede": ["github.com"]}
+        sob = PREPARO.com_canario(aberta, portao, r)
+        self.assertTrue(sob["valida"])
+        self.assertIn("aceite_risco", sob)
 
     def test_versao_nova_passa_da_maior_vista(self):
         """R17101-ACE-1 e ACE-4: a versão do aceite novo passa da maior que o aceite ASSINADO da caixa de entrada mostra
@@ -352,15 +503,20 @@ class CerimoniaDoAceite(unittest.TestCase):
 
     def test_recusas_antes_de_pedir_a_senha(self):
         aprovado = self.base / "aprovado.json"
-        aprovado.write_bytes(bytes_de(relatorio_reprovado(conclusao={**relatorio_reprovado()["conclusao"],
-                                                                     "confina_comandos": True})))
+        aprovado.write_bytes(bytes_de(relatorio_completo(aprova=True)))
         simulado = self.base / "simulado.json"
-        simulado.write_bytes(bytes_de(relatorio_reprovado(simulado=True)))
+        simulado.write_bytes(bytes_de(relatorio_completo(simulado=True)))
         repetido = self.base / "repetido.json"
         repetido.write_bytes(b'{"schema_version": "x", "schema_version": "fundacao.ensaio_isolamento/1"}')
         na_raiz = self.raiz / "projects" / PROJETO / "canario-drvfs.json"  # onde a sessão grava: nunca vale
         na_raiz.write_bytes(self.relatorio.read_bytes())
+        seis_itens = self.base / "seis-itens.json"  # o formato antigo do teste: o portão nunca o aplicaria
+        seis_itens.write_bytes(bytes_de(relatorio_de_seis_itens()))
+        anterior_aprovado = self.base / "anterior-aprovado.json"  # incompleto que se diz aprovado
+        anterior_aprovado.write_bytes(bytes_de(relatorio_anterior(aprova=True)))
         casos = {"canário aprovado": dict(canario=aprovado), "simulação": dict(canario=simulado),
+                 "formato que o portão não aplica": dict(canario=seis_itens),
+                 "anterior que se diz aprovado": dict(canario=anterior_aprovado),
                  "chave repetida": dict(canario=repetido), "relatório ausente": dict(canario=self.base / "nao.json"),
                  "relatório dentro da raiz": dict(canario=na_raiz),
                  "projeto sem pasta": dict(projeto="lab-a"), "projeto inválido": dict(projeto="Caso Real")}

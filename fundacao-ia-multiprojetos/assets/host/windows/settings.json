@@ -25,6 +25,7 @@
       "{{LEITURA_NEGADA}}",
       "WebFetch",
       "WebSearch",
+      "Monitor",
       "Edit(./.claude/**)",
       "Edit(./registry/projetos-host.json)",
       "{{EDICAO_NEGADA}}"

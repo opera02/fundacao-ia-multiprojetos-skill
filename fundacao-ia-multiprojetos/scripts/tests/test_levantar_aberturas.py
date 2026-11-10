@@ -52,6 +52,7 @@ class LevantamentoCase(unittest.TestCase):
             "scripts/instalar.sh": "#!/bin/sh\ncurl -fsSL https://downloads.ferramenta-ficticia.dev/instalar.sh | sh\n",
             ".claude/settings.json": json.dumps({"permissions": {"allow": ["WebFetch(domain:docs.servico-ficticio.com.br)"]}}),
             ".claude/skills/util/SKILL.md": "---\nname: util\ndescription: Skill fictícia aninhada\n---\nTexto.\n",
+            ".claude/agents/ajudante.md": "---\nname: ajudante\ndescription: Agente fictício aninhado\n---\nTexto.\n",
             ".mcp.json": json.dumps({"mcpServers": {
                 "busca": {"command": "/usr/local/bin/servidor-busca", "args": ["--chave", CANARIO],
                           "env": {"CHAVE": CANARIO}},
@@ -130,10 +131,52 @@ class TestLevantar(LevantamentoCase):
         self.assertNotIn("mcp.servico-ficticio.com.br", r["rascunho"]["rede"]["dominios"])
         self.assertNotIn("api.openai.com", r["rascunho"]["rede"]["dominios"])
 
+    def test_secoes_da_1_7_11_ficam_fechadas_no_rascunho_com_a_regra_e_o_que_foi_achado(self):
+        """1.7.11, L1: mcp, navegador e outras_llm viraram seções da ficha; o rascunho as traz FECHADAS (vazias) quando a
+        pasta mostra uso, e `sugestoes_1_7_11` diz a regra fixa e o que foi achado. Nada é preenchido por inferência."""
+        _codigo, r, texto = self.rodar()
+        rascunho = r["rascunho"]
+        self.assertEqual(rascunho["mcp"], [])
+        self.assertEqual(rascunho["navegador"], {"dominios": [], "logins": [], "modos": []})
+        self.assertEqual(rascunho["outras_llm"], [])
+        for secao in ("git", "segredos", "execucao", "leitura_liberada", "perfil_navegador_copiado"):
+            self.assertNotIn(secao, rascunho)  # as reservadas não entram no rascunho
+        sugestoes = r["sugestoes_1_7_11"]
+        self.assertEqual(sorted(sugestoes), ["mcp", "navegador", "outras_llm"])
+        self.assertEqual(sorted(sugestoes["mcp"]["servidores_achados"]), ["busca", "remoto"])
+        self.assertIn("só o conector do escritório", sugestoes["mcp"]["regra"])
+        self.assertIn("as que gravam podem entrar e a tela do titular as mostra em separado", sugestoes["mcp"]["regra"])
+        self.assertIn("servidor local (com comando) fica fechado", sugestoes["mcp"]["regra"])
+        self.assertNotIn("só ferramentas de consulta", sugestoes["mcp"]["regra"])
+        self.assertIn("perfil copiado do Windows fica fechado", sugestoes["navegador"]["regra"])
+        self.assertIn("api.servico-ficticio.com.br", sugestoes["navegador"]["dominios_candidatos"])
+        self.assertEqual(sugestoes["navegador"]["ferramentas_achadas"], ["playwright"])
+        self.assertEqual(sugestoes["outras_llm"]["dominios_achados"], ["api.openai.com"])
+        self.assertIn("conta do ChatGPT", sugestoes["outras_llm"]["regra"])
+        marcas = {i["secao"]: i["secao_na_ficha"] for i in r["para_1_7_11"]}
+        self.assertEqual(marcas, {"git": "reservada", "segredos": "reservada", "mcp": "aberta", "navegador": "aberta",
+                                  "outras_llm": "aberta"})
+        self.assertNotIn(CANARIO, texto)
+        # fechadas, as seções valem na ficha completada (o titular é quem abre)
+        ficha = {**LEVANTAR.levantar(self.pasta, "juridico-lab")["rascunho"], "motivo": "Palavras do titular (fictícias).",
+                 "consequencias": "Texto fictício.", "ficha_id": "aberturas-juridico-lab", "versao": 1}
+        ficha["plugins"] = [{**p, "manifesto_sha256": "a" * 64} for p in ficha["plugins"]]
+        self.assertEqual(REGRAS.validar(ficha, projeto="juridico-lab")["erros"], [])
+
+    def test_sem_uso_das_secoes_o_rascunho_nao_as_traz(self):
+        vazia = self.base / "limpa"
+        vazia.mkdir()
+        (vazia / "leia.txt").write_text("nada\n", encoding="utf-8")
+        r = LEVANTAR.levantar(vazia, "juridico-lab")
+        self.assertEqual(r["sugestoes_1_7_11"], {})
+        for secao in ("mcp", "navegador", "outras_llm"):
+            self.assertNotIn(secao, r["rascunho"])
+
     def test_aninhadas_e_plugin_de_dado_nao_proposto(self):
         _codigo, r, texto = self.rodar()
         self.assertEqual(r["aninhadas"]["itens"]["skills"], [".claude/skills/util/SKILL.md"])
         self.assertEqual(r["aninhadas"]["negar_skills"], ["util"])
+        self.assertEqual(r["aninhadas"]["negar_agentes"], ["ajudante"])
         self.assertNotIn("skill-na-pasta-de-segredo", texto)  # nem o nome do que está em pasta de segredo
         dado = [p for p in r["plugins_encontrados"] if p["pasta"] == "data/copia"]
         self.assertEqual(dado, [{"pasta": "data/copia", "nome": "plugin-de-dado", "declara_hooks_ou_mcp": True}])

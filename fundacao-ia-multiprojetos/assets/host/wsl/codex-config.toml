@@ -1,0 +1,70 @@
+# Configuracao IMPOSTA do Codex dentro da jaula do Criador (1.7.11, lote L6; DESENHO-JAULA 6.2).
+# Modelo de dono root: a entrada fixa (jaula.py) troca os dois marcadores entre chaves duplas abaixo e o monta SO LEITURA em
+# $CODEX_HOME/config.toml; o Codex nao o regrava e a sessao nao o escolhe. As chaves e os valores sao os do esquema da
+# versao fixada em pins-codex.json (codex-rs/core/config.schema.json na etiqueta rust-v0.166.0; ver
+# analise/FONTE-CODEX-20261108.md). O Codex roda com --strict-config: nome de chave errado FALHA, nao e ignorado.
+# M7 NAO FOI MEDIDA: o sandbox proprio do Codex entra ligado e sem rede (a opcao mais segura); so o relatorio do canario
+# instalado (dono root) o troca por danger-full-access, e entao a jaula e a unica fronteira dos comandos.
+
+# never no exec (sem humano para aprovar); on-request na TUI do titular.
+approval_policy = "{{APROVACAO}}"
+sandbox_mode = "{{SANDBOX}}"
+
+# Nada de busca na web, de verificacao de atualizacao, de AGENTS.md do projeto (as instrucoes vao no pedido) nem de shell de login.
+web_search = "disabled"
+check_for_update_on_startup = false
+project_doc_max_bytes = 0
+allow_login_shell = false
+
+# A credencial fica em arquivo 0600 do CODEX_HOME privado do usuario da jaula.
+cli_auth_credentials_store = "file"
+
+[sandbox_workspace_write]
+network_access = false
+writable_roots = []
+
+# Os comandos do Codex nao herdam o ambiente da jaula, so o basico, e as exclusoes padrao de *KEY*, *TOKEN* e *SECRET* valem.
+[shell_environment_policy]
+inherit = "core"
+ignore_default_excludes = false
+
+# Sem telemetria, sem relato de uso, sem historico no disco.
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[otel]
+exporter = "none"
+metrics_exporter = "none"
+trace_exporter = "none"
+
+[history]
+persistence = "none"
+
+# A pasta de saida e nova a cada pedido: confianca "untrusted" nao carrega .codex/ nem regras do projeto e evita a pergunta de confianca.
+[projects."/trabalho/saida"]
+trust_level = "untrusted"
+
+# Nenhum servidor MCP (nao ha secao mcp_servers), e fora o que abriria porta, conector, plugin ou gancho.
+[features]
+apps = false
+connectors = false
+plugins = false
+plugin_hooks = false
+remote_plugin = false
+hooks = false
+codex_hooks = false
+memories = false
+memory_tool = false
+remote_control = false
+daemon_auto_start = false
+multi_agent = false
+image_generation = false
+js_repl = false
+web_search = false
+in_app_browser = false
+browser_use = false
+computer_use = false
+tool_suggest = false

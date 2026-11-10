@@ -101,7 +101,8 @@ troca, mas não protege a pasta (isolamento lógico, `../seguranca-isolamento.md
   mecanismo e não entram no pacote [Livro p174]. **No kit não é assim** [Decisão; 1.7.10]: o `.env` fica fora, mas o
   arquivo com cara de segredo (nome forte ou pasta de segredo da regra única) entra como está, sem ser lido, e é
   contado em `segredos_incluidos`; o manifesto diz isso e diz que a cópia não é cifrada. Guarde a cópia como guarda a
-  fundação. Tirar os segredos da cópia ou cifrá-la é decisão do titular.
+  fundação. Tirar os segredos da cópia ou cifrá-la é decisão do titular; desde a 1.7.11, com a chave da cópia
+  instalada, ela sai cifrada (§ "Cópia cifrada", abaixo).
 - RPO (perda máxima tolerada) e RTO (tempo para recuperar) definidos antes; depois,
   medidos (exemplo hipotético: snapshot 10h, falha 10h20, utilizável 11h05 → janela
   de perda 20 min, recuperação 45 min) [Livro p174].
@@ -248,6 +249,46 @@ troca, mas não protege a pasta (isolamento lógico, `../seguranca-isolamento.md
   `assets/hooks/aviso_copia.py` lê só esse registro e, sem cópia ou com a última passando de 7 dias, lembra no início
   da sessão, com o mesmo comando. É lembrete, não prova: quem grava `registry/` forja o registro; a prova é o
   `backup verificar` com o `sha256_manifesto` guardado fora da cópia.
+- **Cópia cifrada** [Decisão; 1.7.11; DECISAO-010, item 7: "senha que só o titular sabe"]. Perdida a senha ou a chave
+  privada, ninguém abre as cópias dessa chave (nem o kit, nem o coordenador, nem a Anthropic); o titular aceitou isso.
+  - **Mecanismo.** GnuPG por caminho fixo (o do Git para Windows em `Program Files`; no Ubuntu, `/usr/bin/gpg`; versão
+    2.4 ou mais, anotada no manifesto; um `gpg` posto antes no PATH não vale). A chave **pública** da cópia fica na
+    âncora protegida, ao lado do `allowed_signers` (`chave-da-copia.asc`; só administrador grava), instalada pelo
+    `preparar-maquina.ps1 -ChaveDaCopia` no UAC; é a presença dela que liga a cifra, porque `registry/` a sessão grava.
+    O `backup criar` só usa a pública, então roda sem a senha. Formato **SEIPD v1 (pacote 18, com MDC) e AES-256**, sem
+    compressão, e não OCB: o `gpg` 2.4.9 do Git não tem OCB (medido em 08/11/2026). O MDC só confere no fim, e o
+    `gpg --decrypt` entrega o claro antes de conferi-lo (saída 2): só vale o que saiu com código 0, e a **parte** é a
+    unidade que se descarta.
+  - **Formato** (`tar-pax+openpgp-seipd`). A pasta da cópia (`manifest.json`, `files/`, `state/state.sqlite`) vira
+    partes independentes de cerca de 1 GiB (`parte-001.gpg`, …; um arquivo nunca se divide), mais `parte-final.gpg`
+    (o banco e o manifesto interno), `manifesto-cifrado.json` (em claro, sem nome de arquivo: destinatário, tamanho e
+    SHA-256 de cada parte) e `LEIA-ME.txt` (o roteiro à mão, sem segredo). Um setor ruim no disco perde uma parte, não a
+    cópia. A âncora é o SHA-256 do manifesto externo (`sha256_manifesto`); o do manifesto interno
+    (`sha256_manifesto_interno`) é o de hoje, e o livro anota `cifrada: true` e o destinatário.
+  - **`backup criar`.** Copia em claro para um preparo local no disco interno (`--preparo-local`; recusa com pouco
+    espaço), confere, cifra para o destino, roda o `verificar` sem senha e apaga o preparo (a sobra é contada). Chave
+    instalada e não protegida recusa sem gravar nada; `--sem-cifra "<motivo>"` grava em claro, com o motivo no livro e o
+    aviso `W_COPIA_EM_CLARO`. `backup cifrar --origem <cópia em claro conferida> --destino <nova>` converte uma cópia
+    antiga. No `aplicar` do atualizador, as cópias ANTES e DEPOIS saem cifradas, e o ensaio restaura do preparo local
+    (`--pasta-ensaio` passa a ser local, para não deixar raiz em claro no disco das cópias).
+  - **Conferir sem a senha** (o coordenador): `backup verificar` vê âncora, tamanho, SHA-256 e destinatário de cada
+    parte (cabeçalho OpenPGP) e responde `conteudo_conferido: false`. Só a senha prova que as partes decifram e que o
+    conteúdo bate. `backup restaurar` com origem cifrada recusa e diz o comando do `decifrar-copia`.
+  - **Pelo titular** (ferramenta fixa `assets/host/fundacao_titular.py`, no terminal dele; a senha vai só na janela do
+    `pinentry`, e o agente do `gpg` é encerrado no fim): `preparar-chave-copia --raiz <raiz> --guardar-em <pasta fora da
+    raiz e do disco das cópias>` (uma vez; cria o chaveiro dedicado, mostra a impressão digital para o papel e grava a
+    chave privada protegida); `conferir-copia --origem <pasta>` (uma vez por mês: decifra em fluxo, confere cada arquivo
+    contra o manifesto interno sem gravá-lo e registra o resultado, sem conteúdo, em `conferencias-copia.jsonl`; passados
+    35 dias o `backup situacao` avisa `W_CONTEUDO_NAO_CONFERIDO`); `decifrar-copia --origem <pasta> --destino <pasta nova> --sha256-manifesto <código do papel>`
+    (a âncora é o código que o titular guardou fora: o livro `state/copias.jsonl`, que a sessão grava, não basta nem sozinho;
+    sem o código só com `--aceitar-sem-ancora`, escolha dele; restauração de verdade; a pasta decifrada está em claro, e apagá-la é do titular). Guarde a chave protegida em três
+    lugares, nenhum no disco das cópias; a senha, só no papel. A chave da cópia pede UAC próprio, além do da âncora.
+  - **Limites que ficam** (registre sempre): a cifra não prova a origem (quem tem a chave pública monta outra cópia
+    válida; quem prova é a âncora guardada fora); o GnuPG protege a chave com S2K sem Argon2, então a senha é longa
+    (seis palavras sem relação); o preparo local passa em claro pelo disco interno; a raiz viva continua em claro no
+    disco dela; as cópias em claro antigas ficam até o titular aposentá-las, e apagar não limpa um disco rígido. Chave
+    nova: as cópias da antiga aparecem com `destinatario` diferente, como aviso. Tempos e espaço da cópia cifrada na
+    máquina real: não medidos (o desenho os estima).
 - **Trava de manutenção** [Decisão; 1.7.10]: `state/manutencao.json` existe do começo ao fim do `backup criar`, também
   na falha, e do `aplicar` da atualização; o lançador do Ubuntu não abre sessão com ela. Trava que já existia não é
   trocada nem removida por quem não a criou. O `backup criar` devolve um resumo; a lista de arquivos, só com

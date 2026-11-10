@@ -41,6 +41,10 @@ chamador acabou de fazer (o `git_projeto.py montar`, com `listar(..., git_da_rai
 registro; a da origem do B1, a da pasta do projeto e as aninhadas podem trazer CLAUDE.md e `.claude/skills` (FLUXB-F3,
 revisão 2). O `__pycache__` deixou de ser pulado: é pequeno, e pulá-lo deixaria uma lacuna em todo projeto Python
 (FLUXB-F3, revisão 1 da correção).
+Agentes (`.claude/agents/*.md`, 1.7.11): o mesmo vale para o `name` do frontmatter e para o nome do arquivo (sem o
+`.md`), que o host usa como tipo do subagente; as negações sugeridas (`sugestoes.negar_agentes`, para o
+`preparo_host.py ... --negar-agente`) trazem os dois; nome fora do padrão ou incerto vai para `agentes_fora_do_padrao`
+e o ARQUIVO para `neutralizar`.
 Código 0 quando leu tudo e todos os nomes cabem no padrão; 1 quando o inventário ficou parcial (ligação não seguida,
 teto, arquivo ou pasta não lida ou pulada — o resultado diz o quê) ou há nome fora do padrão ou incerto (para o B1
 registrar a lacuna); 2 se a pasta não existe.
@@ -302,6 +306,32 @@ def nomes_para_o_host(skills: list) -> tuple[list[str], list[dict], list[str]]:
     return sorted(validos), sorted(fora, key=lambda i: (i["pasta"], i["nome"] or "")), sorted(neutralizar)
 
 
+def nomes_de_agentes(agentes: list) -> tuple[list[str], list[dict], list[str]]:
+    """Como `nomes_para_o_host`, para os agentes (`.claude/agents/<x>.md`): os nomes que o preparo aceita negar (o
+    `name` do frontmatter e o nome do arquivo, sem o `.md`, cada um quando válido), os fora do padrão ou incertos (com o
+    arquivo e o motivo) e os ARQUIVOS a neutralizar na cópia. Arquivo que não termina em `.md` não é agente do host."""
+    validos, fora, neutralizar = set(), [], set()
+    for a in agentes:
+        if "nome" not in a:
+            continue
+        arquivo = a["caminho"]
+        do_arquivo = arquivo.rpartition("/")[2][:-len(".md")]
+        arquivo_valido = motivo_do_nome(do_arquivo) is None
+        if arquivo_valido:
+            validos.add(do_arquivo)
+        nome = a["nome"]
+        motivo = f"nome incerto: {a.get('nome_incerto') or NOME_INCERTO}" if nome is None else motivo_do_nome(nome)
+        if motivo is None:
+            validos.add(nome)
+            continue
+        item = {"nome": nome, "arquivo": arquivo, "motivo": motivo}
+        if arquivo_valido:
+            item["negar_pelo_arquivo"] = do_arquivo
+        fora.append(item)
+        neutralizar.add(arquivo)
+    return sorted(validos), sorted(fora, key=lambda i: (i["arquivo"], i["nome"] or "")), sorted(neutralizar)
+
+
 def classificar(partes: tuple[str, ...]) -> str | None:
     """O tipo do arquivo (pelos componentes do caminho relativo), com os nomes comparados pela regra única, sem caixa;
     cada `.claude` do caminho conta, da mais interna para fora (revisão de segurança da 1.7.10, FLUXB-F3)."""
@@ -360,13 +390,21 @@ def listar(raiz: Path, git_da_raiz_confiavel: bool = False) -> dict:
             item["nome"] = nome_da_skill(inicio, p.parent.name) if lido else None
             if item["nome"] is None:
                 item["nome_incerto"] = NOME_INCERTO if lido else NOME_NAO_LIDO
+        if tipo == "agents" and REGRAS.normalizar(p.name).endswith(".md"):  # 1.7.11: o tipo do subagente
+            lido = item["sha256"] is not None or len(inicio) >= INICIO
+            item["nome"] = nome_da_skill(inicio, p.name[:-len(".md")]) if lido else None
+            if item["nome"] is None:
+                item["nome_incerto"] = NOME_INCERTO if lido else NOME_NAO_LIDO
         achados[tipo].append(item)
     nomes, fora_do_padrao, neutralizar = nomes_para_o_host(achados["skills"])
+    agentes, agentes_fora, arquivos_a_neutralizar = nomes_de_agentes(achados["agents"])
     completo = not (situacao["ligacoes"] or situacao["nao_lidos"] or situacao["limites"])
     return {"raiz": str(raiz), "encontrados": sum(len(v) for v in achados.values()), "itens": achados,
             "sugestoes": {"claudeMdExcludes": [EXCLUSAO_DE_DADOS], "negar_skills": nomes,
-                          "negacoes": [f"Skill({n})" for n in nomes]},
-            "nomes_fora_do_padrao": fora_do_padrao, "neutralizar": neutralizar,
+                          "negacoes": [f"Skill({n})" for n in nomes], "negar_agentes": agentes,
+                          "negacoes_agentes": [f"Agent({n})" for n in agentes]},
+            "nomes_fora_do_padrao": fora_do_padrao, "agentes_fora_do_padrao": agentes_fora,
+            "neutralizar": sorted({*neutralizar, *arquivos_a_neutralizar}),
             "completo": completo, "ligacoes_nao_seguidas": situacao["ligacoes"], "nao_lidos": situacao["nao_lidos"],
             "limites_atingidos": sorted(situacao["limites"]),
             "tetos": {"itens": TETO_ITENS, "profundidade": TETO_PROFUNDIDADE, "bytes_por_arquivo": TETO_ARQUIVO,
@@ -379,7 +417,9 @@ def listar(raiz: Path, git_da_raiz_confiavel: bool = False) -> dict:
                           "de skill fora do padrão do preparo do host ou incerto (nomes_fora_do_padrao) não vai para "
                           "--negar-skill: neutralize a pasta na cópia (neutralizar; o importar.py faz isso com "
                           ".claude/skills por padrão) e registre a lacuna no B1. As negações sugeridas trazem também o "
-                          "nome da pasta de cada skill, que o host usa quando o frontmatter não tem nome."}
+                          "nome da pasta de cada skill, que o host usa quando o frontmatter não tem nome. O mesmo vale "
+                          "para os agentes (agentes_fora_do_padrao e --negar-agente): o arquivo do agente com nome "
+                          "fora do padrão entra em neutralizar."}
 
 
 def main(argv: list | None = None) -> int:
@@ -398,7 +438,7 @@ def main(argv: list | None = None) -> int:
         args.saida.parent.mkdir(parents=True, exist_ok=True)
         args.saida.write_text(texto + "\n", encoding="utf-8")
     print(texto)
-    return 0 if res["completo"] and not res["nomes_fora_do_padrao"] else 1
+    return 0 if res["completo"] and not res["nomes_fora_do_padrao"] and not res["agentes_fora_do_padrao"] else 1
 
 
 if __name__ == "__main__":

@@ -26,14 +26,21 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
         rodada: [1, 2, 3, 4, 5]
-    runs-on: ${{ matrix.os }}
+    # 1.7.11: o rótulo ubuntu-latest passou a cair no Ubuntu 26.04 (execução 42581482198), e o actions/python-versions não
+    # tem o Python 3.12.10 (o pin certificado do Windows, pins-python.json) para o 26.04: o setup-python falhava com
+    # "The version '3.12.10' with architecture 'x64' was not found for Ubuntu 26.04". A matriz e o nome do trabalho
+    # continuam com ubuntu-latest (o test_ci_publica lê o valor da matriz e o nome dos trabalhos não muda); só a imagem do Linux é fixada no 24.04,
+    # em que o 3.12.10 existe e para o qual o ajuste do AppArmor abaixo foi escrito.
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu-24.04' || matrix.os }}
     # 1.7.10: o Windows já levava até 33 min de 45 e a versão acrescenta suítes; o liberar.py espera 75 min (ESPERA_CI).
     timeout-minutes: 75
     env:
       PYTHONUTF8: "1"
       PYTHONDONTWRITEBYTECODE: "1"
       # Só no Ubuntu: a sentinela (scripts/tests/test_sentinela_ci.py) exige bubblewrap e socat e uma caixa que abre,
-      # para os testes da caixa não passarem pulados em silêncio (crítica do desenho da 1.7.10).
+      # para os testes da caixa não passarem pulados em silêncio (crítica do desenho da 1.7.10). Desde a revisão de
+      # segurança da 1.7.10 (CI-F6), ela sonda a mesma caixa que os testes sondam (execucao_isolada.sondar_bwrap e a
+      # montagem por descritor do perfil), e os testes da caixa falham em vez de pular.
       FUNDACAO_CI_EXIGE_BWRAP: ${{ matrix.os == 'ubuntu-latest' && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -51,7 +58,9 @@ jobs:
           sudo apt-get install -y -q bubblewrap socat
           # Ubuntu 24.04: o AppArmor restringe o namespace de usuário sem privilégio, de que o bubblewrap precisa.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          bwrap --ro-bind / / --dev /dev --proc /proc true
+          # A caixa dos testes, pela sentinela, que usa a mesma sondagem deles (--unshare-all e as montagens do plano)
+          # e não uma caixa simples: falha aqui, cedo e com o motivo (revisão de segurança da 1.7.10, CI-F6).
+          python -B -m unittest discover -s fundacao-ia-multiprojetos/scripts/tests -p test_sentinela_ci.py -v
       - name: suíte do kit
         working-directory: fundacao-ia-multiprojetos/assets/fundacao-kit
         run: python -B -m unittest discover -s tests

@@ -704,7 +704,7 @@ class PrepararProjeto(_Base):
         registro = self.raiz / "registry" / "projetos-host.json"
         dados = json.loads(registro.read_text(encoding="utf-8"))
         dados["projetos"]["lab-a"] = {"origens": ["/home/ensaio/origem-lab"], "somente_leitura": [vista_do_wsl],
-                                      "aninhadas_negadas": []}
+                                      "aninhadas_negadas": [], "agentes_negados": []}
         registro.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
         p, _rel = self.rodar("-SemUAC", "-Projeto", "caso-real")  # o preparar-maquina.ps1, sem -SomenteLeitura
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
@@ -786,13 +786,15 @@ class PrepararProjeto(_Base):
         sub.mkdir()
         p, rel = self.rodar("-SemUAC", "-SomenteLeitura", f"{self.origem},{sub}", "-NegarSkill", "squad-aninhada")
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
-        self.assertEqual(rel["negacoes_fora_do_registro"], {"somente_leitura": [], "negar_skill": []})
+        self.assertEqual(rel["negacoes_fora_do_registro"], {"somente_leitura": [], "negar_skill": [],
+                                                        "negar_agente": []})
         self.assertFalse([x for x in rel["pendencias"] if "linha de comando" in x], rel["pendencias"])
         solta = self.base / "Leitura Solta"
         solta.mkdir()
         p, rel = self.rodar("-SemUAC", "-SomenteLeitura", str(solta), "-NegarSkill", "squad-aninhada,squad-solta")
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
-        self.assertEqual(rel["negacoes_fora_do_registro"], {"somente_leitura": [str(solta)], "negar_skill": ["squad-solta"]})
+        self.assertEqual(rel["negacoes_fora_do_registro"], {"somente_leitura": [str(solta)], "negar_skill": ["squad-solta"],
+                                                        "negar_agente": []})
         pendencias = [x for x in rel["pendencias"] if "linha de comando" in x]
         self.assertEqual(len(pendencias), 1, rel["pendencias"])
         for trecho in (str(solta), "-NegarSkill squad-solta", "preparar-projeto.ps1", "registrar-projeto", "por último"):
@@ -945,7 +947,7 @@ class PrepararProjeto(_Base):
         registro = self.raiz / "registry" / "projetos-host.json"
         dados = json.loads(registro.read_text(encoding="utf-8"))
         dados["projetos"]["lab-a"] = {"origens": ["/home/ensaio/origem-lab"], "somente_leitura": [],
-                                      "aninhadas_negadas": []}
+                                      "aninhadas_negadas": [], "agentes_negados": []}
         registro.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
         p, rel = self.projeto("-SemUAC")
         self.assertEqual(p.returncode, 3, p.stdout + p.stderr)

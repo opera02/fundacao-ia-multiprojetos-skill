@@ -99,6 +99,26 @@ do Ubuntu e a ferramenta do titular, com o aceite de risco do canário ([correç
 `guarda_ferramentas.py` muda: depois da liberação, o titular roda o `preparar-maquina.ps1` e o `preparar-wsl.sh` com
 todos os projetos, porque o lançador de cada um confere os hooks da raiz ([correção 1.7.10.2](atualizacao-1.7.10.2.md)).
 
+**Na 1.7.11** (skill nova, kit novo: `canario.py` e o banco ganharam arquivos, então o `kit_sha256` e a versão do kit
+mudam) [Decisão; 1.7.11]:
+- o `aplicar` decide a cifra pela chave pública da cópia na âncora protegida (capacidade 11, "Cópia cifrada"): com ela
+  instalada e protegida, as cópias ANTES e DEPOIS saem cifradas e o ensaio restaura de um preparo local em claro no
+  disco interno, apagado no fim; com a chave instalada e não protegida, o `checar` recusa; `--sem-cifra "<motivo>"`
+  mantém as cópias em claro. Sem a chave instalada, tudo como na 1.7.10. O pico de espaço no disco interno chega a
+  cerca de três cópias (o desenho estima 30 GB para 10 GB de fundação, não medido): confira o espaço livre antes, e o
+  `backup criar` recusa com pouco espaço;
+- depois do `aplicar`, os passos do titular crescem: reinstalar a cópia protegida da ferramenta dele pelo preparo da
+  máquina (ela passa a incluir o `canario.py`; a da 1.7.10.x roda o código antigo); rodar o canário novo no Ubuntu (o
+  relatório antigo que se dizia aprovado deixa de aprovar; o reprovado segue valendo sob o aceite de risco); refazer o
+  preparo de cada projeto (perfis antigos falham a conferência até lá: o lançador agora também pede o executor das
+  skills, a lista de agentes e a de ferramentas MCP); criar a chave da cópia cifrada (`preparar-chave-copia`, com UAC
+  próprio) e guardar a senha fora do computador; e, para o Criador, assinar a ficha nova (MCP do escritório com todas as
+  ferramentas, navegador, Codex, domínios) e dizer o plano do ChatGPT (`r55.plano`), que a resposta de 08/11/2026 não
+  trouxe;
+- o que não é do `aplicar`: a jaula, o navegador e o Codex só abrem com a ficha assinada, o canário da jaula aprovado
+  e o preparo do titular (`references/seguranca-isolamento.md` §8.7); a regra de código enxuto, desligada por padrão,
+  só liga pelo campo `regras_codigo` do `projeto.json` (`references/codigo-enxuto.md`).
+
 **Na 1.7.10, o `aplicar` faz também** [Decisão; 1.7.10] (compatibilidade, o que muda e o que o `desfazer` não volta:
 [atualização para a 1.7.10](atualizacao-1.7.10.md)):
 - recusa com o WSL ligado, no começo e antes da restauração do ensaio, sem alterar nada, porque o banco não abre pelos
@@ -257,7 +277,7 @@ da fundação — `docs/`, `evidence/`, `ferramentas/`, `tests/` e `RETOMADA.md`
 `registry/backup_policy.json` (`{"incluir": [...]}`). Ficam fora o `.env` e o reconstruível (`__pycache__`, `.venv`,
 `node_modules` e, desde a 1.7.10, `.cache`); o `.git` só entra dentro dos projetos, sem ganchos nem configuração com
 credencial ou programa; o arquivo com cara de segredo entra como está, sem ser lido, contado em `segredos_incluidos`,
-e a cópia não é cifrada (capacidade 11). O `backup criar` e o `backup restaurar` recusam destino dentro da raiz
+e, sem a chave da cópia instalada (1.7.11), a cópia não é cifrada (capacidade 11). O `backup criar` e o `backup restaurar` recusam destino dentro da raiz
 (inclusive `<raiz>/copias`): guarde e restaure fora dela, de preferência em outro disco. No desastre, rode o
 `backup restaurar` com `--raiz` na raiz danificada, para o kit poder recusar destino dentro dela. A política compara
 `state/` e `.git` sem caixa e pelo caminho resolvido (`State`, `STATE`, `state.`, `.` e ligação no meio recusam) antes
@@ -273,6 +293,16 @@ titular roda de novo o `assets/host/windows/preparar-maquina.ps1` com `-Backups`
 perfil das sessões do Windows nega a leitura e a edição delas; com a cópia registrada, os scripts do Windows recusam o
 `-SemBackups` e trazem a pasta no comando pronto (fluxo A §Host). A sobra de um preparo que falhou
 (`W_SOBRA_DO_PREPARO`) é contada, nunca apagada em silêncio: apagá-la é do titular, depois de conferir.
+Cópia cifrada [Decisão; 1.7.11; capacidade 11]: com a chave pública da cópia na âncora protegida, o `backup criar` cifra
+(partes `.gpg`, formato SEIPD v1 com AES-256) e devolve também `sha256_manifesto_interno`; o `backup verificar` confere
+âncora, partes e destinatário sem a senha e responde `conteudo_conferido: false`; o `backup restaurar` recusa a origem
+cifrada e mostra o comando do `decifrar-copia`. Uma vez por mês, o titular roda o `conferir-copia` (senha na janela do
+GnuPG, uns 5 minutos; o `backup situacao` traz o comando pronto e avisa `W_CONTEUDO_NAO_CONFERIDO` passados 35 dias).
+Na restauração de verdade: `decifrar-copia --origem <cópia> --destino <pasta nova> --sha256-manifesto <código do papel>` pelo titular (o livro de
+cópias da raiz não ancora sozinho; sem o código, só `--aceitar-sem-ancora`), e depois o `backup
+restaurar` de sempre com `--origem <pasta decifrada>` e `--sha256-manifesto <sha256_manifesto_interno>`; a pasta
+decifrada está em claro, e apagá-la é do titular. Cópia cifrada de uma chave perdida não se recupera: refaça a chave,
+faça uma cópia nova e só então aposente as da chave velha.
 Âncora da cópia [varredura da 1.4.5, #8]: o `backup criar` devolve `sha256_manifesto` e o anota em
 `state/copias.jsonl`, ao lado do registro protegido; guarde o código fora da pasta da cópia e o
 livro junto do registro. A restauração confere a cópia por ele (`--sha256-manifesto` ou o livro ao
@@ -398,7 +428,10 @@ continuam assinadas pelo titular.
   `conhecimento listar|buscar`; `memoria licao propor|consultar|pendente`. Nunca `init`, `projeto`, `acl`,
   `componente`, `backup`, `copia-assinatura`, `rota`, aprovar, curar, `--raiz` ou `--ancora`. Na 1.7.10, nem `eventos`
   nem `memoria licao historico` (voltam na 1.7.11, restritos ao projeto), e nenhum caso pelo serviço (abrir por caso é
-  decisão do titular). `git-enviar`, `executar` e `rodar`: 1.7.11.
+  decisão do titular). `git-enviar`, `executar` e `rodar` seguem fechados (a caixa `rodar` ficou para a 1.7.12). Na 1.7.11
+  a sessão abre com o modo sem perguntas disponível e desligado (`--allow-dangerously-skip-permissions`; o titular o liga
+  com Shift+Tab, sem aceite assinado, DECISAO-010): as regras de negação, os hooks e o sandbox onde ele confina valem
+  nesse modo, e a sessão não mostra o comando antes de rodar.
 - Recusa do porteiro: código 2, com `E_PORTEIRO` e o motivo. "não rodou; repita": o pedido esperou mais de 15 s na
   fila e na vez do banco e não rodou; repetir é seguro. "pode ter rodado: confira o efeito antes de repetir": o cliente
   desistiu depois de o porteiro tirar o pedido da fila; repetir às cegas pode fazer em dobro. Cada pedido tem até 100 s
@@ -444,7 +477,10 @@ continuam assinadas pelo titular.
 grava o marcador (lado `ubuntu`) do começo ao fim da sessão do projeto, renova-o a cada 30 s e o tira ao sair. O kit do
 Windows recusa abrir o banco com o marcador do outro lado, vivo, velho ou ilegível (`E_BANCO_TRAVADO`, código 2):
 feche as sessões do Ubuntu antes de operar a fundação pelo Windows. `python -m fundacao banco situacao` mostra o
-marcador sem abrir o banco. Marcador velho (sem renovação há mais de 120 s, como o de um Ubuntu desligado à força) não
-sai sozinho: o titular, com as sessões do Ubuntu fechadas, roda `python -m fundacao banco destravar --confirmar`, que
-recusa o marcador ainda vivo. Limite: os comandos curtos do Windows não gravam marcador (a trava de manutenção cobre a
+marcador sem abrir o banco e diz se alguma distribuição do WSL está em execução. Marcador velho (sem renovação há mais
+de 120 s, como o de um Ubuntu desligado à força) sai sozinho, na abertura do banco para escrita, só se for do Ubuntu,
+deste computador e NENHUMA distribuição do WSL estiver em execução (`wsl.exe -l --running -q`); o evento
+`banco_marcador_velho_liberado` fica no histórico e um aviso sai no stderr. Em qualquer dúvida (WSL ligado, `wsl.exe`
+ausente ou com erro, outro host, marcador recente ou ilegível) não sai: o titular, com as sessões do Ubuntu fechadas,
+roda `python -m fundacao banco destravar --confirmar`, que recusa o marcador ainda vivo. Limite: os comandos curtos do Windows não gravam marcador (a trava de manutenção cobre a
 cópia e a atualização), e quem grava `state/` forja ou apaga o marcador: é guarda-corpo contra o engano, não barreira.

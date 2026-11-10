@@ -35,8 +35,18 @@ O que faz, nesta ordem, conferindo antes o que já existe (rodar de novo não re
     mesma ACL de administrador; depois, a sondagem desta conta confere que ela não altera a cópia. Só um Python instalado
     para todos os usuários é registrado: com o Python por usuário (em AppData), a forma do Windows de assinar a ficha
     fica pendente, com o motivo, e vale a do Ubuntu (wsl.exe -e /usr/bin/python3, cópia do preparar-wsl.sh).
+ 2c. Chave pública da cópia de segurança CIFRADA (1.7.11, -ChaveDaCopia <arquivo .asc>, o que o `preparar-chave-copia` da
+    ferramenta do titular gravou) em -AncoraChaveCopia (padrão C:\ProgramData\FundacaoIA\confianca\chave-da-copia.asc), na
+    mesma pasta e com a mesma ACL de administrador da âncora (pastas com dono Administradores e herança cortada, arquivo
+    herdando da pasta): a PRESENÇA dela, protegida, é o que liga a cifra do `backup criar` do kit. O arquivo é conferido
+    ANTES do UAC (uma chave pública OpenPGP, até 1 MiB, sem material privado, sem ligação) e o administrador reconfere o
+    mesmo SHA-256. Chave já instalada e diferente: conflito, e só -TrocarChaveDaCopia a troca (a anterior fica numa cópia
+    ao lado). Pede o UAC próprio quando é a única etapa que precisa dele; depois, a sondagem desta conta confere que ela
+    não altera a chave. Sem -ChaveDaCopia, nada muda.
  3. Hooks da skill em <raiz>\.claude\hooks: guarda_caminho.py, guarda_identidade.py, sinais_sessao.py,
-    guarda_ferramentas.py, guarda_rede.py, guarda_leitura.py e aviso_copia.py (os do Ubuntu também saem daqui).
+    guarda_ferramentas.py, guarda_rede.py, guarda_leitura.py, aviso_copia.py e regras_codigo.py (os do Ubuntu também
+    saem daqui). O regras_codigo.py só é registrado no perfil do Ubuntu (o lançador liga o campo regras_codigo do
+    projeto); no Windows ele é apenas copiado.
     O sinais_sessao lembra a conferência da RETOMADA após compactação e mostra somente o projeto na linha de status;
     não lê conteúdo, identidade ou caso. Esta cópia da skill só está preparada; executar o preparo ativa.
  4. <raiz>\.claude\settings.json (sessões do Windows), gerado pelo modelo da skill: o projeto das sessões no env
@@ -54,13 +64,14 @@ O que faz, nesta ordem, conferindo antes o que já existe (rodar de novo não re
     sem seguir ligação e até 64 KiB), o -SemBackups é recusado (código 2), e o comando pronto traz a pasta de cima da
     última cópia no lugar do texto entre < > (com -BackupsAusente, se ela não existe agora). O registro só recusa e
     sugere, nunca aceita: uma sessão o forja (revisão seguinte da terceira rodada, defeito 2). Pasta de -SomenteLeitura
-    ou nome de -NegarSkill fora do registry\projetos-host.json vira pendência no relatório e na tela: o próximo
+    ou nome de -NegarSkill ou -NegarAgente fora do registry\projetos-host.json vira pendência no relatório e na tela: o próximo
     preparar-projeto.ps1 refaz o perfil só com o registro, e eles sumiriam (registre-os com preparo_host.py
     registrar-projeto ou rode este script por último; defeito 3).
     <raiz>\.claude\settings.local.json fica só com a identidade (o projeto sai dele). O perfil
     único do Ubuntu da 1.7.9 (.claude\settings.wsl.json) é aposentado em .claude\anteriores: na 1.7.10 cada projeto
     tem o seu, na área do titular no Ubuntu (preparar-wsl.sh). -NegarSkill nome1,nome2 nega por nome skills aninhadas
     em pastas de dados (scripts/instrucoes_aninhadas.py lista quais), somadas às de registry\projetos-host.json.
+    -NegarAgente nome1,nome2 faz o mesmo com agentes aninhados (Agent(<nome>) no perfil; 1.7.11, lote A3).
 O Python que roda o ajudante e os hooks do Windows é o de -Python ou, sem ele, o das instalações registradas do
 Windows e do PATH, nunca o do perfil existente; antes de rodar, o script confere que é o python.exe do instalador
 oficial (Authenticode Valid, sujeito e emissor completos e pin do certificado comprovado para a release em
@@ -70,8 +81,13 @@ Arquivo trocado vai antes para <raiz>\.claude\anteriores\<data>. Imprime a impre
 e grava um relatório JSON (-Relatorio; no modo real, padrão em <raiz>\evidence\host).
 
 Códigos: 0 pronto e conferido · 1 parou ou há conflito (veja o relatório) · 2 uso incorreto (nada alterado; também
-sem -Backups nem -SemBackups, ou com -SemBackups e uma cópia registrada, com o comando pronto) · 3 tudo feito menos a
-âncora ou a cópia protegida, que esperam o administrador (UAC recusado ou -SemUAC).
+sem -Backups nem -SemBackups, ou com -SemBackups e uma cópia registrada, com o comando pronto; e rodado de dentro de
+<raiz>\projects\: no modo real, de projects\ de qualquer fundação, e na simulação, contra a fundação que o contém) · 3
+tudo feito menos a âncora ou a cópia protegida, que esperam o administrador (UAC recusado ou -SemUAC). A elevação relança
+este script pelo powershell.exe da pasta do sistema, com -NoProfile e -ExecutionPolicy Bypass, e os cmdlets que decidem
+(Start-Process, Get-Acl, Get-AuthenticodeSignature, Get-Item, Get-ChildItem, Get-Command, ConvertFrom-Json, Add-Type,
+Resolve-Path) vão pelo nome qualificado: uma função ou um alias do perfil do PowerShell não os pega (revisão de
+segurança da 1.7.10, CI-F1 e CI-F3).
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File preparar-maquina.ps1 -Raiz "D:\IA\fundacao" -Titular titular -Backups "E:\Backups-IA" -Simular
@@ -97,6 +113,7 @@ param(
     [string[]] $SomenteLeitura = @(),
     [string[]] $SomenteLeituraAusente = @(),
     [string[]] $NegarSkill = @(),
+    [string[]] $NegarAgente = @(),
     [string] $Chave = (Join-Path $HOME '.ssh\fundacao_titular'),
     [string] $Ancora = (Join-Path $env:ProgramData 'FundacaoIA\confianca\allowed_signers'),
     # A cópia protegida da ferramenta do titular (core/aberturas_comando.FERRAMENTA_WINDOWS do kit; folha da
@@ -117,7 +134,15 @@ param(
     # (arquivo) e o SHA-256 dele conferido antes do UAC.
     [switch] $EtapaFerramenta,
     [string] $PlanoFerramenta,
-    [string] $FerramentaEsperada
+    [string] $FerramentaEsperada,
+    # A chave pública da cópia cifrada (1.7.11): o arquivo .asc a instalar na pasta da âncora, onde ela vai (outro valor só
+    # para ensaio, como -Ancora), a troca de uma chave já instalada e, de uso interno, a etapa do administrador e o
+    # SHA-256 conferido antes do UAC.
+    [string] $ChaveDaCopia,
+    [string] $AncoraChaveCopia = (Join-Path $env:ProgramData 'FundacaoIA\confianca\chave-da-copia.asc'),
+    [switch] $TrocarChaveDaCopia,
+    [switch] $EtapaChaveCopia,
+    [string] $ChaveDaCopiaEsperada
 )
 
 Set-StrictMode -Version 2.0
@@ -134,13 +159,15 @@ $NAMESPACE = 'fundacao-decisao'
 # 1.7.10: a ficha de aberturas é assinada em fundacao-abertura; o livro de cópias assinado (core/livro_assinado.py) é
 # conferido em fundacao-copia contra esta mesma âncora (folha da integração, I22: sem ele, a adoção do livro não confere).
 $NAMESPACES = 'fundacao-decisao,fundacao-abertura,fundacao-copia'
+# A elevação relança este script com o powershell.exe da pasta do sistema (revisão de segurança da 1.7.10, CI-F3).
+$POWERSHELL_DO_SISTEMA = 'WindowsPowerShell\v1.0\powershell.exe'
 $SID_ADMINS = 'S-1-5-32-544'
 $SID_SISTEMA = 'S-1-5-18'
 $SID_USUARIOS = 'S-1-5-32-545'
 $SKILL = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
 $AJUDANTE = Join-Path $SKILL 'assets\host\preparo_host.py'
 $HOOKS = @('guarda_caminho.py', 'guarda_identidade.py', 'sinais_sessao.py', 'guarda_ferramentas.py', 'guarda_rede.py',
-           'guarda_leitura.py', 'aviso_copia.py')
+           'guarda_leitura.py', 'aviso_copia.py', 'regras_codigo.py')
 $IDENTIFICADOR = '^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$'
 # Projeto: a forma do kit e do porteiro ([a-z0-9-], 1 a 40, sem '--'), a mesma do preparo_host.py.
 $ID_PROJETO = '^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$'
@@ -202,6 +229,41 @@ function Invoke-Nativo {
     $erro = $p.StandardError.ReadToEndAsync()
     $p.WaitForExit()
     [pscustomobject]@{ Codigo = $p.ExitCode; Saida = $saida.Result; Erro = $erro.Result }
+}
+
+function Get-ProgramaDoSistema([string] $Relativo) {
+    # Revisão de segurança da 1.7.10, CI-F3: os programas do Windows (ssh-keygen, icacls, o powershell.exe da elevação)
+    # pela pasta do sistema que a API dá ([Environment]::SystemDirectory), nunca pelo $env:SystemRoot, que um perfil
+    # do PowerShell troca.
+    [IO.Path]::Combine([Environment]::SystemDirectory, $Relativo)
+}
+
+function Get-FundacaoQueContem([string] $Pasta) {
+    # Revisão de segurança da 1.7.10, CI-F1: a raiz de fundação que contém a pasta (o pai de uma pasta projects, sem
+    # caixa, que tem registry\), ou $null. Um script dali é de uma pasta que as sessões dos projetos gravam.
+    $p = [IO.Path]::GetFullPath($Pasta).TrimEnd($BARRA)
+    while ($p) {
+        $pai = [IO.Path]::GetDirectoryName($p)
+        if (-not $pai) { break }
+        if ([IO.Path]::GetFileName($p) -ieq 'projects' -and [IO.Directory]::Exists([IO.Path]::Combine($pai, 'registry'))) {
+            return $pai.TrimEnd($BARRA)
+        }
+        $p = $pai
+    }
+    $null
+}
+
+function Test-MesmaPasta([string] $Pasta, [string] $Outra) {
+    # As duas resolvem para a mesma pasta (sem caixa; a outra pelo caminho do PowerShell). Inexistente: $false.
+    if (-not $Pasta -or -not $Outra) { return $false }
+    try { $cheia = (Microsoft.PowerShell.Management\Resolve-Path -LiteralPath $Outra -ErrorAction Stop).ProviderPath } catch { return $false }
+    [IO.Path]::GetFullPath($Pasta).TrimEnd($BARRA) -ieq [IO.Path]::GetFullPath($cheia).TrimEnd($BARRA)
+}
+
+function Get-RecusaDeProjects([string] $Fundacao, [string] $Script) {
+    # A mensagem da recusa do CI-F1, com o programa da skill instalada.
+    $instalada = [IO.Path]::Combine([Environment]::GetFolderPath('UserProfile'), '.claude\skills\fundacao-ia-multiprojetos\assets\host\windows', $Script)
+    "este $Script fica dentro de $Fundacao\projects\, pasta que as sessões dos projetos gravam: ele não roda daqui (nada foi alterado). Rode o da skill instalada, com o comando do modelo da skill (nunca o de uma cópia que a sessão mostrou ou guardou num projeto): $instalada"
 }
 
 function Get-Sha256Bytes([byte[]] $Bytes) {
@@ -289,7 +351,7 @@ function Merge-Ancora {
 
 # ------------------------------------------------------------------ sondagem e permissões da âncora
 if (-not ('FundacaoAcesso' -as [type])) {
-    Add-Type -TypeDefinition @'
+    Microsoft.PowerShell.Utility\Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class FundacaoAcesso {
@@ -317,7 +379,8 @@ function Get-Direitos([string] $Caminho, $Tabela) {
 }
 
 function Get-InfoAcl([string] $Caminho) {
-    $acl = Get-Acl -LiteralPath $Caminho
+    # CI-F3 (revisão de segurança da 1.7.10): cmdlet pelo nome qualificado, que uma função ou alias do perfil não pega.
+    $acl = Microsoft.PowerShell.Security\Get-Acl -LiteralPath $Caminho
     $extras = New-Object System.Collections.Generic.List[string]
     foreach ($r in @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))) {
         $sid = $r.IdentityReference.Value
@@ -385,14 +448,14 @@ function Set-AclProtegida {
         $sd.AddAccessRule($regra)
     }
     if (-not $SemDono) { $sd.SetOwner((New-Object System.Security.Principal.SecurityIdentifier($SID_ADMINS))) }
-    (Get-Item -LiteralPath $Pasta -Force).SetAccessControl($sd)
+    (Microsoft.PowerShell.Management\Get-Item -LiteralPath $Pasta -Force).SetAccessControl($sd)
 }
 
 function Set-AclArquivoHerdada {
     # Arquivo sem regra própria, herdando da pasta (em 2026-10-20, "(OI)(CI)" aplicado ao arquivo o deixou ilegível
     # para todos). Dono: Administradores.
     param([Parameter(Mandatory = $true)] [string] $Arquivo, [switch] $SemDono)
-    $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
+    $icacls = Get-ProgramaDoSistema 'icacls.exe'
     $r = Invoke-Nativo -Exe $icacls -Argumentos @($Arquivo, '/reset', '/Q')
     if ($r.Codigo -ne 0) { throw "icacls /reset falhou em ${Arquivo}: $($r.Saida) $($r.Erro)" }
     if (-not $SemDono) {
@@ -434,7 +497,8 @@ function Test-CertificadoPython($Assinatura, [string] $Versao, $Politica = $null
     $aceito = $null
     try {
         if ($null -eq $Politica) {
-            $Politica = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'pins-python.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
+            $Politica = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'pins-python.json'), [Text.Encoding]::UTF8) |
+                Microsoft.PowerShell.Utility\ConvertFrom-Json
         }
         if ($Politica.schema_version -cne '1') { throw 'schema de pins desconhecido' }
         $pins = @($Politica.pins)
@@ -469,9 +533,11 @@ function Test-CertificadoPython($Assinatura, [string] $Versao, $Politica = $null
 }
 
 function Get-SshKeygen {
-    # O do sistema, por caminho fixo, como a conferência das decisões (um ssh-keygen posto antes no PATH não decide).
-    $sistema = Join-Path $env:SystemRoot 'System32\OpenSSH\ssh-keygen.exe'
-    if (Test-Path -LiteralPath $sistema -PathType Leaf) { return $sistema }
+    # O do sistema, por caminho fixo, como a conferência das decisões (um ssh-keygen posto antes no PATH não decide);
+    # a pasta do sistema pela API, não pelo $env:SystemRoot (CI-F3: um perfil trocava o ssh-keygen que gera a chave e
+    # recebe a senha dela).
+    $sistema = Get-ProgramaDoSistema 'OpenSSH\ssh-keygen.exe'
+    if ([IO.File]::Exists($sistema)) { return $sistema }
     $null
 }
 
@@ -499,12 +565,12 @@ function Test-Interpretador([string] $Caminho) {
             if ([IO.Path]::GetFileName($r.Caminho) -ne 'python.exe') { $motivos.Add("não é o python.exe: $($r.Caminho)") }
             $p = $r.Caminho
             while ($p) {
-                if ((Get-Item -LiteralPath $p -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                if ((Microsoft.PowerShell.Management\Get-Item -LiteralPath $p -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
                     $motivos.Add("ligação (link simbólico ou junção) no caminho: $p")
                 }
                 $p = Split-Path -Parent $p
             }
-            $a = Get-AuthenticodeSignature -LiteralPath $r.Caminho
+            $a = Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $r.Caminho
             if ($a.SignerCertificate) {
                 $r.Assinante = $a.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
             }
@@ -522,7 +588,7 @@ function Test-Interpretador([string] $Caminho) {
             foreach ($par in @(@($r.Caminho, $MASCARA_ESCRITA), @($pasta, $MASCARA_ESCRITA), @((Split-Path -Parent $pasta), $MASCARA_TROCA))) {
                 $alvo, $mascara = $par
                 if (-not $alvo) { continue }
-                $acl = Get-Acl -LiteralPath $alvo
+                $acl = Microsoft.PowerShell.Security\Get-Acl -LiteralPath $alvo
                 $dono = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
                 if ($confiaveis -notcontains $dono) { $motivos.Add("o dono de $alvo é outra conta ($(Get-NomeDaConta $dono)): o dono troca as permissões") }
                 foreach ($regra in @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))) {
@@ -555,7 +621,7 @@ function Get-CandidatosPython {
                        @('HKLM:\SOFTWARE\WOW6432Node\Python\PythonCore', 'registro do Windows (HKLM)'),
                        @('HKCU:\SOFTWARE\Python\PythonCore', 'registro do Windows (HKCU)'))) {
         $chave, $origem = $par
-        $versoes = @(Get-ChildItem -LiteralPath $chave -ErrorAction SilentlyContinue | Sort-Object -Descending -Property {
+        $versoes = @(Microsoft.PowerShell.Management\Get-ChildItem -LiteralPath $chave -ErrorAction SilentlyContinue | Sort-Object -Descending -Property {
             $m = [regex]::Match($_.PSChildName, '^(\d+)\.(\d+)')
             if ($m.Success) { [version]($m.Groups[1].Value + '.' + $m.Groups[2].Value) } else { [version]'0.0' } })
         foreach ($v in $versoes) {
@@ -567,7 +633,7 @@ function Get-CandidatosPython {
             if ($exe) { $saida.Add([pscustomobject]@{ Caminho = $exe; Origem = $origem }) }
         }
     }
-    foreach ($c in @(Get-Command python.exe -CommandType Application -All -ErrorAction SilentlyContinue)) {
+    foreach ($c in @(Microsoft.PowerShell.Core\Get-Command python.exe -CommandType Application -All -ErrorAction SilentlyContinue)) {
         if ($c.Source -notlike '*\WindowsApps\*') { $saida.Add([pscustomobject]@{ Caminho = $c.Source; Origem = 'PATH' }) }
     }
     $saida.ToArray()
@@ -692,7 +758,7 @@ function Get-UltimaCopia([string] $Py) {
     $r = Invoke-Ajudante $Py @('ultima-copia', '--raiz', $Raiz)
     try {
         if ($r.Codigo -ne 0) { throw ($r.Saida + $r.Erro).Trim() }
-        $u = $r.Saida | ConvertFrom-Json
+        $u = $r.Saida | Microsoft.PowerShell.Utility\ConvertFrom-Json
         if (@('ausente', 'lido', 'recusado') -notcontains [string](Get-Campo $u 'registro')) { throw 'resposta fora da forma' }
         return $u
     } catch {
@@ -787,7 +853,7 @@ function Get-ProjetoRegistrado([string] $Claude) {
     foreach ($nome in @('settings.json', 'settings.local.json')) {
         $arq = Join-Path $Claude $nome
         if (-not (Test-Path -LiteralPath $arq -PathType Leaf)) { continue }
-        try { $j = [IO.File]::ReadAllText($arq) | ConvertFrom-Json } catch { continue }
+        try { $j = [IO.File]::ReadAllText($arq) | Microsoft.PowerShell.Utility\ConvertFrom-Json } catch { continue }
         $amb = Get-Campo $j 'env'
         $p = $null
         if ($amb) { $p = Get-Campo $amb 'FUNDACAO_PROJECT' }
@@ -801,6 +867,8 @@ function Get-ProjetoRegistrado([string] $Claude) {
 # ------------------------------------------------------------------ etapa do administrador (depois do UAC)
 function Invoke-EtapaAncoraInterna($Acoes) {
     if (-not (Test-Elevado)) { return @{ codigo = 4; erro = 'esta etapa só roda como administrador (confirmação do UAC)' } }
+    $fundacaoDoScript = Get-FundacaoQueContem $PSScriptRoot  # CI-F1: como administrador, nunca de dentro de projects\
+    if ($fundacaoDoScript) { return @{ codigo = 2; erro = (Get-RecusaDeProjects $fundacaoDoScript 'preparar-maquina.ps1') } }
     $problema = Test-CaminhoAncora $Ancora
     if ($problema) { return @{ codigo = 2; erro = $problema } }
     if (-not ($Titular -cmatch $IDENTIFICADOR)) { return @{ codigo = 2; erro = "titular inválido: $Titular" } }
@@ -894,7 +962,7 @@ function Test-RelDaCopia([string] $Rel) {
 }
 
 function Test-ReparsePoint([string] $Caminho) {
-    [bool]((Get-Item -LiteralPath $Caminho -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)
+    [bool]((Microsoft.PowerShell.Management\Get-Item -LiteralPath $Caminho -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)
 }
 
 function Get-ArquivosSemSeguir([string] $Pasta) {
@@ -908,7 +976,7 @@ function Get-ArquivosSemSeguir([string] $Pasta) {
     while ($pilha.Count -gt 0) {
         $atual = $pilha.Pop()
         $pastas.Add($atual)
-        foreach ($filho in @(Get-ChildItem -LiteralPath $atual -Force)) {
+        foreach ($filho in @(Microsoft.PowerShell.Management\Get-ChildItem -LiteralPath $atual -Force)) {
             $rel = $filho.FullName.Substring($Pasta.TrimEnd($BARRA).Length + 1) -replace '\\', '/'
             if ($filho.Attributes -band [IO.FileAttributes]::ReparsePoint) { $ligacoes.Add($rel) }
             elseif ($filho.PSIsContainer) { $pilha.Push($filho.FullName) }
@@ -921,7 +989,7 @@ function Get-ArquivosSemSeguir([string] $Pasta) {
 function Remove-PastaSemSeguir([string] $Caminho) {
     # Apaga sem atravessar ligação: junção ou link simbólico sai só como nome e o alvo fica (o Remove-Item -Recurse do
     # PowerShell 5.1 entra em junção; aqui roda como administrador).
-    $item = Get-Item -LiteralPath $Caminho -Force
+    $item = Microsoft.PowerShell.Management\Get-Item -LiteralPath $Caminho -Force
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
         if ($item.PSIsContainer) { [IO.Directory]::Delete($Caminho, $false) } else { [IO.File]::Delete($Caminho) }
         return
@@ -931,7 +999,7 @@ function Remove-PastaSemSeguir([string] $Caminho) {
         [IO.File]::Delete($Caminho)
         return
     }
-    foreach ($filho in @(Get-ChildItem -LiteralPath $Caminho -Force)) { Remove-PastaSemSeguir $filho.FullName }
+    foreach ($filho in @(Microsoft.PowerShell.Management\Get-ChildItem -LiteralPath $Caminho -Force)) { Remove-PastaSemSeguir $filho.FullName }
     [IO.Directory]::Delete($Caminho, $false)
 }
 
@@ -1004,7 +1072,7 @@ function Get-ItemFerramenta([string] $Py) {
         $item.detalhe = 'o ajudante recusou o plano da cópia protegida: ' + ($r.Saida + $r.Erro).Trim()
         return [pscustomobject]$item
     }
-    $plano = $r.Saida | ConvertFrom-Json
+    $plano = $r.Saida | Microsoft.PowerShell.Utility\ConvertFrom-Json
     $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes([string]$plano.hashes_json)
     if ((Get-Sha256Bytes $bytes) -cne [string]$plano.sha256 -or [string]$plano.versao -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
         $item.acao = 'erro'
@@ -1031,7 +1099,7 @@ function Install-CopiaFerramenta([byte[]] $PlanoBytes, [string] $Base, $Acoes, [
     # controle total, Usuários só leem; dono Administradores) e a troca de nome no fim. A anterior sai sem atravessar
     # ligação (uma pasta pré-criada por uma sessão pode ter junção). Python registrado: na forma que o kit aceita e com o
     # SHA-256 do python.exe de agora. Erro = exceção, e a pasta nova sai. -SemDono só nos testes sem UAC.
-    try { $plano = (New-Object System.Text.UTF8Encoding($false)).GetString($PlanoBytes) | ConvertFrom-Json } catch {
+    try { $plano = (New-Object System.Text.UTF8Encoding($false)).GetString($PlanoBytes) | Microsoft.PowerShell.Utility\ConvertFrom-Json } catch {
         throw 'plano da cópia ilegível'
     }
     $arquivos = @()
@@ -1077,7 +1145,7 @@ function Install-CopiaFerramenta([byte[]] $PlanoBytes, [string] $Base, $Acoes, [
         [IO.File]::WriteAllBytes((Join-Path $novo 'hashes.json'), $PlanoBytes)
         Set-AclProtegida -Pasta $novo -SemDono:$SemDono
         if (-not $SemDono) {
-            $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
+            $icacls = Get-ProgramaDoSistema 'icacls.exe'
             $r = Invoke-Nativo -Exe $icacls -Argumentos @($novo, '/setowner', ('*' + $SID_ADMINS), '/T', '/C', '/Q')
             if ($r.Codigo -ne 0) { throw "icacls /setowner falhou em ${novo}: $($r.Saida) $($r.Erro)" }
         }
@@ -1103,6 +1171,8 @@ function Invoke-EtapaFerramentaInterna($Acoes) {
     # cópia gravada por Install-CopiaFerramenta. A conferência de que esta conta não altera a cópia é do passo comum,
     # depois (Get-EstadoFerramenta, sem elevação).
     if (-not (Test-Elevado)) { return @{ codigo = 4; erro = 'esta etapa só roda como administrador (confirmação do UAC)' } }
+    $fundacaoDoScript = Get-FundacaoQueContem $PSScriptRoot  # CI-F1: como administrador, nunca de dentro de projects\
+    if ($fundacaoDoScript) { return @{ codigo = 2; erro = (Get-RecusaDeProjects $fundacaoDoScript 'preparar-maquina.ps1') } }
     $problema = Test-CaminhoAncora (Join-Path $Ferramentas 'hashes.json')
     if ($problema) { return @{ codigo = 2; erro = ($problema -replace 'a âncora', 'a cópia da ferramenta') } }
     if (-not $PlanoFerramenta -or -not (Test-Path -LiteralPath $PlanoFerramenta -PathType Leaf)) {
@@ -1116,6 +1186,99 @@ function Invoke-EtapaFerramentaInterna($Acoes) {
         return @{ codigo = 1; erro = $_.Exception.Message }
     }
     @{ codigo = 0; erro = $null }
+}
+
+# ------------------------------------------------------------------ chave pública da cópia cifrada (1.7.11)
+function Get-PlanoChaveCopia([string] $Arquivo) {
+    # O arquivo da chave PÚBLICA da cópia, conferido antes do UAC e de novo pelo administrador: caminho absoluto, arquivo
+    # comum (não ligação) até 1 MiB, uma única chave pública OpenPGP armada e nenhum material privado. O conteúdo
+    # semântico (uma principal com subchave de cifra válida) é do kit, que recusa a chave na hora de cifrar.
+    $p = [ordered]@{ arquivo = $Arquivo; erro = $null; sha256 = $null; bytes = $null }
+    if (-not $Arquivo -or -not [IO.Path]::IsPathRooted($Arquivo)) { $p.erro = 'informe o caminho completo do arquivo da chave pública'; return [pscustomobject]$p }
+    if (-not (Test-Path -LiteralPath $Arquivo -PathType Leaf)) { $p.erro = "arquivo da chave pública ausente: $Arquivo"; return [pscustomobject]$p }
+    if (Test-ReparsePoint $Arquivo) { $p.erro = "o arquivo da chave pública é ligação: $Arquivo"; return [pscustomobject]$p }
+    if ((Microsoft.PowerShell.Management\Get-Item -LiteralPath $Arquivo -Force).Length -gt 1048576) { $p.erro = 'o arquivo da chave pública passa de 1 MiB'; return [pscustomobject]$p }
+    $bytes = [IO.File]::ReadAllBytes($Arquivo)
+    $texto = (New-Object System.Text.UTF8Encoding($false)).GetString($bytes)
+    if ($texto -match 'PRIVATE KEY') { $p.erro = 'o arquivo tem material de chave PRIVADA: informe só a chave pública'; return [pscustomobject]$p }
+    if (([regex]::Matches($texto, '-----BEGIN PGP PUBLIC KEY BLOCK-----')).Count -ne 1 -or
+        $texto -cnotmatch '(?s)^\s*-----BEGIN PGP PUBLIC KEY BLOCK-----.*-----END PGP PUBLIC KEY BLOCK-----\s*$') {
+        $p.erro = 'o arquivo não é uma única chave pública OpenPGP armada (BEGIN/END PGP PUBLIC KEY BLOCK)'
+        return [pscustomobject]$p
+    }
+    $p.bytes = $bytes
+    $p.sha256 = Get-Sha256Bytes $bytes
+    [pscustomobject]$p
+}
+
+function Install-ChaveDaCopia([byte[]] $Bytes, [string] $Destino, $Acoes, [switch] $SemDono, [switch] $Trocar) {
+    # Como a âncora: as duas pastas acima do arquivo com dono Administradores e herança cortada, o arquivo herdando da
+    # pasta e com dono Administradores. Chave diferente já instalada: só com -Trocar, e a anterior fica ao lado. -SemDono
+    # só nos testes sem UAC.
+    $pasta = Split-Path -Parent $Destino
+    $base = Split-Path -Parent $pasta
+    foreach ($p in @($base, $pasta)) {
+        if (-not (Test-Path -LiteralPath $p -PathType Container)) {
+            New-Item -ItemType Directory -Path $p | Out-Null
+            $Acoes.Add("pasta criada: $p")
+        }
+        if (Test-ReparsePoint $p) { throw "$p é ligação: nada foi gravado" }
+    }
+    if (Test-Path -LiteralPath $Destino) {
+        if (Test-ReparsePoint $Destino) { throw "$Destino é ligação: nada foi gravado" }
+        if ((Get-Sha256Arquivo $Destino) -cne (Get-Sha256Bytes $Bytes) -and -not $Trocar) {
+            throw "já há outra chave da cópia em ${Destino}: para trocar de chave de propósito, rode com -TrocarChaveDaCopia"
+        }
+    }
+    if (-not $SemDono) {  # com a ACL de administrador, só o administrador grava dentro (nos testes sem UAC, -SemDono, ela fica de fora)
+        foreach ($p in @($base, $pasta)) { Set-AclProtegida -Pasta $p; $Acoes.Add("dono Administradores e herança cortada: $p") }
+    }
+    if (Test-Path -LiteralPath $Destino -PathType Leaf) {
+        if ((Get-Sha256Arquivo $Destino) -ceq (Get-Sha256Bytes $Bytes)) {
+            Set-AclArquivoHerdada -Arquivo $Destino -SemDono:$SemDono
+            $Acoes.Add("chave da cópia já era esta; permissões refeitas: $Destino")
+            return
+        }
+        $copia = $Destino + '.anterior-' + (Get-Date -Format 'yyyyMMddTHHmmss')
+        Copy-Item -LiteralPath $Destino -Destination $copia
+        Set-AclArquivoHerdada -Arquivo $copia -SemDono:$SemDono
+        $Acoes.Add("cópia da chave anterior: $copia")
+    }
+    [IO.File]::WriteAllBytes($Destino, $Bytes)
+    Set-AclArquivoHerdada -Arquivo $Destino -SemDono:$SemDono
+    $Acoes.Add("chave pública da cópia gravada, herdando da pasta, dono Administradores: $Destino")
+}
+
+function Invoke-EtapaChaveCopiaInterna($Acoes) {
+    # Como administrador (depois do UAC): o arquivo conferido pelo SHA-256 de antes do UAC e a chave instalada por
+    # Install-ChaveDaCopia. A conferência de que esta conta não a altera é do passo comum, depois (Get-SondagemAncora).
+    if (-not (Test-Elevado)) { return @{ codigo = 4; erro = 'esta etapa só roda como administrador (confirmação do UAC)' } }
+    $fundacaoDoScript = Get-FundacaoQueContem $PSScriptRoot  # CI-F1: como administrador, nunca de dentro de projects\
+    if ($fundacaoDoScript) { return @{ codigo = 2; erro = (Get-RecusaDeProjects $fundacaoDoScript 'preparar-maquina.ps1') } }
+    $problema = Test-CaminhoAncora $AncoraChaveCopia
+    if ($problema) { return @{ codigo = 2; erro = ($problema -replace 'a âncora', 'a chave da cópia') } }
+    $plano = Get-PlanoChaveCopia $ChaveDaCopia
+    if ($plano.erro) { return @{ codigo = 2; erro = $plano.erro } }
+    if (-not $ChaveDaCopiaEsperada -or $plano.sha256 -cne $ChaveDaCopiaEsperada) {
+        return @{ codigo = 5; erro = 'a chave pública não é a conferida antes do UAC: nada foi gravado' }
+    }
+    try { Install-ChaveDaCopia $plano.bytes $AncoraChaveCopia $Acoes -Trocar:$TrocarChaveDaCopia } catch {
+        return @{ codigo = 1; erro = $_.Exception.Message }
+    }
+    @{ codigo = 0; erro = $null }
+}
+
+function Invoke-EtapaChaveCopia {
+    $acoes = New-Object System.Collections.Generic.List[string]
+    $r = Invoke-EtapaChaveCopiaInterna $acoes
+    if ($RegistroEtapa) {
+        $registro = [ordered]@{ etapa = 'chave-da-copia'; destino = $AncoraChaveCopia; codigo = $r.codigo; erro = $r.erro
+                                acoes = $acoes.ToArray(); fim = (Get-Date).ToString('o') }
+        try { [IO.File]::WriteAllText($RegistroEtapa, (ConvertTo-Json -InputObject $registro -Depth 4), (New-Object System.Text.UTF8Encoding($false))) } catch { }
+    }
+    foreach ($a in $acoes) { Write-Host "  $a" }
+    if ($r.erro) { Write-Host "Etapa da chave da cópia NÃO concluída: $($r.erro)" }
+    [int]$r.codigo
 }
 
 function Invoke-EtapaAdministrador {
@@ -1151,7 +1314,7 @@ function Get-ComandosDosHooks([string] $Perfil) {
     # Só leitura, para o relatório: os comandos dos hooks de um perfil existente.
     if (-not (Test-Path -LiteralPath $Perfil -PathType Leaf)) { return @() }
     try {
-        $j = [IO.File]::ReadAllText($Perfil) | ConvertFrom-Json
+        $j = [IO.File]::ReadAllText($Perfil) | Microsoft.PowerShell.Utility\ConvertFrom-Json
         @(foreach ($g in @($j.hooks.PreToolUse)) { foreach ($h in @($g.hooks)) { [string]$h.command } }) |
             Where-Object { $_ } | Select-Object -Unique
     } catch { @() }
@@ -1253,6 +1416,13 @@ function Invoke-Preparo {
         comando_pronto = $null; pasta_sugerida = $null; negacoes_fora_do_registro = $null
         itens = (New-Object System.Collections.ArrayList); pendencias = (New-Object System.Collections.ArrayList)
         nada_a_fazer = $false; codigo = $null; mensagem = $null }
+    # Revisão de segurança da 1.7.10, CI-F1: este script não roda de dentro de <raiz>\projects\ (uma cópia da skill que
+    # a sessão guardou ou mostrou num checklist): no modo real, de projects\ de qualquer fundação; na simulação, contra
+    # a fundação que o contém. Antes de tudo: nada é lido nem gravado.
+    $fundacaoDoScript = Get-FundacaoQueContem $PSScriptRoot
+    if ($fundacaoDoScript -and (-not $sim -or (Test-MesmaPasta $fundacaoDoScript $Raiz))) {
+        return (Complete-Preparo $rel 2 (Get-RecusaDeProjects $fundacaoDoScript 'preparar-maquina.ps1') $sim $carimbo)
+    }
     if (-not $Raiz -or -not $Titular) { return (Complete-Preparo $rel 2 'informe -Raiz e -Titular' $sim $carimbo) }
     if (-not ($Titular -cmatch $IDENTIFICADOR)) {
         return (Complete-Preparo $rel 2 "titular inválido: $Titular (letras minúsculas, dígitos, '.', '_' ou '-')" $sim $carimbo)
@@ -1261,7 +1431,7 @@ function Invoke-Preparo {
         return (Complete-Preparo $rel 2 "projeto inválido: $Projeto (1 a 40 letras minúsculas, dígitos ou -, sem - nas pontas nem --)" $sim $carimbo)
     }
     if (-not (Test-Path -LiteralPath $Raiz -PathType Container)) { return (Complete-Preparo $rel 2 "a raiz não existe: $Raiz" $sim $carimbo) }
-    $script:Raiz = (Resolve-Path -LiteralPath $Raiz).Path.TrimEnd($BARRA)
+    $script:Raiz = (Microsoft.PowerShell.Management\Resolve-Path -LiteralPath $Raiz).Path.TrimEnd($BARRA)
     $rel.raiz = $Raiz
     if ([IO.Path]::GetPathRoot($Raiz + $BARRA).TrimEnd($BARRA) -eq $Raiz) {
         return (Complete-Preparo $rel 2 "a raiz da fundação não pode ser a raiz de um disco: $Raiz" $sim $carimbo)
@@ -1277,6 +1447,13 @@ function Invoke-Preparo {
     }
     $problema = Test-CaminhoAncora $Ancora
     if ($problema) { return (Complete-Preparo $rel 2 $problema $sim $carimbo) }
+    $planoChave = $null  # 1.7.11: a chave pública da cópia cifrada, conferida antes da chave, do UAC e de qualquer gravação
+    if ($ChaveDaCopia) {
+        $problema = Test-CaminhoAncora $AncoraChaveCopia
+        if ($problema) { return (Complete-Preparo $rel 2 ($problema -replace 'a âncora', 'a chave da cópia') $sim $carimbo) }
+        $planoChave = Get-PlanoChaveCopia $ChaveDaCopia
+        if ($planoChave.erro) { return (Complete-Preparo $rel 2 ('-ChaveDaCopia: ' + $planoChave.erro + ': nada foi alterado') $sim $carimbo) }
+    }
     $ssh = Get-SshKeygen
     if (-not $ssh) {
         return (Complete-Preparo $rel 2 'falta o Cliente OpenSSH do Windows (Configurações > Sistema > Recursos opcionais > Cliente OpenSSH)' $sim $carimbo)
@@ -1326,7 +1503,8 @@ function Invoke-Preparo {
     $rel.ultima_copia = Get-UltimaCopia $py
     $portao = Get-PortaoDasCopias -Copias $copias.Lista -Ausentes $copiasAusentes.Lista -SemBackups ([bool]$SemBackups) `
         -Ultima $rel.ultima_copia -Script $PSCommandPath -Dados $PARAMETROS_DADOS -Excluir @('EtapaAncora', 'ChavePublica',
-        'ImpressaoEsperada', 'RegistroEtapa', 'EtapaFerramenta', 'PlanoFerramenta', 'FerramentaEsperada')
+        'ImpressaoEsperada', 'RegistroEtapa', 'EtapaFerramenta', 'PlanoFerramenta', 'FerramentaEsperada',
+        'EtapaChaveCopia', 'ChaveDaCopiaEsperada')
     $rel.comando_pronto = $portao.ComandoPronto
     $rel.pasta_sugerida = $portao.PastaSugerida
     if ($portao.Codigo -ne 0) { return (Complete-Preparo $rel $portao.Codigo $portao.Mensagem $sim $carimbo) }
@@ -1361,6 +1539,7 @@ function Invoke-Preparo {
     }
     $negar = @()  # -File entrega "a,b" como um texto só: os nomes vão separados por vírgula
     foreach ($s in @($NegarSkill)) { foreach ($n in ($s -split ',')) { if ($n.Trim()) { $negar += @('--negar-skill', $n.Trim()) } } }
+    foreach ($s in @($NegarAgente)) { foreach ($n in ($s -split ',')) { if ($n.Trim()) { $negar += @('--negar-agente', $n.Trim()) } } }
     $argsPerfil = @('perfil-windows', '--raiz', $Raiz, '--python', $py) + $negar
     if ($projetoSessoes) { $argsPerfil += @('--projeto', $projetoSessoes) }
     foreach ($d in @(@($leitura.Lista) + @($ausentes.Lista))) { $argsPerfil += @('--somente-leitura', $d) }
@@ -1377,15 +1556,16 @@ function Invoke-Preparo {
     # de -NegarSkill fora dele sumiria em silêncio no próximo preparo de qualquer projeto. O ajudante diz quais o
     # registro não cobre; a pendência vai ao relatório e à tela. Sem nenhuma dessas negações, não há o que conferir.
     $dadasNaLinha = @(@(@($leitura.Lista) + @($ausentes.Lista)) | ForEach-Object { '--somente-leitura'; $_ }) + $negar
-    $rFora = [pscustomobject]@{ Codigo = 0; Saida = '{"somente_leitura": [], "negar_skill": []}'; Erro = '' }
+    $rFora = [pscustomobject]@{ Codigo = 0; Saida = '{"somente_leitura": [], "negar_skill": [], "negar_agente": []}'; Erro = '' }
     if ($dadasNaLinha.Count -gt 0) { $rFora = Invoke-Ajudante $py (@('fora-do-registro', '--raiz', $Raiz) + $dadasNaLinha) }
     $soDaLinha = @()
     if ($rFora.Codigo -eq 0) {
         try {
-            $fora = $rFora.Saida | ConvertFrom-Json
-            $rel.negacoes_fora_do_registro = [ordered]@{ somente_leitura = @($fora.somente_leitura); negar_skill = @($fora.negar_skill) }
+            $fora = $rFora.Saida | Microsoft.PowerShell.Utility\ConvertFrom-Json
+            $rel.negacoes_fora_do_registro = [ordered]@{ somente_leitura = @($fora.somente_leitura); negar_skill = @($fora.negar_skill); negar_agente = @($fora.negar_agente) }
             $soDaLinha = @(@($fora.somente_leitura | ForEach-Object { '-SomenteLeitura ' + $_ }) +
-                           @($fora.negar_skill | ForEach-Object { '-NegarSkill ' + $_ }))
+                           @($fora.negar_skill | ForEach-Object { '-NegarSkill ' + $_ }) +
+                           @($fora.negar_agente | ForEach-Object { '-NegarAgente ' + $_ }))
         } catch { $soDaLinha = @('(não conferidas: resposta do ajudante fora da forma)') }
     } else {
         $soDaLinha = @('(não conferidas: ' + ($rFora.Saida + $rFora.Erro).Trim() + ')')
@@ -1394,7 +1574,7 @@ function Invoke-Preparo {
         [void]$rel.pendencias.Add('estas negações vêm só da linha de comando, fora do registry\projetos-host.json: ' +
             ($soDaLinha -join '; ') + '. O próximo preparar-projeto.ps1, de qualquer projeto, refaz o perfil sem elas: ' +
             'registre-as no projeto delas com preparo_host.py registrar-projeto (--somente-leitura <pasta> ou ' +
-            '--negar-skill <nome>, com uma --origem do projeto) ou rode este script por último')
+            '--negar-skill <nome> ou --negar-agente <nome>, com uma --origem do projeto) ou rode este script por último')
     }
     # Identidade das sessões: só acrescenta; outra identidade já gravada é decisão do titular (conflito). O projeto sai
     # do settings.local.json (vai ao env do settings.json; um FUNDACAO_PROJECT no local passaria por cima dele). Com
@@ -1429,6 +1609,12 @@ function Invoke-Preparo {
     } elseif ($sim) {
         $item.acao = 'criar'
         $item.detalhe = 'será gerada pelo ssh-keygen do sistema (ed25519); você digita a senha no seu terminal e o script não a vê'
+    } elseif ([Console]::IsInputRedirected -or ([Environment]::GetCommandLineArgs() -match '^-noni')) {
+        # Sem console interativo o ssh-keygen espera a senha para sempre (08/11: teste parado 4h36): recusa antes dele.
+        $item.acao = 'erro'
+        $item.detalhe = "a chave não existe e este processo não tem console interativo para você digitar a senha; no seu terminal, rode: ssh-keygen -t ed25519 -a 100 -f `"$Chave`" e depois rode este script de novo"
+        [void]$rel.itens.Add([pscustomobject]$item)
+        return (Complete-Preparo $rel 1 'chave ausente e sem console interativo: nada foi gerado' $sim $carimbo)
     } else {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Chave) | Out-Null
         Write-Host 'Gerando a chave das suas decisões. Digite uma senha só sua, duas vezes (ela não aparece na tela).'
@@ -1526,8 +1712,10 @@ function Invoke-Preparo {
             $argsFerramenta = @()
             $codigoEtapa = $null
             try {
-                $proc = Start-Process -FilePath (Get-Process -Id $PID).Path -Verb RunAs -Wait -PassThru `
-                    -ArgumentList ((@($argumentos) | ForEach-Object { ConvertTo-ArgumentoNativo $_ }) -join ' ')
+                # Revisão de segurança da 1.7.10, CI-F3: o powershell.exe da pasta do sistema (não o deste processo, que
+                # pode ser outro), com -NoProfile e -ExecutionPolicy Bypass, pelo Start-Process qualificado.
+                $proc = Microsoft.PowerShell.Management\Start-Process -FilePath (Get-ProgramaDoSistema $POWERSHELL_DO_SISTEMA) `
+                    -Verb RunAs -Wait -PassThru -ArgumentList ((@($argumentos) | ForEach-Object { ConvertTo-ArgumentoNativo $_ }) -join ' ')
                 $codigoEtapa = $proc.ExitCode
             } catch {
                 $item.acao = 'pendente_admin'
@@ -1542,7 +1730,7 @@ function Invoke-Preparo {
             if ($null -ne $codigoEtapa) {
                 $etapa = $null
                 if (Test-Path -LiteralPath $registro -PathType Leaf) {
-                    try { $etapa = [IO.File]::ReadAllText($registro) | ConvertFrom-Json; $item.etapa_administrador = $etapa } catch { }
+                    try { $etapa = [IO.File]::ReadAllText($registro) | Microsoft.PowerShell.Utility\ConvertFrom-Json; $item.etapa_administrador = $etapa } catch { }
                 }
                 if ($comFerramenta) {  # no registro conjunto, o código de cada etapa (I11)
                     $parteAncora = $null
@@ -1584,12 +1772,12 @@ function Invoke-Preparo {
         $registroF = Join-Path $env:TEMP ('fundacao-etapa-ferramenta-' + $carimbo + '.json')
         $argumentos = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath) + $argsFerramenta + @('-RegistroEtapa', $registroF)
         try {
-            $proc = Start-Process -FilePath (Get-Process -Id $PID).Path -Verb RunAs -Wait -PassThru `
-                -ArgumentList ((@($argumentos) | ForEach-Object { ConvertTo-ArgumentoNativo $_ }) -join ' ')
+            $proc = Microsoft.PowerShell.Management\Start-Process -FilePath (Get-ProgramaDoSistema $POWERSHELL_DO_SISTEMA) `
+                -Verb RunAs -Wait -PassThru -ArgumentList ((@($argumentos) | ForEach-Object { ConvertTo-ArgumentoNativo $_ }) -join ' ')
             $codigoFerramenta = $proc.ExitCode
             if (Test-Path -LiteralPath $registroF -PathType Leaf) {
                 try {
-                    $parte = Get-Campo ([IO.File]::ReadAllText($registroF) | ConvertFrom-Json) 'ferramenta'
+                    $parte = Get-Campo ([IO.File]::ReadAllText($registroF) | Microsoft.PowerShell.Utility\ConvertFrom-Json) 'ferramenta'
                     if ($parte) { $itemF.etapa_administrador = $parte; $codigoFerramenta = [int](Get-Campo $parte 'codigo') }
                 } catch { }
             }
@@ -1621,6 +1809,71 @@ function Invoke-Preparo {
     $itemF.plano = $null  # os bytes do plano não vão ao relatório
     [void]$rel.itens.Add($itemF)
 
+    # 2c. A chave pública da cópia cifrada (1.7.11): na pasta da âncora, com a ACL dela; o UAC é o desta etapa (a âncora e a cópia
+    # da ferramenta já tiveram o seu acima); conferida depois por esta conta, sem elevação, como a âncora.
+    if ($planoChave) {
+        $itemC = [ordered]@{ id = 'chave-da-copia'; caminho = $AncoraChaveCopia; exige_admin = $true; acao = $null
+                             protegida = $false; conteudo_confere = $false; sha256 = $planoChave.sha256; detalhe = $null
+                             sondagem = $null; etapa_administrador = $null }
+        $sondC = Get-SondagemAncora $AncoraChaveCopia
+        $itemC.sondagem = $sondC
+        $itemC.protegida = $sondC.protegida
+        $existeC = [bool]$sondC.existe
+        $itemC.conteudo_confere = ($existeC -and ((Get-Sha256Arquivo $AncoraChaveCopia) -ceq $planoChave.sha256))
+        $precisaC = 'criar'
+        if ($existeC) { $precisaC = 'atualizar' }
+        if ($existeC -and -not $itemC.conteudo_confere -and -not $TrocarChaveDaCopia) {
+            $itemC.acao = 'conflito'
+            $itemC.detalhe = "já há outra chave da cópia em ${AncoraChaveCopia}: se você trocou de chave de propósito, rode de novo com -TrocarChaveDaCopia (a anterior fica numa cópia ao lado)"
+        } elseif ($itemC.conteudo_confere -and $sondC.protegida) {
+            $itemC.acao = 'igual'
+        } else {
+            $itemC.detalhe = 'exige administrador: o Windows pede confirmação (UAC) só para esta etapa. ' + (@($sondC.motivos) -join '; ')
+            if ($sim) {
+                $itemC.acao = $precisaC
+            } elseif ($SemUAC) {
+                $itemC.acao = 'pendente_admin'
+                [void]$rel.pendencias.Add('chave pública da cópia cifrada: rode de novo sem -SemUAC e confirme o UAC')
+            } else {
+                Write-Host ''
+                Write-Host 'O Windows vai pedir confirmação de administrador para instalar a chave pública da cópia cifrada.'
+                Write-Host ('Arquivo: ' + $ChaveDaCopia + ' (SHA-256 ' + $planoChave.sha256.Substring(0, 16) + '...). Confira a impressão digital que o preparar-chave-copia mostrou, a do seu papel.')
+                $registroC = Join-Path $env:TEMP ('fundacao-etapa-chave-copia-' + $carimbo + '.json')
+                $argumentosC = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-EtapaChaveCopia', '-ChaveDaCopia', $ChaveDaCopia,
+                                 '-AncoraChaveCopia', $AncoraChaveCopia, '-ChaveDaCopiaEsperada', $planoChave.sha256, '-RegistroEtapa', $registroC)
+                if ($TrocarChaveDaCopia) { $argumentosC += '-TrocarChaveDaCopia' }
+                $codigoC = $null
+                try {
+                    $procC = Microsoft.PowerShell.Management\Start-Process -FilePath (Get-ProgramaDoSistema $POWERSHELL_DO_SISTEMA) `
+                        -Verb RunAs -Wait -PassThru -ArgumentList ((@($argumentosC) | ForEach-Object { ConvertTo-ArgumentoNativo $_ }) -join ' ')
+                    $codigoC = $procC.ExitCode
+                } catch {
+                    $itemC.acao = 'pendente_admin'
+                    $itemC.detalhe = 'a confirmação de administrador (UAC) não foi dada: a chave da cópia não foi instalada'
+                    [void]$rel.pendencias.Add('chave pública da cópia cifrada: rode de novo e confirme o UAC')
+                }
+                if ($null -ne $codigoC) {
+                    if (Test-Path -LiteralPath $registroC -PathType Leaf) {
+                        try { $itemC.etapa_administrador = [IO.File]::ReadAllText($registroC) | Microsoft.PowerShell.Utility\ConvertFrom-Json } catch { }
+                    }
+                    $depoisC = Get-SondagemAncora $AncoraChaveCopia
+                    $confereC = ($depoisC.existe -and ((Get-Sha256Arquivo $AncoraChaveCopia) -ceq $planoChave.sha256))
+                    $itemC.sondagem = $depoisC
+                    $itemC.protegida = $depoisC.protegida
+                    $itemC.conteudo_confere = $confereC
+                    if ($codigoC -eq 0 -and $depoisC.protegida -and $confereC) {
+                        $itemC.acao = $precisaC
+                        $itemC.detalhe = 'feito como administrador e conferido por esta conta: ela não altera a chave da cópia; o `backup criar` do kit passa a cifrar'
+                    } else {
+                        $itemC.acao = 'erro'
+                        $itemC.detalhe = "a etapa de administrador terminou com código $codigoC; protegida: $($depoisC.protegida); conteúdo confere: ${confereC}. " + (@($depoisC.motivos) -join '; ')
+                    }
+                }
+            }
+        }
+        [void]$rel.itens.Add([pscustomobject]$itemC)
+    }
+
     # 3. Hooks e perfis em <raiz>\.claude (área do titular; arquivo trocado vai antes para .claude\anteriores), com as
     # saídas do ajudante calculadas no plano (passo 0).
     $anteriores = Join-Path $claude ('anteriores' + $BARRA + $carimbo)
@@ -1640,8 +1893,8 @@ function Invoke-Preparo {
     }
     [void]$rel.itens.Add($item)
     if ((Test-Path -LiteralPath $local -PathType Leaf) -and
-        ((ConvertTo-Json -Compress -Depth 20 -InputObject ([IO.File]::ReadAllText($local) | ConvertFrom-Json)) -eq
-         (ConvertTo-Json -Compress -Depth 20 -InputObject ($rLocal.Saida | ConvertFrom-Json)))) {
+        ((ConvertTo-Json -Compress -Depth 20 -InputObject ([IO.File]::ReadAllText($local) | Microsoft.PowerShell.Utility\ConvertFrom-Json)) -eq
+         (ConvertTo-Json -Compress -Depth 20 -InputObject ($rLocal.Saida | Microsoft.PowerShell.Utility\ConvertFrom-Json)))) {
         [void]$rel.itens.Add([pscustomobject][ordered]@{ id = 'settings.local.json'; caminho = $local; exige_admin = $false; acao = 'igual'
             sha256 = (Get-Sha256Arquivo $local); anterior = $null; detalhe = $null })
     } else {
@@ -1683,6 +1936,7 @@ function Invoke-Preparo {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
+    if ($EtapaChaveCopia) { exit ([int](Invoke-EtapaChaveCopia | Select-Object -Last 1)) }
     if ($EtapaAncora -or $EtapaFerramenta) { exit ([int](Invoke-EtapaAdministrador | Select-Object -Last 1)) }
     exit ([int](Invoke-Preparo | Select-Object -Last 1))
 }

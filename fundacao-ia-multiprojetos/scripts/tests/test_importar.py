@@ -9,6 +9,7 @@ Pastas descartáveis, conteúdo fictício.
 
 from __future__ import annotations
 
+import atexit
 import builtins
 import hashlib
 import importlib.util
@@ -18,6 +19,7 @@ import os
 import shutil
 import sqlite3
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -25,7 +27,7 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from apoio import SCRIPTS, criar_ligacao_dir, rodar_script
+from apoio import ENV, KIT, SCRIPTS, criar_ligacao_dir, rodar_script
 
 OPACO = "conteudo opaco ficticio que nunca aparece na saida 7f3a"
 ARQUIVOS = {
@@ -58,6 +60,44 @@ def carregar(nome: str):
     modulo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(modulo)
     return modulo
+
+
+_SCRIPTS_DO_COPIAR: list[Path] = []
+
+
+def copiar_scripts_e_kit(skill: Path) -> Path:
+    """Cópia byte a byte, em `skill`, do que o `importar.py copiar` carrega: os scripts (sem os testes) e o pacote do
+    kit (o backup_sqlite.py confere a trava do banco pelo kit da skill). Devolve a pasta dos scripts da cópia."""
+    pasta = skill / "scripts"
+    pasta.mkdir(parents=True)
+    for arquivo in SCRIPTS.glob("*.py"):
+        shutil.copy2(arquivo, pasta / arquivo.name)
+    shutil.copytree(KIT / "fundacao", skill / "assets" / "fundacao-kit" / "fundacao",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    return pasta
+
+
+def scripts_do_copiar() -> Path:
+    """A pasta dos scripts de onde os testes rodam o `copiar` (revisão de segurança da 1.7.10, CI-F1): ele recusa rodar
+    de dentro da pasta projects/ de uma fundação, e a árvore desta skill pode ficar numa (a de desenvolvimento fica em
+    projects/fundacao-de-ia/). Fora de uma, a própria; dentro, uma cópia (`copiar_scripts_e_kit`), feita uma vez por
+    processo numa pasta temporária."""
+    if not _SCRIPTS_DO_COPIAR:
+        # O importar sem a recusa (o de antes da revisão) roda daqui mesmo.
+        raiz_acima = getattr(carregar("importar"), "raiz_de_projects_acima", lambda _arquivo: None)
+        if raiz_acima(SCRIPTS / "importar.py") is None:
+            _SCRIPTS_DO_COPIAR.append(SCRIPTS)
+        else:
+            base = Path(os.path.realpath(tempfile.mkdtemp(prefix="importar-scripts-")))
+            atexit.register(shutil.rmtree, base, ignore_errors=True)
+            _SCRIPTS_DO_COPIAR.append(copiar_scripts_e_kit(base / "skill"))
+    return _SCRIPTS_DO_COPIAR[0]
+
+
+def rodar_copiar(*args) -> subprocess.CompletedProcess:
+    """`importar.py copiar ...` como o titular o roda, da pasta de `scripts_do_copiar` (CI-F1)."""
+    return subprocess.run([sys.executable, "-B", str(scripts_do_copiar() / "importar.py"), "copiar", *map(str, args)],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", env=ENV, timeout=180)
 
 
 def apagar_arvore(caminho: Path) -> None:
@@ -133,7 +173,7 @@ class _Importacao(unittest.TestCase):
         return saida
 
     def copiar(self, sha256: str, *extra, codigo: int = 0) -> dict:
-        p = rodar_script("importar.py", "copiar", "--plano", self.plano_arq, "--plano-sha256", sha256, *extra)
+        p = rodar_copiar("--plano", self.plano_arq, "--plano-sha256", sha256, *extra)  # de fora de projects/ (CI-F1)
         self.assertEqual(p.returncode, codigo, p.stdout + p.stderr)
         self.assertNotIn(OPACO, p.stdout + p.stderr)
         if p.returncode == 2:
@@ -602,6 +642,15 @@ class TestDeltaEB1(_Importacao):
         self.assertEqual(r2["contas"].get("retomada"), 1)
         self.assertEqual(r2["divergem_do_b1"], ["a.txt"])  # a divergência não vira "nao-comparavel" na retomada
         self.assertEqual(self.por_caminho(self.manifesto()["arquivos"])["a.txt"]["b1"], "diferente")
+
+
+class TestGravadorSemDescritor(unittest.TestCase):
+    def test_posix_sem_descritor_recusa_em_vez_de_gravar_pelo_caminho(self):
+        imp = carregar("importar")
+        with mock.patch.object(imp.os, "name", "posix"), mock.patch.object(imp, "_POSIX", False):
+            with self.assertRaises(imp.Recusa) as c:
+                imp.Gravador(Path("projeto-inexistente"), ["x"])
+        self.assertIn("descritor de pasta", str(c.exception))
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "a gravação por descritor de pasta é do Linux")

@@ -408,6 +408,14 @@ segurança da 1.7.7, R177-VAL-02].
     `--settings <área>/settings.wsl.json --setting-sources local --tools <lista>`, um `--plugin-dir` por plugin da
     ficha e `--mcp-config <área>/mcp.json --strict-mcp-config`, e um prompt que manda ler o `INSTRUCOES.md` e a
     `RETOMADA.md` do projeto.
+    [Decisão; DECISAO-010, item 1.] Abre também com `--allow-dangerously-skip-permissions`, opção fixa: a sessão começa
+    no modo normal e o titular liga o modo sem perguntas com Shift+Tab, quando quiser, sem aceite assinado. O risco, em
+    uma frase: ligado, a sessão roda os comandos sem mostrá-los antes, e uma página ou um documento malicioso pode levá-la a
+    rodar comando que o titular não viu. As negações do perfil, os hooks e o sandbox (onde ele confina) continuam valendo;
+    o lançador não repassa argumentos do terminal, e o perfil não traz `permissions.defaultMode`.
+    [Decisão; ponytail, P7.] Com `regras_codigo` no `projeto.json` (só `enxuto`; fora da lista a sessão não abre), o
+    lançador põe `FUNDACAO_REGRAS_CODIGO=enxuto` no ambiente, e o hook `regras_codigo.py` entrega a regra; sem o campo,
+    nada é exportado.
   - **O que exige administrador é declarado e feito pelo titular:** no Windows, o UAC só para a âncora e, no mesmo
     UAC, a cópia protegida da ferramenta do titular; no Ubuntu, o `sudo` só para pacotes, AppArmor, `wsl.conf`, o
     filtro seccomp, o relatório do canário, a área do titular, o lançador e a cópia protegida da ferramenta. O executor
@@ -584,6 +592,12 @@ assinado (§8.4), que não muda nada do que está acima.
     lançador deixa de fora as definições de usuário e de projeto, e o preparo recusa agentes nas managed settings;
     a origem `projectAgentsElsewhere` não foi localizada (1.7.11). O `SubagentHandback` (o relatório do subagente)
     vale com o mesmo item ([correção 1.7.10.2](atualizacao-1.7.10.2.md); prova 13 do checklist).
+    Na 1.7.11 [Decisão; DECISAO-010 e DECISAO-011]: o tipo também vale com um agente de arquivo da ficha
+    (`FUNDACAO_AGENTES`); o evento que vem de um subagente passa por três travas (`agent_type` conhecido, ferramentas
+    do agente e `cwd` dentro do projeto), e qualquer outro caminho de nascimento do subagente nega tudo; a ferramenta
+    Skill só passa com o nome em `FUNDACAO_SKILLS` (o preparo grava `-`, nenhuma skill, quando a ficha não abre
+    nenhuma, e o perfil sem ficha válida a leva assim); e a ferramenta MCP só passa com o nome exato em
+    `FUNDACAO_MCP_FERRAMENTAS`. Detalhes e limites: capacidade 08 §2, §3 e §4.
   - `guarda_rede.py` (PreToolUse `WebFetch|WebSearch`, nos dois perfis): WebFetch só para domínio de
     `FUNDACAO_DOMINIOS_WEB` (`d` exato, ou `*.d` para os subdomínios dele), só `http` e `https`, sem IP, sem porta além
     da padrão e sem nome local; WebSearch só com `FUNDACAO_WEBSEARCH=1`. Nega sem perguntar onde roda; dentro do
@@ -629,8 +643,11 @@ assinado (§8.4), que não muda nada do que está acima.
   marcador (lado `ubuntu`) do início ao fim da sessão e o renova a cada 30 s. O kit do Windows recusa abrir o banco com
   o marcador do outro lado, vivo, velho ou ilegível (`E_BANCO_TRAVADO`), e o mesmo fazem, pelo kit da skill, o
   atualizador (`checar`, `aplicar` e `desfazer` param na etapa `banco`) e o `scripts/backup_sqlite.py`, sem abrir nem
-  criar nada. Marcador velho (sem renovação há mais de 120 s) só sai pelo titular, depois de fechar as sessões do
-  Ubuntu: `python -m fundacao banco destravar --confirmar`, que recusa o marcador ainda vivo;
+  criar nada. Marcador velho (sem renovação há mais de 120 s) sai pelo titular, depois de fechar as sessões do
+  Ubuntu: `python -m fundacao banco destravar --confirmar`, que recusa o marcador ainda vivo. Única exceção (1.7.11): na
+  abertura do banco para escrita, o Windows tira sozinho o marcador velho do Ubuntu, deste host, quando nenhuma
+  distribuição do WSL está em execução (medida na hora; qualquer dúvida recusa), com o evento
+  `banco_marcador_velho_liberado` gravado antes. Limite: `wsl -l` vê só o WSL do usuário do Windows que o roda;
   `python -m fundacao banco situacao` mostra o marcador sem abrir o banco. Assim a regra "o banco nunca é aberto pelo
   Windows e pelo WSL ao mesmo tempo" passa a ser conferida, no sentido Windows ← Ubuntu. O backup do kit não percorre
   `state/` (leva o banco pela API de backup do SQLite): o marcador nunca vai na cópia. *Limite:* os comandos curtos do
@@ -649,14 +666,21 @@ tudo fechado.
 - **Seções da 1.7.10:** `rede.dominios` (os comandos da sessão, pelo proxy do sandbox), `webfetch.dominios` (contido
   em `rede.dominios`: o WebFetch libera o domínio também para os comandos, e a ficha diz isso), `websearch` (sim ou não)
   e `plugins` (`nome`, `origem`, `manifesto_sha256`: capacidade 08 §5).
-- **Reservadas para a 1.7.11** (preenchidas, o validador recusa com "1.7.11"): `mcp` (MCP de terceiro roda fora do
-  sandbox: só com a jaula), `navegador`, `git`, `segredos`, `outras_llm`, `execucao`, `leitura_liberada` (pede
-  negações enumeradas no lançamento e o canário do projeto) e `perfil_navegador_copiado`.
+- **Seções da 1.7.11** (esquema fechado e tetos próprios; §8.7): `mcp` (só o conector do escritório, um servidor, com a
+  lista nominal de todas as ferramentas dele no campo `ferramentas`, as de consulta e as que gravam, DECISAO-011; sem
+  curinga, sem MCP local), `navegador` (perfil novo e só do projeto, domínios, logins e modos `sessao`, `login` e
+  `captcha`) e `outras_llm` (só o Codex pela conta do ChatGPT, com a conferência do plano, o R55, de até 90 dias). O
+  item de `plugins` ganha `agentes` e `skills_com_scripts` (capacidade 08 §4 e §5). O curinga `*.x` passa a cobrir
+  também o próprio `x`.
+- **Ainda reservadas** (preenchidas, o validador recusa com "1.7.11"): `git`, `segredos`, `execucao`, `leitura_liberada`
+  (pede negações enumeradas no lançamento e o canário do projeto) e `perfil_navegador_copiado` (o titular escolheu o
+  perfil novo em 08/11/2026).
 - **Tetos fixos, em código, que nenhuma assinatura derruba:** domínio sem IP literal e sem nome local (`localhost`,
   `*.local`, `*.internal`, `*.localhost`); curinga só `*.<domínio registrável>`, nunca sobre hospedagem compartilhada
   (`github.io`, `vercel.app`, `s3.amazonaws.com` e afins); aviso para domínio largo que recebe dado por GET
   (`docs.google.com`, `drive.google.com`, `pastebin.com`, `gist.github.com`); plugin só com skills, agentes e comandos
-  em Markdown (com hooks, MCP ou executável: "1.7.11"); `vigencia_ate` no passado recusa.
+  em Markdown, mais, só pelos campos `skills_com_scripts` da ficha, os scripts Python presos por hash e o
+  `requirements.lock` (com hooks, MCP de plugin, shell, Node ou binário: "1.7.11"); `vigencia_ate` no passado recusa.
 - **Dois casos da leitura do plugin** [Decisão; 1.7.10; emendas E8 e E9]. A marca U+FEFF (BOM) só é tirada no começo
   de um Markdown do plugin, e o cabeçalho que vem depois passa pela mesma conferência: um BOM não esconde um cabeçalho
   com `hooks`. Fora do começo, ela recusa. Num `/mnt/<letra>` do WSL (DrvFs sem a opção `metadata`), todo arquivo
@@ -708,7 +732,8 @@ tudo fechado.
   para `/etc/fundacao-ia/projetos/<p>/plugins/<nome>/` e um `--plugin-dir` no lançador. Antes, o preparo confere de
   novo os domínios e cada plugin pelo validador do kit da própria cópia da skill (a mesma regra e a mesma receita do
   `manifesto_sha256` da ficha e da ferramenta do titular, sem réplica) e copia só o que conferiu, cada arquivo com o
-  SHA-256 lido na conferência. O `mcp.json` é sempre `{"mcpServers": {}}` na 1.7.10. Sem o canário aprovado, a ficha
+  SHA-256 lido na conferência. Sem a seção `mcp`, o `mcp.json` é `{"mcpServers": {}}`, como na 1.7.10 (§8.7 diz o que muda
+com ela). Sem o canário aprovado, a ficha
   não é aplicada: tudo fechado, e o relatório do preparo diz por quê.
 
 ### 8.4 Canário: a prova
@@ -792,3 +817,84 @@ tudo fechado.
   usuários; com o Python só do usuário, a ficha se assina pela forma do Ubuntu.
 - No Windows, `FUNDACAO_MCP_PERMITIDAS` libera para o `guarda_caminho.py` só as ferramentas de infraestrutura do
   aplicativo (`mcp__ccd_*`); no Ubuntu, nenhuma (capacidade 08 §2 e §3).
+
+### 8.7 A jaula do Criador, as aberturas de código e o que falta medir (1.7.11)
+[Decisão; DECISAO-010 e DECISAO-011; o isolamento entre projetos continua lógico com a raiz em `/mnt/e` (DECISAO-007).]
+- **O que é e quando abre.** A jaula serve ao navegador e ao Codex, que rodam programas na máquina e guardam logins, e
+  por isso não podem depender do sandbox da sessão, que não confinou os comandos em `/mnt/e`. Só abre com a seção na
+  ficha assinada, o canário da jaula aprovado para o modo e da mesma versão (SHA-256 da entrada fixa, do proxy e do
+  `bwrap`) e o preparo do titular; reprovado um item, o modo não abre, sem aceite de risco no lugar. Os logins ficam com
+  outro usuário do Linux (`fundacao-jaula`, sem shell nem senha), numa pasta 0700 fora de `/home` e de `/mnt`, e a
+  sessão só chega a ele pelo porteiro da jaula (pedidos tipados), que chama `sudo -n -u fundacao-jaula` com argumentos
+  fixados na sudoers, sem curinga. Isso só vale se `sudo -n true` falhar dentro da sessão (M1); se não falhar, o
+  preparo usa a forma com senha.
+- **A caixa (bubblewrap).** Começa vazia e monta só o que o modo precisa, o oposto do sandbox da sessão (que monta o
+  sistema e nega caminhos): `--unshare-all`, `--cap-drop ALL`, `--clearenv`, `--die-with-parent`, `--new-session`
+  (o terminal do Codex ganha um pty próprio) e, no Codex, `--disable-userns`. `/usr` e as ligações do sistema são só
+  de leitura; `/etc` é um tmpfs próprio com poucos itens só de leitura (certificados, fontes, `ld.so.cache`,
+  `localtime`, `passwd` e `group` mínimos, sem `resolv.conf`) remontado só de leitura, e a raiz da caixa também é
+  remontada só de leitura. Nunca existem lá `/mnt`, a casa do titular, `/root`, `/etc/fundacao-ia`, o estado de outro
+  projeto nem a raiz da fundação; o navegador não vê nada do projeto, e o Codex vê uma cópia sem ligações. A saída volta
+  por uma pasta nova (`O_EXCL`), sem seguir ligação, e arquivo com trecho de 20 caracteres ou mais de um segredo da
+  jaula não é copiado (pega a cópia literal, não a transformada). Sem filtro seccomp próprio: com a rede separada e
+  sem socket visível, o canal que ele fecharia não existe, e o canário da jaula confere.
+- **Rede.** A caixa só tem o `lo`; a saída é um proxy de lista fora dela, por socket Unix. Ele aceita só `CONNECT`
+  na porta 443 e `GET` absoluto na 80; casa o nome com a lista do modo antes de qualquer DNS (o curinga `*.x` cobre o
+  próprio `x`); resolve uma vez e **recusa se qualquer endereço for privado** (loopback, 10/8, 172.16/12, 192.168/16,
+  link-local, CGNAT, ULA, multicast, reservado, IPv4 mapeado ou NAT64 de um deles); conecta ao IP resolvido; exige SNI
+  igual ao do `CONNECT`; e **recusa o ClientHello com ECH** (por isso o invólucro do Chromium desliga o
+  `EncryptedClientHello`). Registra host, porta, decisão e bytes, sem conteúdo. Limite: o fronting pelo cabeçalho `Host`
+  dentro do TLS o proxy não vê.
+- **Navegador, Codex e MCP.** Navegador: perfil novo e só do projeto, dentro da jaula; o titular faz os logins numa
+  janela dele (`abrir-navegador-<p> login <site>`). O perfil do Windows copiado chega sem cookies nem senhas (cifrados
+  pelo Windows), e decifrá-los por fora seria roubo de sessão: fica fechado. Os logins ficam ao alcance de uma página
+  maliciosa nos domínios da ficha. Codex: binário fixado por versão, tamanho e SHA-256, `CODEX_HOME` privado,
+  `config.toml` imposto com `--strict-config` (sandbox próprio ligado e sem rede), login pela conta do ChatGPT do titular
+  com outro usuário do Ubuntu (só na janela dele; o Codex da sessão, `codex-exec`, fica fechado com a conta, porque um comando
+  dele leria o `auth.json`, e só a chave de API do projeto, com teto de gasto, o abriria, por decisão do titular); o conteúdo dos clientes vai também à OpenAI, e o R55 tem validade de 90 dias. MCP do
+  escritório: é um conector remoto da conta, sem processo local, então não entra na jaula; a barreira é a lista positiva
+  de nomes (hook, `permissions.deny` e `--disallowedTools`), e, como o lançador não passa `--strict-mcp-config`, todos os
+  conectores da conta carregam. Com as ferramentas que gravam (DECISAO-011), a sessão pode criar, mudar e apagar dados do
+  escritório, inclusive de outros clientes que o conector entregar, e um texto malicioso pode tentar levá-la a isso.
+- **Modo sem perguntas.** O lançador passa `--allow-dangerously-skip-permissions`: a sessão começa no modo normal, e o
+  titular liga o outro com Shift+Tab, sem aceite assinado (DECISAO-010). Com ele ligado a sessão não mostra o comando
+  antes de rodar; as regras de negação valem em todos os modos (documentação de 08/11/2026) e os hooks e o sandbox
+  continuam onde barram, a conferir no canário.
+- **Agentes e skills da ficha.** Os perfis negam `Agent(<nome>)` dos agentes aninhados (o registro `agentes_negados`
+  só cresce; nome igual a um embutido, como `Plan` e `Explore`, fecha também o embutido naquele perfil, com aviso),
+  `Skill(<nome>)` das skills aninhadas e a leitura do lançador do executor de outro projeto (`fundacao-skill-<outro>`),
+  além do `abrir-fundacao-<outro>`. Skill aberta pela ficha tem de ter nome novo, porque a negação do nome simples não
+  tem exceção. O script de skill roda só pelo executor `fundacao-skill-<p>`, que confere o script, a venv e o
+  interpretador antes de cada execução e grava o registro; no modo `sessao` ele tem a autoridade dos comandos da sessão
+  (o executor prova a integridade, não o que o script faz), e a trava de projeto do executor é lógica. A venv é de dono
+  root, montada sem rede a partir de rodas conferidas pelo hash, mas confiada no primeiro uso; o código das rodas roda
+  junto com o script, e um `.pth` roda a cada partida do interpretador. O modo `caixa` (operação `rodar` do porteiro)
+  ficou para a 1.7.12. A sessão ainda pode rodar qualquer código por fora do executor.
+- **Marcadores do sandbox.** O `limpar-marcadores` do preparo apaga, na pasta do projeto, só arquivo comum de 0 byte,
+  de um nome só e sem ligação, destes nomes: `.bashrc`, `.bash_profile`, `.zshrc`, `.zprofile`, `.profile`, `.gitconfig`,
+  `.gitmodules`, `.ripgreprc` (lista obrigatória do bwrap), `.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.env`, `bunfig.toml`,
+  `package.json`, `package-lock.json`, `pnpm-lock.yaml` e `yarn.lock` (os três primeiros da limpeza vêm das sondas de
+  31/10/2026; os seis seguintes, do relatório do canário de 02/11/2026), mais as pastas vazias `.vscode` e `.idea`. Com conteúdo, é do projeto e fica; `.mcp.json` e
+  `CLAUDE.local.md` com conteúdo, e os de shell e git com conteúdo, impedem a abertura. O canário confirma a lista na
+  versão fixada do Claude Code.
+- **O que falta medir** (rótulo "não medido"; depende do canário do titular, depois da liberação): M1 (`sudo` na
+  sessão); M2 (a rede do sandbox com a raiz em `/mnt/e`); M3, M4 e M5 (o MCP na sessão: os conectores da conta e o efeito
+  do `--strict-mcp-config`, o MCP por URL com OAuth e o hook que nega MCP com o modo sem perguntas ligado); **M6** (o sandbox do Chromium na jaula, o
+  Wayland pela ACL, `/sys`, o limite de memória virtual que pode derrubar o Chromium e o `localStorage` dos sites de
+  tribunal, que o estado salvo do login não restaura); **M7** (se o sandbox próprio do Codex abre na jaula; se não
+  abrir, `features.use_legacy_landlock`; a rede dos comandos, os domínios no registro do proxy e os nomes de chave do
+  `config.toml` rodando de verdade); M-A1 a M-A6 (o hook `agent.spawn` de plugin, a skill em fork, os valores de
+  `agent_type`, `projectAgentsElsewhere`, a ferramenta do agente fora do `--tools` e `Agent(<nome>)` em `deny`); M-S1 a
+  M-S7 (a caixa dentro do sandbox, `Skill(x)` e `<plugin>:x`, o tempo de conferir a venv, as variáveis de proxy, a
+  entrada da Skill no hook e o pip sem privilégio); se o `init` do Claude Code 2.1.302 traz o modo de permissão; e se
+  `FUNDACAO_REGRAS_CODIGO` chega ao hook. Até lá valem as opções mais seguras e o isolamento entre projetos é lógico.
+- **Limites da revisão de segurança final** (veredito "liberar"; 13 achados, F1 a F7, F9, F12 e F13 fechados, F8,
+  F10 e F11 parciais; registre sempre):
+  1. A confirmação da volta do Codex mostra nomes e tamanhos, não o conteúdo (F10).
+  2. Um agente aninhado plantado durante a sessão com nome de embutido passa pelo guarda, se o binário o carregar (F8).
+  3. O ticket do sudo da forma com senha vive no terminal da sessão até ela fechar; o terminal próprio fica para a 1.7.12
+     (F11).
+  4. Faltam as medidas M1, M6, M7 e "jaula-acesso", feitas no canário do titular antes de abrir as sessões do Criador.
+     O `FUNDACAO_SKILLS` não depende de medida: o preparo grava `-` ("nenhuma skill"), um valor não vazio, e o guarda o
+     lê como nenhuma skill (F13).
+  5. O isolamento entre projetos com a raiz em `/mnt/e` é lógico.

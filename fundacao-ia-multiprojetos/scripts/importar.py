@@ -13,8 +13,11 @@ DESENHO-1.7.10 §5.2; MELHORIAS-1.7.10, item 0.7 e seção 1, itens 10 e 11).
    única, `regras_de_segredo.py`), opaco (autorizado com `--opaco GLOB`: copiado byte a byte, nunca decodificado,
    pesquisado nem mostrado; o nome fraco conferido por `segredos.py` entra como comum com `--incluir-fraco GLOB`),
    sqlite (copiado pela API de backup, por `backup_sqlite.py`, salvo o opaco), git (cada
-   `.git` vira `<pasta>/.git.zip`, sem config nem hooks), ligacao (fora: nunca seguida) e vinculo-fisico (fora: o
-   outro nome pode estar fora da origem). Grava o plano e mostra o SHA-256 do JSON canônico dele.
+   `.git` vira `<pasta>/.git.zip`, sem config nem hooks), ligacao (fora: nunca seguida), vinculo-fisico (fora: o
+   outro nome pode estar fora da origem) e fundacao (fora, sem ser percorrida, com aviso: a pasta que é raiz de
+   fundação, cópia de segurança do kit ou banco de uma fundação, pelos nomes, e a pasta da última cópia de segurança do
+   titular, `registry/ultima-copia.json`; revisão de segurança da 1.7.10, FLUXB-F4). Grava o plano e mostra o SHA-256
+   do JSON canônico dele.
 2. O titular aceita esse SHA-256.
 3. `copiar` recalcula o plano e recusa se ele mudou. Abre cada arquivo pela abertura conferida da cópia única da skill
    (`copia_segura.abrir_comum`, contratos do lote 2, §8: no POSIX, descendo da origem pasta a pasta por descritor, sem
@@ -55,7 +58,15 @@ byte a byte, senão a cópia byte a byte de um banco sem cabeçalho com `-wal` a
 
 Limites: o destino fica dentro de `projects/<projeto>/` da raiz informada, abaixo do projeto e fora das pastas ocultas
 dele (.claude, .porteiro, .git...), sem ligação em nenhum ponto do caminho (no Linux, a gravação é feita por
-descritor de pasta aberto sem seguir ligação; no Windows, conferindo cada pasta antes e o caminho real depois). "Sem
+descritor de pasta aberto sem seguir ligação; no Windows, conferindo cada pasta antes e o caminho real depois). A cópia
+do SQLite pela API de backup é feita num temporário privado de quem roda (TMPDIR/TEMP, fora da árvore que a sessão
+grava; precisa de espaço livre do tamanho do banco) e só então gravada no destino pelo mesmo caminho dos outros
+arquivos; a limpeza das sobras de uma cópia interrompida também desce por descritor (no Windows, ela confere o caminho
+real do destino visto no início e, se ele mudou, recusa) [revisão de segurança da 1.7.10, FLUXB-F2]. A origem não
+pode ser, nem ficar dentro de, uma pasta de fundação (as marcas da classe fundacao, de cima para baixo até o projeto
+do destino) nem a última cópia do titular (FLUXB-F4). O `copiar` recusa rodar (código 2, antes de carregar qualquer
+módulo ao lado) quando este arquivo fica dentro da pasta `projects/` de uma fundação (a pasta `projects` cujo pai tem
+`registry/`), onde a sessão de um projeto grava: o titular o roda da skill instalada (CI-F1). "Sem
 leitura" quer dizer que o conteúdo não é decodificado nem mostrado: o processo que copia lê os bytes. Por isso a
 barreira só existe quando quem roda NÃO é o shell da IA — depois do isolamento da 1.7.10, quem roda `copiar` é o
 titular, no terminal dele, com o comando pronto; a IA prepara o plano e lê o manifesto. Rodado pelo shell da IA, é só
@@ -103,8 +114,18 @@ TETO_TEXTO_CANONICO = 64 << 20  # acima disto, o texto não é guardado para o h
 BLOCO = 1 << 20
 REGISTRO_DE_ORIGENS = "projetos-host.json"  # em registry/ da raiz: as origens de cada projeto, gravadas pelo titular
 ESQUEMA_PROJETOS_HOST = "fundacao.projetos_host/1"
+ESQUEMAS_PROJETOS_HOST = (ESQUEMA_PROJETOS_HOST, "fundacao.projetos_host/2")  # 1.7.11: o /2 traz agentes_negados
 TETO_REGISTRO = 1 << 20  # bytes lidos do registro de origens; acima disso, recusa
 PREPARO_HOST = AQUI.parent / "assets" / "host" / "preparo_host.py"  # quem grava o registro (o titular)
+# Revisão de segurança da 1.7.10, FLUXB-F4: a última cópia de segurança do titular (gravada pelo `backup criar` do kit,
+# fundacao.ultima_copia/1), lida só para recusar e podar; e o que cada marca de fundação quer dizer, para o aviso.
+ULTIMA_COPIA, ESQUEMA_ULTIMA_COPIA, TETO_ULTIMA_COPIA = "ultima-copia.json", "fundacao.ultima_copia/1", 64 << 10
+MARCAS_DE_FUNDACAO = {
+    "raiz-de-fundacao": "raiz de fundação (fundacao/__main__.py com projects/)",
+    "copia-do-kit": "cópia de segurança do kit (files/fundacao/__main__.py)",
+    "banco-da-fundacao": "banco de uma fundação, com os dados de todos os projetos (state/state.sqlite)",
+    "copia-do-titular": "última cópia de segurança do titular (registry/ultima-copia.json)",
+    "projeto-de-fundacao": "pasta de um projeto da fundação (INSTRUCOES.md com data/ e outputs/)"}
 O_BINARY = getattr(os, "O_BINARY", 0)
 O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
@@ -119,6 +140,38 @@ def _carregar(nome: str):
     spec.loader.exec_module(modulo)
     return modulo
 
+
+def raiz_de_projects_acima(arquivo) -> Path | None:
+    """A raiz de fundação em cuja pasta `projects/` o arquivo fica (a pasta `projects` cujo pai tem `registry/`), pelo
+    caminho como foi dado e pelo caminho real; None se não fica em nenhuma (revisão de segurança da 1.7.10, CI-F1)."""
+    for caminho in (Path(os.path.abspath(arquivo)), Path(os.path.realpath(arquivo))):
+        for pasta in caminho.parents:
+            if pasta.name.lower() == "projects" and os.path.isdir(pasta.parent / "registry"):
+                return pasta.parent
+    return None
+
+
+def recusar_copiar_de_dentro_de_projects(arquivo=__file__) -> None:
+    """Revisão de segurança da 1.7.10, CI-F1: o `copiar` é passo do titular, fora do sandbox. Rodado de uma cópia da
+    skill dentro de `<raiz>/projects/` (onde a sessão de um projeto grava, e pode trocar este arquivo ou os módulos que
+    ele carrega ao lado), recusa com código 2, antes de carregar qualquer módulo vizinho."""
+    raiz = raiz_de_projects_acima(arquivo)
+    if raiz is None:
+        return
+    texto = str(raiz) if str(raiz).isprintable() else ascii(str(raiz))
+    try:
+        sys.stderr.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    print(json.dumps({"erro": f"recusado: este importar.py fica dentro da pasta projects/ da fundação {texto}, onde a "
+                              "sessão de um projeto grava (ela pode trocar este arquivo e os módulos que ele carrega): "
+                              "o copiar é passo do titular, fora do sandbox, e roda da skill instalada, nunca de uma "
+                              "cópia dentro de um projeto; nada foi copiado"}, ensure_ascii=False), file=sys.stderr)
+    raise SystemExit(2)
+
+
+if __name__ == "__main__" and sys.argv[1:2] == ["copiar"]:  # antes de carregar os módulos de AQUI (CI-F1)
+    recusar_copiar_de_dentro_de_projects()
 
 REGRAS = _carregar("regras_de_segredo")
 MANIFESTO_PY = _carregar("manifesto")  # pastas reconstruíveis e sufixos de texto do manifesto
@@ -386,15 +439,119 @@ def _e_raiz_de_fundacao(pasta: Path) -> bool:
             and not e_ligacao(projetos) and stat.S_ISDIR(projetos.st_mode))
 
 
-def _raiz_de_fundacao_acima(inicio: Path) -> Path | None:
-    """Sobe de `inicio` (um caminho real) procurando uma raiz de fundação; None se não houver nenhuma."""
+def _arquivo_comum(caminho: Path) -> bool:
+    try:
+        st = os.lstat(caminho)
+    except OSError:
+        return False
+    return not e_ligacao(st) and stat.S_ISREG(st.st_mode)
+
+
+def _e_pasta_comum(caminho: Path) -> bool:
+    try:
+        st = os.lstat(caminho)
+    except OSError:
+        return False
+    return not e_ligacao(st) and stat.S_ISDIR(st.st_mode)
+
+
+def marca_de_fundacao(pasta: Path) -> str | None:
+    """Por que a pasta é de uma fundação (uma chave de MARCAS_DE_FUNDACAO), só pelos metadados (lstat, sem ler conteúdo
+    nem seguir a ligação do último nome): raiz de fundação, cópia de segurança do kit (o `backup criar` guarda a raiz em
+    files/, com o pacote fundacao), o banco de uma fundação (state/state.sqlite, de uma raiz, de uma cópia ou só ele) ou
+    a pasta de um projeto (INSTRUCOES.md com data/ e outputs/: a cópia só de `projects/` ou de `projects/<outro>`, sem o
+    resto da fundação, também é recusada; revisão do lote B, N4); None se não é (revisão de segurança da 1.7.10,
+    FLUXB-F4)."""
+    if _e_raiz_de_fundacao(pasta):
+        return "raiz-de-fundacao"
+    if _arquivo_comum(pasta / "files" / "fundacao" / "__main__.py"):
+        return "copia-do-kit"
+    if _arquivo_comum(pasta / "state" / "state.sqlite"):
+        return "banco-da-fundacao"
+    if _arquivo_comum(pasta / "INSTRUCOES.md") and _e_pasta_comum(pasta / "data") and _e_pasta_comum(pasta / "outputs"):
+        return "projeto-de-fundacao"
+    return None
+
+
+def _fundacao_acima(inicio: Path, ate: Path | None = None) -> tuple[Path, str] | None:
+    """Sobe de `inicio` (um caminho real) até `ate` (inclusive; sem ele, até a raiz do disco) procurando uma pasta com
+    marca de fundação: (pasta, marca), ou None. A marca de pasta de projeto não vale para `ate`: ele é o projeto do
+    destino, que a tem (a importação de dentro dele continua; revisão do lote B, N4)."""
     atual = inicio
     while True:
-        if _e_raiz_de_fundacao(atual):
-            return atual
-        if atual.parent == atual:
+        marca = marca_de_fundacao(atual)
+        if marca == "projeto-de-fundacao" and atual == ate:
+            marca = None
+        if marca:
+            return atual, marca
+        if atual == ate or atual.parent == atual:
             return None
         atual = atual.parent
+
+
+def _ler_do_registry(raiz: Path, nome: str, teto: int) -> bytes | None:
+    """Os bytes de `registry/<nome>`, sem seguir ligação (`copia_segura.abrir_comum`) e até o teto; None se não existe.
+    OSError (ligação, vínculo físico, ilegível) e ValueError (acima do teto) sobem para quem chama."""
+    pasta = Path(raiz) / "registry"
+    arquivo = pasta / nome
+    if not os.path.lexists(arquivo):
+        return None
+    try:
+        fd = COPIA.abrir_comum(arquivo, dentro_de=pasta)
+    except COPIA.CopiaRecusada as exc:
+        raise OSError(str(exc)) from None
+    try:
+        partes, lidos = [], 0
+        while lidos <= teto and (bloco := os.read(fd, min(BLOCO, teto + 1 - lidos))):
+            partes.append(bloco)
+            lidos += len(bloco)
+    finally:
+        os.close(fd)
+    if lidos > teto:
+        raise ValueError(f"acima do teto de {teto} bytes")
+    return b"".join(partes)
+
+
+def copia_do_titular(raiz: Path) -> tuple[str | None, str | None]:
+    """(pasta da última cópia de segurança, neste sistema; aviso) pelo `registry/ultima-copia.json` da raiz
+    (fundacao.ultima_copia/1, que o `backup criar` grava) [revisão de segurança da 1.7.10, FLUXB-F4]. Uma sessão que
+    grava a raiz o forja: ele só serve para recusar e podar, nunca para aceitar. Ilegível ou fora do formato: sem pasta,
+    com o aviso (as marcas de fundação continuam valendo)."""
+    try:
+        bruto = _ler_do_registry(raiz, ULTIMA_COPIA, TETO_ULTIMA_COPIA)
+        if bruto is None:
+            return None, None
+        dados = json.loads(bruto.decode("utf-8"))
+        destino = caminho_local(dados.get("destino")) if isinstance(dados, dict) else None
+        if not isinstance(dados, dict) or dados.get("schema_version") != ESQUEMA_ULTIMA_COPIA or destino is None:
+            raise ValueError(f"fora do formato {ESQUEMA_ULTIMA_COPIA}")
+    except (OSError, ValueError) as exc:  # UnicodeDecodeError e JSON inválido também são ValueError
+        return None, (f"registry/{ULTIMA_COPIA} não foi lido ({type(exc).__name__}): a pasta da última cópia de "
+                      "segurança do titular não foi conferida por ele; as marcas de fundação, sim")
+    return destino, None
+
+
+def _pasta_da_copia(copia: str | None):
+    """`e_copia(caminho, st, so_ela=False)`: a pasta `caminho` (com o lstat dela) é a pasta da última cópia do titular
+    (com `so_ela`) ou fica dentro dela, pelo caminho real ou pela identidade (dispositivo e inode, onde o sistema de
+    arquivos os tem) [FLUXB-F4]. Sem a cópia, ou se ela não existe aqui, nunca."""
+    try:
+        alvo = os.stat(copia) if copia else None
+    except OSError:
+        alvo = None
+    if alvo is None:
+        return lambda caminho, st, so_ela=False: False
+    real, nome = _real(copia), os.path.basename(os.path.normpath(copia)).lower()
+
+    def e_copia(caminho, st: os.stat_result, so_ela: bool = False) -> bool:
+        if not so_ela:
+            atual = _real(caminho)
+            return (atual == real or atual.startswith(real.rstrip("\\/") + os.sep)
+                    or dentro_pela_identidade(atual, copia))
+        if alvo.st_ino:
+            return (st.st_dev, st.st_ino) == (alvo.st_dev, alvo.st_ino)
+        return os.path.basename(str(caminho)).lower() == nome and _real(caminho) == real  # sem inode (FAT, exFAT)
+    return e_copia
 
 
 def resolver_destino(par: dict) -> tuple[Path, Path, list[str]]:
@@ -442,9 +599,14 @@ def resolver_destino(par: dict) -> tuple[Path, Path, list[str]]:
     if origem_real.is_relative_to(raiz_real) and not origem_real.is_relative_to(projeto_real):
         raise Recusa("a origem fica na raiz da fundação, fora do projeto do destino (outro projeto, state/...): um "
                      "projeto não importa de outro")
-    if _raiz_de_fundacao_acima(origem_real) is not None and not origem_real.is_relative_to(projeto_real):
-        raise Recusa("a origem fica numa raiz de fundação, fora do projeto do destino (qualquer que seja a "
-                     "--raiz-fundacao informada): um projeto não importa de outro")
+    # Revisão de segurança da 1.7.10, FLUXB-F4: a marca vale de cima para baixo (a origem que é uma cópia de segurança,
+    # ou fica numa, recusa); dentro do projeto do destino, só a marca abaixo dele conta (a raiz dele tem a marca).
+    acima = _fundacao_acima(origem_real, ate=projeto_real if origem_real.is_relative_to(projeto_real) else None)
+    if acima is not None:
+        local = "fora do projeto do destino" if not origem_real.is_relative_to(projeto_real) else "dentro do projeto"
+        raise Recusa(f"a origem fica numa pasta de fundação, {local} ({MARCAS_DE_FUNDACAO[acima[1]]}: "
+                     f"{CODIGO.visivel(str(acima[0]))}), qualquer que seja a --raiz-fundacao informada: um projeto não "
+                     "importa de outro, nem de uma cópia da fundação")
     conferir_origem_registrada(Path(par["raiz_fundacao"]), partes[0], origem)
     return origem, projeto, list(partes[1:])
 
@@ -496,9 +658,10 @@ def ler_registro_de_origens(raiz: Path) -> dict | None:
         dados = json.loads(b"".join(partes).decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
         raise Recusa(f"o registro de origens {arquivo} não é JSON em UTF-8") from None
-    if (not isinstance(dados, dict) or dados.get("schema_version") != ESQUEMA_PROJETOS_HOST
+    if (not isinstance(dados, dict) or dados.get("schema_version") not in ESQUEMAS_PROJETOS_HOST
             or not isinstance(dados.get("projetos"), dict)):
-        raise Recusa(f"o registro de origens {arquivo} está fora do formato {ESQUEMA_PROJETOS_HOST}")
+        raise Recusa(f"o registro de origens {arquivo} está fora do formato {ESQUEMAS_PROJETOS_HOST[1]} "
+                     f"(ou {ESQUEMA_PROJETOS_HOST})")
     return dados
 
 
@@ -609,6 +772,15 @@ def montar_plano(par: dict) -> dict:
     opacos, extras = par["opacos"], par["pastas_de_segredo_extras"]
     reconstruiveis = (set(MANIFESTO_PY.EXCLUDE_DIRS) - {".git"}) | set(par["reconstruiveis_extras"])
     itens, fora_da_lista, todos, podadas = [], Counter(), set(), []
+    fundacoes, ocultas = [], []  # FLUXB-F4: as pastas de fundação podadas (e as de dentro de pasta de segredo)
+    copia, aviso_copia = copia_do_titular(Path(par["raiz_fundacao"]))
+    e_copia = _pasta_da_copia(copia)
+    if copia and e_copia(origem, os.stat(origem)):
+        raise Recusa(f"a origem é a {MARCAS_DE_FUNDACAO['copia-do-titular']} ou fica dentro dela: "
+                     f"{CODIGO.visivel(copia)}; um projeto não importa de uma cópia da fundação")
+
+    def de_fundacao(caminho: str, st: os.stat_result) -> str | None:
+        return marca_de_fundacao(Path(caminho)) or ("copia-do-titular" if e_copia(caminho, st, so_ela=True) else None)
 
     def registrar(item: dict, pasta: bool = False) -> None:
         rel = item["caminho"]
@@ -635,7 +807,10 @@ def montar_plano(par: dict) -> dict:
                 sub = f"{rel_atual}/{e.name}"
                 st = os.lstat(e.path)
                 if stat.S_ISDIR(st.st_mode) and not e_ligacao(st):
-                    if _n(e.name) != ".git":
+                    if de_fundacao(e.path, st):  # FLUXB-F4: nem o --opaco leva uma pasta de fundação (só contada)
+                        podadas.append(sub)
+                        ocultas.append(sub)
+                    elif _n(e.name) != ".git":
                         pendentes.append((Path(e.path), sub))
                     continue
                 todos.add(sub)
@@ -674,7 +849,12 @@ def montar_plano(par: dict) -> dict:
                 podadas.append(rel)
                 registrar({"caminho": rel, "classe": "ligacao"}, pasta=stat.S_ISDIR(st.st_mode))
             elif stat.S_ISDIR(st.st_mode):
-                if _n(e.name) == ".git":
+                marca = de_fundacao(e.path, st)
+                if marca:  # FLUXB-F4: antes do nome (.git, segredo, reconstruível), fora e sem ser percorrida
+                    podadas.append(rel)
+                    fundacoes.append(rel)
+                    registrar({"caminho": rel, "classe": "fundacao", "regra": marca}, pasta=True)
+                elif _n(e.name) == ".git":
                     try:
                         item = item_git(Path(e.path), rel)
                     except OSError as exc:
@@ -735,7 +915,18 @@ def montar_plano(par: dict) -> dict:
     resumo.update({"sumidos": len(sumidos or []), "sumidos-fora-da-lista": sumidos_fora_da_lista})
     if lista:
         resumo["fora-da-lista"] = sum(fora_da_lista.values())
-    avisos = []
+    avisos = [aviso_copia] if aviso_copia else []
+    if fundacoes or ocultas:  # FLUXB-F4; na lista de permissão, só o nome que ela mostraria
+        nomes = [r for r in fundacoes if not lista or pode_conter(r, visiveis)]
+        outras = len(fundacoes) + len(ocultas) - len(nomes)
+        avisos.append(f"{len(fundacoes) + len(ocultas)} pasta(s) de fundação ficaram fora, sem ser percorridas (raiz "
+                      "de fundação, cópia de segurança do kit, banco state/state.sqlite ou a última cópia do titular): "
+                      + ", ".join(map(CODIGO.visivel, nomes[:20]))
+                      + (f" e mais {len(nomes) - 20}" if len(nomes) > 20 else "")
+                      + (f"{' e ' if nomes else ''}{outras} sem o nome (fora da lista ou dentro de pasta de segredo)"
+                         if outras else "")
+                      + ". Um projeto não importa de outro nem de uma cópia da fundação: se a origem devia ser outra, "
+                        "registre e use uma pasta que não as contenha")
     if "data" not in partes[:1]:
         avisos.append("o destino não fica em projects/<projeto>/data/: CLAUDE.md e AGENTS.md da cópia ficam fora das "
                       "instruções da sessão só dentro de data/ (claudeMdExcludes)")
@@ -772,9 +963,43 @@ def _classificar_arquivo(rel: str, nome: str, st: os.stat_result, par: dict, ref
 
 # ------------------------------------------------------------------------------------------------ destino
 _POSIX = (os.name == "posix" and hasattr(os, "O_DIRECTORY") and bool(O_NOFOLLOW) and hasattr(os, "fchmod")
-          and {os.open, os.mkdir, os.stat, os.unlink, os.rename} <= os.supports_dir_fd
-          and os.utime in os.supports_fd)
+          and {os.open, os.mkdir, os.stat, os.unlink, os.rename, os.rmdir} <= os.supports_dir_fd
+          and {os.utime, os.listdir} <= os.supports_fd)
 _PASTA = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | O_NOFOLLOW | O_CLOEXEC
+
+
+PROFUNDIDADE_DA_SOBRA = 64  # a sobra de uma cópia interrompida tem poucos níveis; mais que isso não se apaga
+
+
+def apagar_pasta_por_descritor(fd_pai: int, nome: str, _nivel: int = 0) -> None:
+    """Apaga a pasta `nome` (filha do descritor `fd_pai`) com tudo dentro, sem seguir ligação e sem erro (quem não se
+    apaga fica). Desce por descritor (`os.open` com O_NOFOLLOW e O_DIRECTORY, `os.listdir(fd)`) e apaga com `os.unlink` e
+    `os.rmdir` com `dir_fd`, que existem desde o Python 3.3: o `shutil.rmtree(dir_fd=)` exige o 3.11 e a skill declara 3.10+
+    (revisão do lote B, N3). Uma ligação no meio é apagada como ligação, sem entrar nela."""
+    if _nivel > PROFUNDIDADE_DA_SOBRA:
+        return
+    try:
+        fd = os.open(nome, _PASTA, dir_fd=fd_pai)
+    except OSError:
+        return
+    try:
+        for entrada in os.listdir(fd):
+            try:
+                st = os.stat(entrada, dir_fd=fd, follow_symlinks=False)
+                if stat.S_ISDIR(st.st_mode) and not e_ligacao(st):
+                    apagar_pasta_por_descritor(fd, entrada, _nivel + 1)
+                else:
+                    os.unlink(entrada, dir_fd=fd)
+            except OSError:
+                continue
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+    try:
+        os.rmdir(nome, dir_fd=fd_pai)
+    except OSError:
+        pass
 
 
 class Gravador:
@@ -783,6 +1008,9 @@ class Gravador:
     e o caminho real depois. Cada arquivo nasce num temporário exclusivo e é renomeado no lugar; fica só leitura."""
 
     def __init__(self, projeto: Path, partes: list[str]):
+        if os.name == "posix" and not _POSIX:  # gravar pelo caminho num POSIX reabre a troca por ligação no meio
+            raise Recusa("este sistema não grava por descritor de pasta (dir_fd em open, mkdir, stat, unlink, rename e "
+                         "rmdir; fd em utime e listdir): a importação recusa gravar pelo caminho")
         self.raiz = projeto.joinpath(*partes)
         if _POSIX:
             fd = os.open(projeto, _PASTA)
@@ -993,6 +1221,8 @@ class Gravador:
                 os.close(fd_dir)
             return
         final = self._garantir(self.raiz, partes[:-1], criar=False) / partes[-1]
+        if not Path(os.path.realpath(final.parent)).is_relative_to(self.real):  # FLUXB-F2: pasta acima trocada
+            raise Recusa(f"a pasta do destino foi trocada por ligação: {rel} não foi removido")
         try:
             self._livre_caminho(final)
             os.unlink(final)
@@ -1001,8 +1231,18 @@ class Gravador:
 
     def remover_pasta_temporaria(self, nome: str) -> None:
         """Apaga uma pasta temporária desta ferramenta (`.importando-*`) deixada na raiz do destino por uma cópia do
-        SQLite interrompida. Só um nome na raiz do destino, conferido que não é ligação e que fica dentro dela."""
+        SQLite interrompida (até a 1.7.10, ela nascia no destino). Só um nome na raiz do destino, conferido que não é
+        ligação e que fica dentro dela; no POSIX, pelo descritor do destino (revisão de segurança da 1.7.10, FLUXB-F2:
+        pelo caminho, uma pasta acima trocada por ligação levava a remoção para outro projeto)."""
         if "/" in nome or not nome.startswith(PREFIXO_TEMP):
+            return
+        if _POSIX:
+            try:
+                st = os.stat(nome, dir_fd=self.fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return
+            if stat.S_ISDIR(st.st_mode):
+                apagar_pasta_por_descritor(self.fd, nome)  # não o shutil.rmtree(dir_fd=), que exige o Python 3.11
             return
         caminho = self.raiz / nome
         try:
@@ -1011,11 +1251,41 @@ class Gravador:
             return
         if e_ligacao(st) or not stat.S_ISDIR(st.st_mode):
             return
-        if Path(os.path.realpath(caminho)).is_relative_to(Path(os.path.realpath(self.raiz))):
-            shutil.rmtree(caminho, ignore_errors=True)
+        if not Path(os.path.realpath(caminho)).is_relative_to(self.real):  # o real do início, não o de agora (FLUXB-F2)
+            raise Recusa(f"a pasta do destino foi trocada por ligação: {nome} não foi removida")
+        shutil.rmtree(caminho, ignore_errors=True)
 
     def nomes_na_raiz(self) -> list[str]:
         return sorted(os.listdir(self.fd if _POSIX else self.raiz))
+
+    def temporarios(self) -> list[tuple[str, bool]]:
+        """Os temporários desta ferramenta no destino (`_temporarios`). No POSIX, a varredura desce por descritor a
+        partir do destino, sem seguir ligação: pelo caminho, uma pasta acima trocada por ligação a levaria a listar
+        outro projeto (revisão de segurança da 1.7.10, FLUXB-F2)."""
+        if not _POSIX:
+            return _temporarios(self.raiz)
+        achados, pendentes = [], [(os.dup(self.fd), "")]
+        while pendentes:
+            fd, rel_pasta = pendentes.pop()
+            try:
+                with os.scandir(fd) as it:
+                    nomes = [e.name for e in it]
+                for nome in nomes:
+                    rel = f"{rel_pasta}/{nome}" if rel_pasta else nome
+                    try:
+                        st = os.stat(nome, dir_fd=fd, follow_symlinks=False)
+                        if stat.S_ISDIR(st.st_mode) and not nome.startswith(PREFIXO_TEMP):
+                            pendentes.append((os.open(nome, _PASTA, dir_fd=fd), rel))
+                            continue
+                    except OSError:
+                        continue  # sumiu ou virou ligação entre a listagem e a abertura: não desce
+                    if stat.S_ISDIR(st.st_mode):
+                        achados.append((rel, True))  # pasta temporária inteira (não desce)
+                    elif stat.S_ISREG(st.st_mode) and nome.startswith(PREFIXO_TEMP) and nome.endswith(".tmp"):
+                        achados.append((rel, False))
+            finally:
+                os.close(fd)
+        return achados
 
 
 def _json(dados):
@@ -1134,10 +1404,17 @@ class Copia:
                 return
             self.copiar_arquivo(item, copia="byte a byte: sem o cabeçalho do SQLite")
             return
-        pasta = Path(tempfile.mkdtemp(prefix=PREFIXO_TEMP, dir=self.grav.raiz))
+        # Revisão de segurança da 1.7.10, FLUXB-F2: a cópia pela API de backup vai para um temporário privado de quem
+        # roda (0700, no TMPDIR/TEMP), fora da árvore que a sessão grava, e não para uma pasta criada pelo caminho do
+        # destino: uma pasta acima dele trocada por ligação levava a pasta temporária e o banco para outro projeto (e o
+        # backup_sqlite.py, que reabre o destino pelo caminho, para o nome que a sessão quisesse). Só o Gravador grava
+        # no destino.
+        pasta = Path(tempfile.mkdtemp(prefix=PREFIXO_TEMP))
         try:
-            if not Path(os.path.realpath(pasta)).is_relative_to(Path(os.path.realpath(self.grav.raiz))):
-                raise Recusa("a pasta temporária da cópia do SQLite ficou fora do destino")
+            raiz_real = Path(os.path.realpath(self.par["raiz_fundacao"]))
+            if Path(os.path.realpath(pasta)).is_relative_to(raiz_real):
+                raise Recusa("a pasta temporária do sistema (TMPDIR ou TEMP) fica dentro da raiz da fundação, onde a "
+                             "sessão grava: aponte-a para fora dela e rode o copiar de novo")
             saida = pasta / "copia.sqlite"
             p = subprocess.run([sys.executable, "-I", "-B", str(AQUI / "backup_sqlite.py"), "--origem", str(caminho),
                                 "--destino", str(saida)], capture_output=True, text=True, encoding="utf-8",
@@ -1153,8 +1430,8 @@ class Copia:
                 self.falhas.append({"caminho": item["caminho"], "motivo": "a cópia pela API de backup não conferiu "
                                     f"(integridade ou contagens): {info.get('tipo') or info.get('erro', '?')}"})
                 return
-            # A pasta temporária fica no destino, onde a sessão grava: a cópia dela também passa pela abertura
-            # conferida (uma ligação ou um vínculo físico posto no lugar de copia.sqlite não é copiado).
+            # A cópia ainda passa pela abertura conferida (uma ligação ou um vínculo físico posto no lugar de
+            # copia.sqlite não é copiado), como quando a pasta temporária ficava no destino.
             fd = abrir_origem(saida, pasta, None)
             try:
                 res = self.grav.gravar(item["caminho"], lambda fh: ler_blocos(fd, None, fh), item["mtime_ns"])
@@ -1262,7 +1539,7 @@ class Copia:
                 neutralizacao = None
                 self.falhas += [{"caminho": i["caminho"], "motivo": f"zip das extensões não gravado: {exc}"}
                                 for i in para_neutralizar]
-            for rel, e_pasta in _temporarios(self.grav.raiz):
+            for rel, e_pasta in self.grav.temporarios():
                 if e_pasta:
                     self.grav.remover_pasta_temporaria(rel)
                 else:

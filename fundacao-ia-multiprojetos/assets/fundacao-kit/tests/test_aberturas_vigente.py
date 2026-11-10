@@ -171,7 +171,27 @@ class TestVigente(VigenteCase):
         self.assinador.assinar(self.area / "ficha-v4.json")
         self.fechada("difere da do nome")
         shutil.rmtree(self.area)
-        self.assinador.gravar(self.area, ficha(mcp=[{"nome": "playwright"}]))
+        self.assinador.gravar(self.area, ficha(git=[{"pasta": "repo"}]))
+        self.fechada("1.7.11")
+
+    def test_secoes_da_jaula_valem_assinadas_e_mcp_local_fecha_tudo(self):
+        """1.7.11, L1 e DECISAO-011: mcp (com as ferramentas que gravam), navegador e outras_llm saíram das reservadas; o
+        MCP local e o perfil copiado seguem fechados, e a ficha com um deles não vale (sem voltar à anterior)."""
+        boa = ficha(mcp=[{"nome": "fsn", "origem": "conta", "conector": "Conector do escritorio",
+                          "ferramentas": ["buscar_clientes", "salvar_nota"], "ocultar": ["escanear_vault"],
+                          "conteudo_de_terceiros": True}],
+                    navegador={"dominios": ["esaj.tjsp.jus.br"], "modos": ["sessao"]})
+        self.assinador.gravar(self.area, boa)
+        r = self.vigente()
+        self.assertTrue(r["valida"], r)
+        self.assertEqual(r["ficha"]["mcp"][0]["nome"], "fsn")
+        self.assertEqual(r["ficha"]["mcp"][0]["ferramentas"], ["buscar_clientes", "salvar_nota"])
+        ruim = ficha(versao=2, mcp=[{**boa["mcp"][0], "comando": "npx"}])
+        self.assinador.gravar(self.area, ruim)
+        r = self.fechada("mcp[0].comando")
+        self.assertEqual(r["versao"], 2)
+        shutil.rmtree(self.area)
+        self.assinador.gravar(self.area, ficha(perfil_navegador_copiado={"origem": "data/x_browser_profile"}))
         self.fechada("1.7.11")
 
     def test_ancora_ausente_e_ssh_keygen_do_sistema_ausente(self):

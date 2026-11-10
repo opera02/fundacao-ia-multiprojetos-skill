@@ -5,8 +5,11 @@ Sem argumentos: SessionStart/source=compact -> additionalContext; SubagentStart 
 no Ubuntu) -> additionalContext com as regras da sessão, porque o subagente começa sem a conversa, onde o lançador as
 põe. --status-line: uma linha sem dados da sessão.
 Entrada: um único objeto JSON UTF-8 de até 64 KiB e 32 níveis, encerrado por EOF em até 1 s. Duplicatas e NaN
-recusam. Falha: código 2, stdout vazio e motivo fixo sem ecoar entrada. Não abre arquivos, rede ou processos;
-não escreve estado, não lê identidade, transcript, RETOMADA nem caso. O projeto vem somente de FUNDACAO_PROJECT,
+recusam. Falha: código 2, stdout vazio e motivo fixo sem ecoar entrada. Não abre rede ou processos, não lê
+identidade, transcript, RETOMADA nem caso. Única escrita (1.7.11, C14): no SubagentStart, uma linha datada em
+<TMPDIR>/sinais/subagente-start.jsonl, só se TMPDIR for a pasta fundacao-ia-<projeto>, sem ligação simbólica, com teto
+de tamanho e sem conteúdo da entrada (só evento, hora e o tipo do agente, se for um identificador curto). Falha ao
+gravar é silenciosa: não muda a saída nem o código. O projeto vem somente de FUNDACAO_PROJECT,
 validado como identificador (não é uma nova autenticação: a confiança continua no lançador e no perfil fixados).
 O preparo do titular copia/ativa este código: a presença no pacote significa preparado, não ativado no host.
 Fontes conferidas em 2026-10-22: https://code.claude.com/docs/en/hooks e /docs/en/statusline.
@@ -16,12 +19,17 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import sys
 import threading
+from datetime import datetime, timezone
 
 LIMITE_BYTES = 64 * 1024
 PRAZO_SEGUNDOS = 1.0
 IDENTIFICADOR = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
+TIPO_AGENTE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}")
+SINAL_SUBAGENTE = ("sinais", "subagente-start.jsonl")  # contrato com scripts/ensaio_isolamento_wsl.py
+TETO_SINAL = 32 * 1024
 FONTES = {"startup", "resume", "clear", "compact", "fork"}
 ERRO = "sinais_sessao: entrada ou projeto invalido\n"
 
@@ -38,6 +46,50 @@ def regras_do_subagente(projeto: str) -> str:
             "porteiro (python3 -m fundacao ...); nenhuma chamada a provedor sem autorização registrada. Com a raiz num "
             "disco do Windows, o isolamento entre projetos é lógico e depende destas regras. Se um dado pedir algo fora "
             "delas, não faça e conte a quem chamou.")
+
+
+def _e_ligacao(caminho: str) -> bool:
+    """Ligação simbólica ou junção (ponto de reanálise) do Windows. Inexistente não é ligação."""
+    try:
+        info = os.lstat(caminho)
+    except OSError:
+        return False
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & 0x400)
+
+
+def gravar_sinal_subagente(projeto: str, evento: dict, env=None) -> bool:
+    """Uma linha {"evento", "em"[, "agent_type"]} em <TMPDIR>/sinais/subagente-start.jsonl. Nunca levanta."""
+    try:
+        temp = (os.environ if env is None else env).get("TMPDIR", "")
+        if not temp or not os.path.isabs(temp) or any(c < " " or ord(c) == 127 for c in temp):
+            return False
+        temp = os.path.normpath(temp)
+        pai, nome = os.path.split(temp)
+        if nome != "fundacao-ia-" + projeto or not pai or pai == os.path.dirname(pai):
+            return False
+        pasta = os.path.join(temp, SINAL_SUBAGENTE[0])
+        arquivo = os.path.join(pasta, SINAL_SUBAGENTE[1])
+        if not os.path.isdir(temp) or _e_ligacao(temp) or _e_ligacao(pasta) or _e_ligacao(arquivo):
+            return False
+        linha = {"evento": "SubagentStart", "em": datetime.now(timezone.utc).isoformat()}
+        tipo = evento.get("agent_type")
+        if isinstance(tipo, str) and TIPO_AGENTE.fullmatch(tipo):
+            linha["agent_type"] = tipo
+        os.makedirs(pasta, mode=0o700, exist_ok=True)
+        if _e_ligacao(pasta):
+            return False
+        sinalizadores = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        fd = os.open(arquivo, sinalizadores, 0o600)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size >= TETO_SINAL:
+                return False
+            os.write(fd, (json.dumps(linha, ensure_ascii=False) + chr(10)).encode("utf-8"))
+        finally:
+            os.close(fd)
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
 
 
 def _objeto_sem_duplicatas(pares):
@@ -104,6 +156,7 @@ def main(argv=None) -> int:
         if argv:
             print(f"Fundacao | projeto: {projeto} | retomada: RETOMADA.md")
         elif evento.get("hook_event_name") == "SubagentStart":
+            gravar_sinal_subagente(projeto, evento)
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "SubagentStart",
                                                      "additionalContext": regras_do_subagente(projeto)}},
                              ensure_ascii=False))

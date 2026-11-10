@@ -11,8 +11,8 @@ import subprocess
 import sys
 import unittest
 
-from apoio import ENV, SCRIPTS
-from test_ensaio_isolamento import LINUX, Base, _ctx, executor_bom
+from apoio import ENV
+from test_ensaio_isolamento import LINUX, Base, _ctx, copia_do_script, executor_bom
 
 
 class TestLimparArtefatos(Base):
@@ -74,6 +74,25 @@ class TestLimparArtefatos(Base):
             self.assertFalse((pasta / ".vscode").exists())
         self.assertFalse((c["a"] / ".git").exists())
         self.assertTrue((self.base / "plano.json").is_file())
+
+    def test_limpar_apaga_os_marcadores_de_data_origem_cwd_das_sessoes_do_agents_md(self):
+        """1.7.11: as sessões do AGENTS.md rodam em `projects/ensaio-a/data/origem`, e o sandbox deixa marcadores de 0 byte
+        no cwd (como no canário de 02/11/2026); eles saem, o que tem conteúdo fica, e o relatório os registra como novos."""
+        plano = self.mod.preparar(self.base)
+        c = self.mod._caminhos(self.base)
+        for pasta in (c["a_data"], c["a_data_origem"]):
+            (pasta / ".npmrc").write_bytes(b"")
+            (pasta / ".vscode").mkdir()
+        _, motivo = self.mod._med_marcadores(self.base, plano, {}, [])
+        self.assertIn("projects/ensaio-a/data/origem/.npmrc", motivo)
+        (c["a_data_origem"] / "meu.txt").write_text("dado\n", encoding="utf-8")
+        resumo = self.mod.limpar(self.base)
+        self.assertEqual(resumo["restantes"], ["projects/", "projects/ensaio-a/", "projects/ensaio-a/data/",
+                                               "projects/ensaio-a/data/origem/",
+                                               "projects/ensaio-a/data/origem/meu.txt"])
+        for pasta in (c["a_data"], c["a_data_origem"]):
+            self.assertFalse((pasta / ".npmrc").exists())
+            self.assertFalse((pasta / ".vscode").exists())
 
     def test_limpar_nao_apaga_temp_de_outro_inode(self):
         self.mod.preparar(self.base)
@@ -169,7 +188,9 @@ class TestRodarDeNovo(Base):
         """Pela linha de comando, com um binário qualquer que responde `--version` (o próprio Python, x.y.z)."""
         self.mod.preparar(self.base)
         self.mod._caminhos(self.base)["perfil"].write_text("{}", encoding="utf-8")
-        r = subprocess.run([sys.executable, "-B", str(SCRIPTS / "ensaio_isolamento_wsl.py"), "rodar", "--base",
+        # Uma cópia fora da raiz (revisão de segurança da 1.7.10, CI-F1: dentro de <raiz>/projects/ o ensaio recusa).
+        script = copia_do_script(self.tmp / "skill")
+        r = subprocess.run([sys.executable, "-B", str(script), "rodar", "--base",
                             str(self.base), "--claude", sys.executable, "--temp-base", self.temp_base.as_posix()],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", env=ENV, timeout=120)
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)

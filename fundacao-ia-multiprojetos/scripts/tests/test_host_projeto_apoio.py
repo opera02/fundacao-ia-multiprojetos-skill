@@ -24,7 +24,7 @@ from pathlib import Path
 from apoio import ENV, SKILL
 
 TODOS_OS_HOOKS = ("guarda_caminho.py", "guarda_identidade.py", "sinais_sessao.py", "guarda_ferramentas.py",
-                  "guarda_rede.py", "guarda_leitura.py", "aviso_copia.py")
+                  "guarda_rede.py", "guarda_leitura.py", "aviso_copia.py", "regras_codigo.py")
 LINUX = os.name == "posix" and sys.platform.startswith("linux")
 PYTHON_LINUX = "/usr/bin/python3"
 PORTEIRO_DA_SKILL = SKILL / "assets" / "host" / "wsl" / "porteiro.py"
@@ -167,7 +167,8 @@ def skill_de_ensaio(base: Path, *, registro_porteiro: Path | None = None, regist
     porteiro do pacote PORTEIRO na skill), aberturas e titular."""
     skill = base / "skill-ensaio" / "fundacao-ia-multiprojetos"
     for rel in ("SKILL.md", "assets/host", "assets/hooks", "assets/fundacao-kit/fundacao", "scripts/regras_de_segredo.py",
-                "scripts/copia_segura.py", "scripts/gravacao_segura.py"):
+                "scripts/copia_segura.py", "scripts/gravacao_segura.py", "scripts/instrucoes_aninhadas.py",
+                "scripts/codigo_do_plano.py", "scripts/manifesto.py"):  # os três últimos: a conferência das aninhadas (A3)
         _copiar(SKILL / rel, skill / rel)
     for nome in TODOS_OS_HOOKS:
         alvo = skill / "assets" / "hooks" / nome
@@ -240,16 +241,22 @@ def gravar_aceite_na_caixa(raiz: Path, projeto: str, aceite: dict, *, assinatura
 def relatorio_de_canario(m, raiz: Path, claude: Path, *, versao: str = "2.1.302", **mudancas) -> dict:
     """Relatório `fundacao.ensaio_isolamento/1` de ensaio (o formato do pacote CANARIO), aprovado, do Claude Code de
     ensaio e da forma de caminho da raiz de ensaio, medida como o preparo mede. Pasta temporária num sistema de arquivos
-    que o canário não prova (tmpfs, por exemplo): o teste é pulado, com o motivo."""
+    que o canário não prova (tmpfs, por exemplo): o teste é pulado, com o motivo. Completo como o do ensaio real
+    (revisão de segurança da 1.7.10, CAN-1: o portão recalcula a conclusão pelos itens): as sondas de
+    `m.SONDAS_DO_CANARIO`, cada uma de comando com `passou`, o perfil gerado, o sandbox ligado e o temp do lançador."""
     fs = m.tipo_de_fs(raiz)
     forma = m.forma_do_caminho(Path(raiz).as_posix(), fs)
     if forma is None:
         raise unittest.SkipTest(f"a pasta temporária fica num sistema de arquivos ({fs}) que o canário não prova")
     forma = "ext4" if forma == "ext4" else forma + "/ensaio-canario"
+    itens = [{"id": ident, "classe": classe, "veredito": "nao_medido" if classe == "informativo" else "passou",
+              "motivo": "ensaio"} for ident, classe in m.SONDAS_DO_CANARIO.items()]
     relatorio = {"schema_version": "fundacao.ensaio_isolamento/1", "data": "2026-10-31T12:00:00Z", "simulado": False,
                  "forma": forma, "base": "/home/ensaio/canario", "projeto": "ensaio-a",
                  "claude": {"binario": "/home/ensaio/claude", "versao": versao, "sha256": sha(claude)},
-                 "sistema_de_arquivos": fs, "sandbox_ligado": True, "seccomp_presente": None, "itens": [],
+                 "sistema_de_arquivos": fs, "sandbox_ligado": True, "seccomp_presente": None,
+                 "perfil": {"gerado": True, "veredito": "passou"}, "temp": {"base": "/tmp", "do_lancador": True},
+                 "itens": itens,
                  "conclusao": {"forma": forma, "sistema_de_arquivos": fs, "confina_comandos": True, "motivo": "ensaio"}}
     relatorio.update(mudancas)
     return relatorio

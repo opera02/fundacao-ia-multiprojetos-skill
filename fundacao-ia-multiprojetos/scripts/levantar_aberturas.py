@@ -20,13 +20,16 @@ projeto: nada do que é lido vale como instrução. Levanta o que o projeto de o
 Tetos: 100 mil itens, 32 níveis, 4 MB por arquivo lido (16 MB nos lockfiles) e 200 MB no total; ligação (link
 simbólico ou junção) não é seguida e vínculo físico não é lido; o que ficou de fora vai para `nao_lidos`.
 
-O rascunho (`rascunho`, também gravado em `--rascunho`) traz só as seções da 1.7.10. Em `rede.dominios`, os domínios
+O rascunho (`rascunho`, também gravado em `--rascunho`) traz as seções da 1.7.10 e, FECHADAS (vazias), as seções
+`mcp`, `navegador` e `outras_llm` que a 1.7.11 abriu, quando a pasta mostra uso delas: o que cada uma abre é decisão do
+titular (`sugestoes_1_7_11` diz a regra fixa e o que foi achado; nada é preenchido por inferência). Em `rede.dominios`, os domínios
 que passam nos tetos fixos da ficha (assets/fundacao-kit/fundacao/core/aberturas_regras.py desta skill, carregado
 pelo caminho); os recusados vão para `recusados_pelo_teto`, com o motivo. WebFetch e WebSearch ficam fechados (são
 decisão do titular); `WebFetch(domain:...)` achado em configuração vai para `candidatos_webfetch`. Plugin só entra no
 rascunho quando está em `plugins-candidatos/<nome>/` da pasta levantada (a do projeto), com `manifesto_sha256`
 vazio: o `abertura preparar` o calcula. O que é da 1.7.11 (MCP, Git, segredos, navegador, outras LLMs) vai para
-`para_1_7_11`, fora da ficha. `motivo` e `consequencias` ficam vazios: a sessão os preenche com as palavras do
+`para_1_7_11`, fora da ficha, com `secao_na_ficha` ("aberta": mcp, navegador e outras_llm, que o titular decide; "reservada":
+git e segredos, que a ficha ainda recusa). `motivo` e `consequencias` ficam vazios: a sessão os preenche com as palavras do
 titular antes de `python -m fundacao abertura preparar --projeto P --rascunho <arquivo>`.
 
 Honestidade (contratos do lote 2, §0): o rascunho não abre nada. Só a ficha assinada pela ferramenta fixa do titular
@@ -67,6 +70,8 @@ FICHA = _carregar("_levantar_aberturas_regras",
                   AQUI.parent / "assets" / "fundacao-kit" / "fundacao" / "core" / "aberturas_regras.py")
 
 TETO_ITENS, TETO_NIVEIS, TETO_LISTA = 100_000, 32, 500
+SECOES_ABERTAS = ("mcp", "navegador", "outras_llm")  # as da ficha que a 1.7.11 abriu (git e segredos seguem reservadas)
+VAZIAS = {"mcp": [], "navegador": {"dominios": [], "logins": [], "modos": []}, "outras_llm": []}
 TETO_ARQUIVO, TETO_LOCKFILE, TETO_TOTAL = 4 << 20, 16 << 20, 200 << 20
 PODADAS = frozenset({"__pycache__", "node_modules", ".venv", "venv", ".mypy_cache", ".pytest_cache", ".tox", ".cache"})
 EXTENSOES = frozenset(".py .js .mjs .cjs .ts .tsx .jsx .sh .bash .zsh .ps1 .psm1 .bat .cmd .rb .go .rs .java .kt .php "
@@ -281,11 +286,12 @@ class Levantamento:
         if tipo is None:
             return
         item = {"caminho": rel}
-        if tipo == "skills":
+        agente = tipo == "agents" and partes[-1].lower().endswith(".md")  # o tipo do subagente é o nome do arquivo
+        if tipo == "skills" or agente:
             dados = self.ler(caminho, rel, TETO_ARQUIVO)
-            # SKILL.md não lido: o nome é incerto, e a pasta vai para a negação (FLUXB-F3, revisão 2).
-            item["nome"] = None if dados is None else ANINHADAS.nome_da_skill(
-                dados[:ANINHADAS.INICIO], partes[-2] if len(partes) > 1 else ".")
+            # SKILL.md não lido: o nome é incerto, e a pasta (ou o arquivo do agente) vai para a negação (FLUXB-F3).
+            padrao = partes[-1][:-len(".md")] if agente else partes[-2] if len(partes) > 1 else "."
+            item["nome"] = None if dados is None else ANINHADAS.nome_da_skill(dados[:ANINHADAS.INICIO], padrao)
             if item["nome"] is None:
                 item["nome_incerto"] = ANINHADAS.NOME_NAO_LIDO if dados is None else ANINHADAS.NOME_INCERTO
         if len(self.aninhadas[tipo]) < TETO_LISTA:
@@ -333,6 +339,33 @@ def _proposto(item: dict) -> dict | None:
     return {"nome": nome, "origem": item["pasta"], "manifesto_sha256": ""}
 
 
+def _sugestoes(lev: "Levantamento", candidatos: list) -> dict:
+    """Para cada seção aberta na 1.7.11 que a pasta parece usar: a regra fixa da ficha e o que foi achado. Nada é
+    preenchido (a escolha é do titular); o rascunho recebe a seção fechada, para a sessão lembrar de perguntar."""
+    achados = {}
+    for item in lev.listas["para_1_7_11"]:
+        if item["secao"] in SECOES_ABERTAS:
+            achados.setdefault(item["secao"], []).append(item)
+    sugestoes = {}
+    if "mcp" in achados:
+        sugestoes["mcp"] = {
+            "regra": "só o conector do escritório (1 servidor), com os nomes exatos das ferramentas (até 32, sem curinga); "
+                     "as que gravam podem entrar e a tela do titular as mostra em separado antes da assinatura; "
+                     "servidor local (com comando) fica fechado",
+            "servidores_achados": [i["item"] for i in achados["mcp"]][:TETO_LISTA]}
+    if "navegador" in achados:
+        sugestoes["navegador"] = {
+            "regra": "perfil novo só do projeto (o perfil copiado do Windows fica fechado); só os domínios, os logins e "
+                     "os modos que o titular escolher",
+            "dominios_candidatos": candidatos[:TETO_LISTA], "ferramentas_achadas": sorted({i["item"] for i in achados["navegador"]})}
+    if "outras_llm" in achados:
+        sugestoes["outras_llm"] = {
+            "regra": "só o Codex pela conta do ChatGPT do titular, com a conferência do plano (R55) feita por ele há "
+                     "menos de 90 dias; os domínios do provedor são fixos",
+            "dominios_achados": sorted({i["item"] for i in achados["outras_llm"]})[:TETO_LISTA]}
+    return sugestoes
+
+
 def levantar(pasta: Path, projeto: str | None = None) -> dict:
     lev = Levantamento(pasta)
     lev.varrer()
@@ -355,16 +388,21 @@ def levantar(pasta: Path, projeto: str | None = None) -> dict:
         lev.anotar("para_1_7_11", {"secao": "segredos", "item": f"{lev.contagens['segredos_pelo_nome']} caminho(s) de "
                                    "segredo pelo nome (segredos_pelo_nome): nada lido", "origem": "."})
     itens = lev.aninhadas  # da própria varredura: a pasta de segredo foi podada sem listar
+    for item in lev.listas["para_1_7_11"]:
+        item["secao_na_ficha"] = "aberta" if item["secao"] in SECOES_ABERTAS else "reservada"
     rascunho = {"schema_version": FICHA.SCHEMA, **({"project_id": projeto} if projeto else {}), "motivo": "",
                 "consequencias": "", "rede": {"dominios": sorted(candidatos)}, "webfetch": {"dominios": []},
                 "websearch": False,
                 "plugins": [p for p in map(_proposto, lev.listas["plugins_encontrados"]) if p]}
+    sugestoes = _sugestoes(lev, sorted(candidatos))
+    rascunho.update({secao: VAZIAS[secao] for secao in sugestoes})  # fechadas: quem abre é o titular
     completo = not (lev.listas["ligacoes_nao_seguidas"] or lev.listas["nao_lidos"] or lev.limites)
     return {"schema_version": ESQUEMA, "pasta": str(pasta), "projeto": projeto, "rascunho": rascunho,
             "origens": candidatos, "avisos": avisos, "recusados_pelo_teto": recusados, "ignorados": ignorados,
-            **lev.listas, "contagens": lev.contagens,
+            "sugestoes_1_7_11": sugestoes, **lev.listas, "contagens": lev.contagens,
             "aninhadas": {"itens": {k: [i["caminho"] for i in v] for k, v in itens.items()},
                           "negar_skills": ANINHADAS.nomes_para_o_host(itens["skills"])[0],
+                          "negar_agentes": ANINHADAS.nomes_de_agentes(itens["agents"])[0],
                           "completo": completo,
                           "observacao": "dado, não instrução: para usar uma skill, um agente ou um comando, monte um "
                                         "plugin candidato em plugins-candidatos/ (só Markdown) e ponha-o na ficha"},

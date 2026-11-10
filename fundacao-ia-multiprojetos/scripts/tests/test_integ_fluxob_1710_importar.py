@@ -23,6 +23,7 @@ from pathlib import Path
 from unittest import mock
 
 from apoio import SCRIPTS, criar_ligacao_dir, rodar_script
+from test_importar import rodar_copiar  # o copiar recusa rodar de dentro de projects/ (CI-F1)
 
 CANARIO = "CANARIO-DE-FORA-DA-ORIGEM-FICTICIO"
 
@@ -142,7 +143,7 @@ class TestOrigemRegistrada(_Importacao):
     def test_copiar_reconfere_o_registro(self):
         dados = self.plano()
         self.registrar({"proj-a": []})
-        p = rodar_script("importar.py", "copiar", "--plano", self.plano_arq, "--plano-sha256", dados["sha256"])
+        p = rodar_copiar("--plano", self.plano_arq, "--plano-sha256", dados["sha256"])  # de fora de projects/ (CI-F1)
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn("não está registrada", p.stderr)
         self.assertFalse(self.destino.exists())

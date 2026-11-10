@@ -89,9 +89,10 @@ class Lancador(unittest.TestCase):
         self.assertEqual(c["args"][:9], ["--settings", f"{self.area}/settings.wsl.json", "--setting-sources", "local",
                                          "--tools", ferramentas, "--mcp-config", f"{self.area}/mcp.json",
                                          "--strict-mcp-config"])
-        self.assertEqual(len(c["args"]), 10)
-        self.assertIn("RETOMADA.md", c["args"][9])
-        self.assertIn("caso-real", c["args"][9])
+        self.assertEqual(c["args"][9], "--allow-dangerously-skip-permissions")  # 1.7.11, DECISAO-010 item 1
+        self.assertEqual(len(c["args"]), 11)
+        self.assertIn("RETOMADA.md", c["args"][10])
+        self.assertIn("caso-real", c["args"][10])
         self.assertEqual(c["pwd"], str(self.proj))
         env = c["env"]
         self.assertEqual(env["FUNDACAO_PROJECT"], "caso-real")
@@ -115,6 +116,47 @@ class Lancador(unittest.TestCase):
         self.assertFalse([k for k in chamadas[1]["env"] if k.startswith("FUNDACAO_")])
         for pasta in ("pedidos", "respostas"):
             self.assertTrue((self.proj / ".porteiro" / pasta).is_dir())
+
+    def test_modo_sem_perguntas_disponivel_sem_ligar_e_sem_argumento_livre(self):
+        """1.7.11, DECISAO-010 item 1: a opção fixa do lançador deixa o modo disponível (Shift+Tab); nada o liga na
+        abertura e nenhum argumento do terminal chega ao Claude Code."""
+        self.assertEqual(self.abrir().returncode, 0)
+        fixo = self.chamada()["args"]
+        self.assertEqual(fixo.count("--allow-dangerously-skip-permissions"), 1)
+        for ligado in ("--dangerously-skip-permissions", "--permission-mode", "bypassPermissions"):
+            self.assertNotIn(ligado, fixo)
+        self.home.joinpath("chamada-claude.txt").unlink()
+        env = {"HOME": str(self.home), "PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"}
+        r = subprocess.run(["bash", str(self.lancador), "--dangerously-skip-permissions", "--permission-mode",
+                            "bypassPermissions", "--settings", "/tmp/outro.json", "--tools", "Bash,WebFetch"],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.chamada()["args"], fixo)  # os argumentos do terminal não passaram
+        perfil = (self.area / "settings.wsl.json").read_text(encoding="utf-8")
+        self.assertNotIn("bypassPermissions", perfil)  # o perfil não liga o modo (nem defaultMode)
+        self.assertNotIn("defaultMode", perfil)
+
+    def escrever_projeto_json(self, dados):
+        (self.proj / "projeto.json").write_text(json.dumps(dados), encoding="utf-8")
+
+    def test_regras_de_codigo_so_com_o_campo_de_lista_fechada(self):
+        """1.7.11, ponytail P7: ausente, nada é exportado (nem o que vier do terminal); `enxuto` vira
+        FUNDACAO_REGRAS_CODIGO; qualquer outro valor, ou o campo mal formado, a sessão não abre."""
+        self.assertEqual(self.abrir(FUNDACAO_REGRAS_CODIGO="enxuto").returncode, 0)
+        self.assertNotIn("FUNDACAO_REGRAS_CODIGO", self.chamada()["env"])
+        self.home.joinpath("chamada-claude.txt").unlink()
+        self.escrever_projeto_json({"project_id": "caso-real", "notes": "sem o campo"})
+        self.assertEqual(self.abrir().returncode, 0)
+        self.assertNotIn("FUNDACAO_REGRAS_CODIGO", self.chamada()["env"])
+        self.home.joinpath("chamada-claude.txt").unlink()
+        self.escrever_projeto_json({"project_id": "caso-real", "regras_codigo": "enxuto"})
+        self.assertEqual(self.abrir().returncode, 0)
+        self.assertEqual(self.chamada()["env"].get("FUNDACAO_REGRAS_CODIGO"), "enxuto")
+        for valor in ("lite", "ultra", "Enxuto", "enxuto ", "", ["enxuto"], 1, None, True):
+            with self.subTest(valor=valor):
+                self.home.joinpath("chamada-claude.txt").unlink(missing_ok=True)
+                self.escrever_projeto_json({"project_id": "caso-real", "regras_codigo": valor})
+                self.nao_abriu(self.abrir(), "regras_codigo")
 
     def test_ambiente_herdado_nao_passa(self):
         r = self.abrir(FUNDACAO_PERMITIR_TROCA_IDENTIDADE="1", FUNDACAO_PROJECT="lab-a", LD_PRELOAD="/x.so",
@@ -166,6 +208,50 @@ class Lancador(unittest.TestCase):
         self.home.joinpath("chamada-claude.txt").unlink(missing_ok=True)
         self.nao_abriu(self.abrir(), "venceu")
 
+    def instalar_com_mcp(self, item):
+        self.aprovar_canario()
+        gravar_ficha_na_caixa(self.raiz, "caso-real", ficha_de_ensaio("caso-real", 1, mcp=[item]))
+        self.instalar()
+
+    def test_mcp_por_url_vai_ao_mcp_json_com_strict_e_esconde_o_que_a_ficha_manda(self):
+        """1.7.11, lote L2: origem url: o servidor da ficha no mcp.json, --strict-mcp-config e --disallowedTools."""
+        self.instalar_com_mcp({"nome": "fsn", "origem": "url", "url": "https://mcp.exemplo.org/escritorio",
+                               "ferramentas": ["buscar_clientes", "get_processo"], "ocultar": ["escanear_vault"],
+                               "conteudo_de_terceiros": True})
+        self.assertEqual(json.loads((self.area / "mcp.json").read_text(encoding="utf-8")),
+                         {"mcpServers": {"fsn": {"type": "http", "url": "https://mcp.exemplo.org/escritorio"}}})
+        r = self.abrir()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = self.chamada()["args"]
+        self.assertEqual(args[args.index("--disallowedTools") + 1], "mcp__fsn__escanear_vault")
+        self.assertEqual(args[args.index("--mcp-config") + 2], "--strict-mcp-config")
+        self.assertLess(args.index("--disallowedTools"), args.index("--allow-dangerously-skip-permissions"))
+        self.assertTrue(args[-1].startswith("Sessão do projeto"))  # a opção variádica não engoliu o prompt
+        env = json.loads((self.area / "settings.wsl.json").read_text(encoding="utf-8"))["env"]
+        self.assertEqual(env["FUNDACAO_MCP_FERRAMENTAS"], "mcp__fsn__buscar_clientes,mcp__fsn__get_processo")
+
+    def test_mcp_pela_conta_abre_sem_strict_e_recusa_servidor_proprio_no_claude_json(self):
+        self.instalar_com_mcp({"nome": "fsn", "origem": "conta", "conector": "Conector do escritorio",
+                               "ferramentas": ["buscar_clientes"], "ocultar": [], "conteudo_de_terceiros": True})
+        self.assertEqual(json.loads((self.area / "mcp.json").read_text(encoding="utf-8")), {"mcpServers": {}})
+        r = self.abrir()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        args = self.chamada()["args"]
+        self.assertNotIn("--strict-mcp-config", args)
+        self.assertNotIn("--disallowedTools", args)  # nada escondido: a ficha não tem `ocultar`
+        self.assertEqual(args[args.index("--mcp-config") + 1], f"{self.area}/mcp.json")
+        self.home.joinpath("chamada-claude.txt").unlink()
+        config = self.home / ".local" / "share" / "fundacao-ia" / "config" / "caso-real"
+        config.mkdir(parents=True, exist_ok=True)
+        (config / ".claude.json").write_text(json.dumps({"mcpServers": {"x": {"command": "x"}}}), encoding="utf-8")
+        self.nao_abriu(self.abrir(), "servidores MCP próprios")
+
+    def test_sem_a_secao_mcp_nada_e_escondido_e_o_strict_fica(self):
+        self.assertEqual(self.abrir().returncode, 0)
+        args = self.chamada()["args"]
+        self.assertNotIn("--disallowedTools", args)
+        self.assertIn("--strict-mcp-config", args)
+
     def test_trava_de_manutencao_nao_abre(self):
         (self.raiz / "state").mkdir()
         (self.raiz / "state" / "manutencao.json").write_text("{}", encoding="utf-8")
@@ -186,6 +272,18 @@ class Lancador(unittest.TestCase):
     def test_mcp_do_projeto_nao_abre(self):
         (self.proj / ".mcp.json").write_text('{"mcpServers": {"x": {"command": "x"}}}', encoding="utf-8")
         self.nao_abriu(self.abrir(), ".mcp.json")
+
+    def test_mcp_json_acima_do_projeto_nao_abre(self):
+        """F4 da revisão da 1.7.11: o .mcp.json da raiz ou de uma pasta acima dela não deixa o lançador abrir; tirado,
+        abre."""
+        for pasta in (self.raiz, self.raiz / "projects", self.base):
+            with self.subTest(pasta=pasta.name):
+                arquivo = pasta / ".mcp.json"
+                arquivo.write_text('{"mcpServers": {"x": {"command": "x"}}}', encoding="utf-8")
+                r = self.abrir()
+                arquivo.unlink()
+                self.nao_abriu(r, arquivo.as_posix())
+        self.assertEqual(self.abrir().returncode, 0)
 
     def test_interop_ligada_nao_abre(self):
         falso = self.base / "interop" / "cmd.exe"
@@ -366,8 +464,125 @@ class Lancador(unittest.TestCase):
                 self.assertEqual(r.returncode, 0, r.stderr)
 
 
+def linhas_de_codigo(texto: str) -> list[str]:
+    """As linhas do bash que não são comentário (o modelo cita as decisões em comentários)."""
+    return [l.strip() for l in texto.splitlines() if l.strip() and not l.lstrip().startswith("#")]
+
+
 class ModeloDoLancador(unittest.TestCase):
     """O que dá para conferir no modelo em qualquer sistema."""
+
+    VALORES = {"RAIZ": "/mnt/e/Raiz", "PROJETO": "caso-real", "USUARIO": "titular",
+               "AREA": "/etc/fundacao-ia/projetos/caso-real", "SKILL": "/etc/fundacao-ia/skill/1.7.11-abc",
+               "CLAUDE_BIN": "/etc/fundacao-ia/claude/2.1.302/claude", "CLAUDE_VERSAO": "2.1.302",
+               "CLAUDE_SHA256": "1" * 64, "CLAUDE_ORIGEM_HASH": "manifesto assinado", "FERRAMENTAS": "Bash,Read",
+               "PLUGINS": "", "PREPARO_SHA256": "2" * 64, "PORTEIRO_SHA256": "3" * 64,
+               "TEMP_PROJETO": "/tmp/fundacao-ia-caso-real", "SONDA_INTEROP_CMD": "/mnt/c/Windows/System32/cmd.exe",
+               "SONDA_INTEROP_BINFMT": "/proc/sys/fs/binfmt_misc"}
+
+    def test_modo_sem_perguntas_esta_no_lancador_de_todos_os_projetos(self):
+        """1.7.11, DECISAO-010 item 1: o modelo traz a opção fixa, uma vez, depois das demais; cada lançador gerado a
+        herda, qualquer que seja o projeto."""
+        m = carregar_preparo()
+        modelo = (SKILL / "assets" / "host" / "wsl" / "abrir-sessao.sh").read_text(encoding="utf-8")
+        fixas = 'ARGS+=(--mcp-config "$AREA/mcp.json" --strict-mcp-config)'
+        for projeto in ("caso-real", "estudio-de-video", "criador-de-peticoes", "a"):
+            with self.subTest(projeto=projeto):
+                codigo = linhas_de_codigo(m.lancador({**self.VALORES, "PROJETO": projeto}, modelo))
+                opcoes = [l for l in codigo if "--allow-dangerously-skip-permissions" in l]
+                self.assertEqual(opcoes, ["ARGS+=(--allow-dangerously-skip-permissions)"])
+                self.assertGreater(codigo.index(opcoes[0]), codigo.index(fixas))
+                for ligada in ("--dangerously-skip-permissions", "--permission-mode", "bypassPermissions"):
+                    self.assertFalse([l for l in codigo if ligada in l], ligada)
+
+    def test_mcp_no_modelo_do_lancador(self):
+        """1.7.11, lote L2: o --strict-mcp-config só sai na origem conta (MCP_ESTRITO=0) e o --disallowedTools só com o que
+        esconder; os dois antes da opção do modo sem perguntas, para o prompt (último) não ser engolido."""
+        codigo = linhas_de_codigo((SKILL / "assets" / "host" / "wsl" / "abrir-sessao.sh").read_text(encoding="utf-8"))
+        self.assertEqual([l for l in codigo if "--disallowedTools" in l], ['ARGS+=(--disallowedTools "$MCP_OCULTAR")'])
+        self.assertEqual([l for l in codigo if l.startswith("ARGS+=(--mcp-config")],
+                         ['ARGS+=(--mcp-config "$AREA/mcp.json" --strict-mcp-config)',
+                          'ARGS+=(--mcp-config "$AREA/mcp.json")'])
+        ordem = [codigo.index('ARGS+=(--disallowedTools "$MCP_OCULTAR")'),
+                 codigo.index('ARGS+=(--mcp-config "$AREA/mcp.json" --strict-mcp-config)'),
+                 codigo.index("ARGS+=(--allow-dangerously-skip-permissions)")]
+        self.assertEqual(ordem, sorted(ordem))
+        m = carregar_preparo()
+        for chave in ("MCP_ESTRITO", "MCP_OCULTAR"):
+            self.assertIn(chave, m.CHAVES_DO_LANCADOR)
+        self.assertIn("MCP_ESTRITO='1'", m.lancador(self.VALORES))  # sem os valores novos: estrito e nada escondido
+        self.assertIn("MCP_OCULTAR=''", m.lancador(self.VALORES))
+
+    def test_nenhum_argumento_livre_chega_ao_claude_code(self):
+        """O lançador não repassa o que se digita depois do nome dele: nenhum uso de $@ ou $* fora de comentário (o $1
+        das funções é argumento interno), nem shift ou getopts, e a chamada do Claude Code leva só a lista fixa e o
+        prompt."""
+        codigo = linhas_de_codigo((SKILL / "assets" / "host" / "wsl" / "abrir-sessao.sh").read_text(encoding="utf-8"))
+        for ruim in ('"$@"', "$@", "${@", "$*", "${*", "shift", "getopts"):
+            self.assertFalse([l for l in codigo if ruim in l], ruim)
+        chamadas = [l for l in codigo if "$CLAUDE_BIN" in l and "env -i" in l]
+        self.assertEqual(chamadas, ['env -i "${AMBIENTE[@]}" "$CLAUDE_BIN" "${ARGS[@]}" "$PROMPT"'])
+
+    def test_regras_de_codigo_do_projeto_json_lista_fechada(self):
+        """1.7.11, ponytail P7: o campo `regras_codigo` do projeto.json (lido sem seguir ligação, até 64 KiB) só vale
+        com `enxuto`; sem o campo ou sem o arquivo, desligado; arquivo ilegível, desligado com aviso; outro valor,
+        EntradaInvalida."""
+        m = carregar_preparo()
+        base = Path(tempfile.mkdtemp(prefix="regras-codigo-lancador-")).resolve()
+        try:
+            pasta = base / "projects" / "caso-real"
+            pasta.mkdir(parents=True)
+            self.assertEqual(m.regras_de_codigo_do_projeto(base, "caso-real"), ("", []))  # sem arquivo
+            arquivo = pasta / "projeto.json"
+            for texto, esperado in (('{"project_id": "caso-real"}', ""), ('{"regras_codigo": "enxuto"}', "enxuto"),
+                                    ('\ufeff{"regras_codigo": "enxuto"}', "enxuto"), ("[]", "")):
+                with self.subTest(texto=texto):
+                    arquivo.write_text(texto, encoding="utf-8")
+                    self.assertEqual(m.regras_de_codigo_do_projeto(base, "caso-real"), (esperado, []))
+            for ruim in ('"lite"', '"ultra"', '"Enxuto"', '"enxuto "', '""', '["enxuto"]', "1", "null", "true"):
+                with self.subTest(valor=ruim):
+                    arquivo.write_text('{"regras_codigo": ' + ruim + "}", encoding="utf-8")
+                    with self.assertRaises(m.EntradaInvalida) as ctx:
+                        m.regras_de_codigo_do_projeto(base, "caso-real")
+                    self.assertIn("lista fechada", str(ctx.exception))
+            for ilegivel in (b"nao e json", b"\xff\xfe\x00", b"x" * (64 * 1024 + 1)):
+                with self.subTest(ilegivel=ilegivel[:10]):
+                    arquivo.write_bytes(ilegivel)
+                    valor, avisos = m.regras_de_codigo_do_projeto(base, "caso-real")
+                    self.assertEqual(valor, "")
+                    self.assertEqual(len(avisos), 1)
+                    self.assertIn("desligadas", avisos[0])
+            with self.assertRaises(ValueError):
+                m.regras_de_codigo_do_projeto(base, "../x")
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_regras_de_codigo_pela_linha_de_comando_do_ajudante(self):
+        """O que o lançador chama: o valor sozinho no stdout (vazio, sem campo), código 2 e JSON de erro fora da lista."""
+        base = Path(tempfile.mkdtemp(prefix="regras-codigo-cli-")).resolve()
+        try:
+            pasta = base / "projects" / "caso-real"
+            pasta.mkdir(parents=True)
+
+            def rodar():
+                return subprocess.run([sys.executable, "-I", "-B", str(SKILL / "assets" / "host" / "preparo_host.py"),
+                                       "regras-codigo", "--raiz", str(base), "--projeto", "caso-real"],
+                                      capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+            r = rodar()
+            self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "\n", ""))
+            (pasta / "projeto.json").write_text('{"regras_codigo": "enxuto"}', encoding="utf-8")
+            r = rodar()
+            self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "enxuto\n", ""))
+            (pasta / "projeto.json").write_text('{"regras_codigo": "ultra"}', encoding="utf-8")
+            r = rodar()
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("lista fechada", json.loads(r.stdout)["erro"])
+            (pasta / "projeto.json").write_text("{", encoding="utf-8")
+            r = rodar()
+            self.assertEqual((r.returncode, r.stdout.strip()), (0, ""))
+            self.assertIn("aviso:", r.stderr)
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
 
     def test_valores_sao_conferidos_e_aspas_escapadas(self):
         m = carregar_preparo()

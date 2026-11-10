@@ -337,7 +337,8 @@ class TestComandoDoImportar(_Importacao):
         self.assertEqual(r.returncode, 0, r.stdout[-2000:] + r.stderr[-2000:])
         self.assertEqual(os.listdir(terminal), [], "nada do nome saiu das aspas")
         self.assertEqual(json.loads(self.registro.read_text(encoding="utf-8"))["projetos"],
-                         {"proj-a": {"origens": [str(origem)], "somente_leitura": [], "aninhadas_negadas": []}})
+                         {"proj-a": {"origens": [str(origem)], "somente_leitura": [], "aninhadas_negadas": [],
+                                    "agentes_negados": []}})
         self.assertEqual(len(self.plano(origem=origem)["sha256"]), 64, "com a origem registrada, o plano passa")
 
     def test_raiz_que_nao_da_para_citar_fica_sem_comando(self):

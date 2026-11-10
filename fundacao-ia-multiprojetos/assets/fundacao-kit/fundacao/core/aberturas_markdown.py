@@ -65,6 +65,8 @@ _CONTROLE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\U0000202a-\U0000202
 # escondida de um leitor que só quebra no LF, então recusamos.
 _QUEBRA_ESCONDIDA = re.compile(r"\r(?!\n)|[\u2028\u2029]")
 BOM = "\ufeff"  # emenda E8: tirado só no começo; em qualquer outro ponto, recusa
+TETO_PY = 512 * 1024  # o script da ficha (conferir_python)
+_CODIFICACAO = re.compile(r"[ \t\f]*#.*?coding[:=][ \t]*([-_.a-zA-Z0-9]+)")  # PEP 263, nas duas primeiras linhas
 # allowed-tools (integração, item I16; a lista positiva do scripts/plugin_candidato.py, crítica do desenho e revisão do
 # pacote PLUGINS): só o que lê, grava no projeto (as negações do perfil continuam valendo: uma regra de permissão não
 # abre exceção numa negação) ou delega a outra skill ou agente. Bash, PowerShell, Monitor, WebFetch, WebSearch e MCP só
@@ -268,6 +270,30 @@ def conferir_texto(rel: str, dados: bytes, erro) -> None:
     if _CONTROLE.search(texto) or _QUEBRA_ESCONDIDA.search(texto):
         erro(rel, "caractere de controle ou de direção, CR sozinho, U+2028 ou U+2029 na licença da raiz: pode esconder "
                   "texto do titular (use LF ou CRLF)")
+
+
+def conferir_python(rel: str, dados: bytes, erro) -> None:
+    """O `.py` que a ficha lista (`skills_com_scripts`, 1.7.11, lote S1): até TETO_PY bytes, UTF-8 (o BOM só no começo),
+    sem controle, direção, CR sozinho, U+2028 nem U+2029, as regras do Markdown, e sem `#!` (o executor chama o
+    interpretador), ELF ou MZ. Declaração de codificação (PEP 263) só utf-8: outra faria o interpretador ler texto
+    diferente do conferido."""
+    if len(dados) > TETO_PY:
+        return erro(rel, f"script acima de {TETO_PY} bytes")
+    try:
+        texto = dados.decode("utf-8").removeprefix(BOM)
+    except UnicodeDecodeError:
+        return erro(rel, "script fora do UTF-8")
+    if texto.startswith("#!"):
+        erro(rel, "tire a primeira linha #!: o executor chama o interpretador", "1.7.11")
+    elif dados.startswith((b"\x7fELF", b"MZ")):
+        erro(rel, "script que começa como binário executável (ELF ou MZ)", "1.7.11")
+    if _CONTROLE.search(texto) or _QUEBRA_ESCONDIDA.search(texto) or BOM in texto:
+        erro(rel, "caractere de controle ou de direção, CR sozinho, U+2028, U+2029 ou U+FEFF fora do começo no script: "
+                  "esconderia código de quem o lê")
+    for linha in texto.split("\n", 2)[:2]:
+        achada = _CODIFICACAO.match(linha)
+        if achada and achada.group(1).casefold().replace("_", "-") not in ("utf-8", "utf8"):
+            erro(rel, f"declaração de codificação {achada.group(1)!r}: só utf-8")
 
 
 def _frontmatter(partes: tuple, texto: str, erro) -> None:

@@ -163,10 +163,10 @@ class TestPreparar(AberturasCliCase):
 
     def test_erros_dos_tetos_vem_listados(self):
         codigo, r = self.preparar(rascunho(rede={"dominios": ["127.0.0.1"]}, webfetch={"dominios": ["docs.x.com.br"]},
-                                           mcp=[{"nome": "y"}]))
+                                           git=[{"pasta": "y"}], mcp=[{"nome": "y"}]))
         self.assertEqual(codigo, 2)
         campos = {e["campo"] for e in r["error"]["erros"]}
-        self.assertTrue({"rede.dominios[0]", "webfetch.dominios", "mcp"} <= campos, campos)
+        self.assertTrue({"rede.dominios[0]", "webfetch.dominios", "git", "mcp[0].ferramentas"} <= campos, campos)
         self.assertIn("1.7.11", json.dumps(r, ensure_ascii=False))
 
     def test_rascunho_ilegivel_ou_inexistente(self):

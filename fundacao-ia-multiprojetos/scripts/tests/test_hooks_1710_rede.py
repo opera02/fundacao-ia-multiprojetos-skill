@@ -1,5 +1,5 @@
 """`assets/hooks/guarda_rede.py` (contratos do lote 2 da 1.7.10, §2 e §7): WebFetch só para domínio de
-FUNDACAO_DOMINIOS_WEB (exato ou `*.d` casando subdomínio, nunca o próprio `d` por `*.d`), sem IP, sem porta estranha,
+FUNDACAO_DOMINIOS_WEB (exato, ou `*.d` casando `d` e os subdomínios: DECISAO-010, item 5), sem IP, sem porta estranha,
 só http/https, URL malformada nega; WebSearch só com FUNDACAO_WEBSEARCH=1; a decisão é `deny`, nunca pergunta.
 
 URLs fictícias; as que têm usuário na autoridade são montadas em tempo de execução (a varredura de segredos da
@@ -8,12 +8,22 @@ liberação acusa texto com cara de endereço de e-mail).
 
 from __future__ import annotations
 
+import importlib.util
 import unittest
 
+from apoio import KIT
 from test_hooks_1710 import carregar, decisao, ferramenta, motivo
 
 HOOK = "guarda_rede.py"
+KIT_REGRAS = KIT / "fundacao" / "core" / "aberturas_regras.py"
 ARROBA = "@"
+
+
+def _regras_do_kit():
+    spec = importlib.util.spec_from_file_location("_regras_do_kit_rede", KIT_REGRAS)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
 
 
 class GuardaRede(unittest.TestCase):
@@ -34,17 +44,45 @@ class GuardaRede(unittest.TestCase):
         self.assertEqual(decisao(HOOK, ferramenta("WebFetch", url="https://docs.exemplo.com.br/a", prompt="x"),
                                  FUNDACAO_DOMINIOS_WEB="docs.exemplo.com.br"), "sem_decisao")
 
-    def test_curinga_casa_subdominio_e_nunca_o_proprio_dominio(self):
+    def test_curinga_casa_o_dominio_principal_e_os_subdominios(self):
+        """DECISAO-010, item 5 (1.7.11): `*.x` vale para `x` e para todo subdomínio de `x`."""
         self.assertEqual(self.decide("https://v1.api.exemplo.org/x"), "sem_decisao")
         self.assertEqual(self.decide("https://a.b.api.exemplo.org/x"), "sem_decisao")
-        self.assertEqual(self.decide("https://api.exemplo.org/x"), "deny")
+        self.assertEqual(self.decide("https://api.exemplo.org/x"), "sem_decisao")  # antes: deny
+        self.assertEqual(self.decide("https://API.exemplo.org./x"), "sem_decisao")
         self.assertEqual(self.decide("https://api.exemplo.org/x", lista="*.api.exemplo.org,api.exemplo.org"),
                          "sem_decisao")
-        for url in ("https://exemplo.org/", "https://xapi.exemplo.org/", "https://api.exemplo.org.evil.example/",
-                    "https://subdocs.exemplo.com.br/", "https://docs.exemplo.com.br.evil.example/",
-                    "https://evil.example/docs.exemplo.com.br"):
+
+    def test_curinga_nao_cobre_outro_dominio(self):
+        """Prova negativa: `*.x` não cobre `outrox`, `x.outro`, o pai de `x` nem um irmão; `x` exato não cobre filho."""
+        for url in ("https://exemplo.org/", "https://xapi.exemplo.org/", "https://outroapi.exemplo.org/",
+                    "https://api.exemplo.org.evil.example/", "https://subdocs.exemplo.com.br/",
+                    "https://docs.exemplo.com.br.evil.example/", "https://evil.example/docs.exemplo.com.br",
+                    "https://evil-api.exemplo.org.example/", "https://api-exemplo.org/"):
             with self.subTest(url=url):
                 self.assertEqual(self.decide(url), "deny")
+        self.assertEqual(self.decide("https://sub.docs.exemplo.com.br/"), "deny")  # `docs...` exato não cobre filho
+        self.assertEqual(self.decide("https://outrox.com/", lista="*.x.com"), "deny")
+        self.assertEqual(self.decide("https://x.com.outro/", lista="*.x.com"), "deny")
+        self.assertEqual(self.decide("https://x.com/", lista="*.x.com"), "sem_decisao")
+
+    def test_curinga_em_sufixo_publico_ou_de_um_rotulo_nao_vale(self):
+        """O hook não libera `*.com` nem `*` (um rótulo só); o validador do kit recusa também `*.com.br` e afins."""
+        for lista in ("*.com", "*", "*.br"):
+            with self.subTest(lista=lista):
+                self.assertEqual(self.decide("https://x.com/", lista=lista), "deny")
+                self.assertEqual(self.decide("https://com/", lista=lista), "deny")
+
+    def test_a_regra_do_hook_e_a_do_kit(self):
+        """Mesma tabela no hook e em `aberturas_regras.cobre` (o que o perfil e o validador usam)."""
+        regras = _regras_do_kit()
+        tabela = [("*.x.com", "x.com", True), ("*.x.com", "a.x.com", True), ("*.x.com", "a.b.x.com", True),
+                  ("*.x.com", "outrox.com", False), ("*.x.com", "x.com.outro", False), ("*.x.com", "com", False),
+                  ("*.x.com", "y.com", False), ("x.com", "x.com", True), ("x.com", "a.x.com", False)]
+        for entrada, host, esperado in tabela:
+            with self.subTest(entrada=entrada, host=host):
+                self.assertEqual(regras.cobre(entrada, host), esperado)
+                self.assertEqual(self.decide(f"https://{host}/", lista=entrada) == "sem_decisao", esperado)
 
     def test_ip_literal_nega_mesmo_listado(self):
         lista = "127.0.0.1,10.0.0.1,2130706433,0x7f000001,127.1,[::1],::1,169.254.169.254"

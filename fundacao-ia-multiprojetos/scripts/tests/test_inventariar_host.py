@@ -146,6 +146,32 @@ class TestInventarioDoHost(unittest.TestCase):
         self.assertEqual(len(inv["hooks"]), 1)
         self.assertEqual(len(inv["hooks"][0]["scripts"]), 1)
 
+    def test_hooks_de_regras_de_codigo_dos_perfis_tem_matcher_valido_e_nao_geram_alerta(self):
+        """1.7.11 (ponytail, P7): o perfil do Ubuntu que o preparo gera traz o hook nos eventos SessionStart
+        (`startup|resume|clear|compact`, lista exata de valores do evento) e SubagentStart (`*`), e o do Windows não o
+        traz (nada lá liga o campo); o inventário lê os dois sem alerta de matcher nem de evento."""
+        import importlib.util
+
+        from apoio import SKILL
+        spec = importlib.util.spec_from_file_location("preparo_host_inventario", SKILL / "assets" / "host" / "preparo_host.py")
+        preparo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(preparo)
+        raiz_exemplo = "E:" + chr(92) + "Fundacao Exemplo"
+        (self.raiz / ".claude" / "settings.json").write_text(preparo.texto_json(preparo.perfil_windows(
+            raiz=raiz_exemplo, python="C:" + chr(92) + "Py" + chr(92) + "python.exe")), encoding="utf-8")
+        (self.raiz / ".claude" / "settings.wsl.json").write_text(preparo.texto_json(preparo.perfil_wsl(
+            raiz=raiz_exemplo, projeto="caso-real", perfil_windows="C:" + chr(92) + "Perfis" + chr(92) + "titular",
+            outros_projetos=["lab-a"])), encoding="utf-8")
+        code, res = self.rodar("gravar", "--saida", self.saida)
+        self.assertEqual(code, 0, res)
+        inv = json.loads(self.saida.read_text(encoding="utf-8"))
+        dos_perfis = {(h["origem"], h["evento"], h["matcher"]) for h in inv["hooks"] if h["origem"].startswith("raiz:")}
+        self.assertIn(("raiz:settings.wsl.json", "SessionStart", "startup|resume|clear|compact"), dos_perfis)
+        self.assertIn(("raiz:settings.wsl.json", "SubagentStart", "*"), dos_perfis)
+        self.assertFalse([h for h in dos_perfis if h[0] == "raiz:settings.json" and h[1] == "SubagentStart"])
+        self.assertNotIn(("raiz:settings.json", "SessionStart", "startup|resume|clear|compact"), dos_perfis)
+        self.assertFalse(inv["alertas"], inv["alertas"])
+
     def test_verificar_aponta_o_que_mudou(self):
         self.rodar("gravar", "--saida", self.saida)
         code, res = self.rodar("verificar", "--inventario", self.saida)

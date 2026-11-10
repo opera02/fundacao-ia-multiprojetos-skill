@@ -80,3 +80,6 @@ b4d818e161e57647699cdbd1bb19e270daffb40e7cf4c9800e31f7e252710091  1.7.10.1/funda
 a07a151c1c282b2eff229c98fcaeb1f465518d83edf99b29f384850e1e84c18b  1.7.10.2/fundacao-ia-multiprojetos.skill
 b659b9b5e74c1fc66fd7dfd442cfb4f98d8a861c189afa8a0e9ac7b7e63dff8e  1.7.10.2/fundacao-ia-multiprojetos-completo.zip
 274876562b5f4ef1dc4e0935c3a3c0b001834bce6558c1710f92b4da8d95d69a  1.7.10.2/fundacao-ia-multiprojetos-1.7.10.2.zip
+b005f5f25c9b06cdaa99b02a618d12c3021ceb0c80ad5a5361d76dfab4045042  1.7.11/fundacao-ia-multiprojetos.skill
+a09b718259818c12c4440c909cdce4383899d576b83e7a02374037f7a4afe530  1.7.11/fundacao-ia-multiprojetos-completo.zip
+5cc73369282e9979e8399790db0a247373074912803ceb98b0fb1ebe8a8af471  1.7.11/fundacao-ia-multiprojetos-1.7.11.zip

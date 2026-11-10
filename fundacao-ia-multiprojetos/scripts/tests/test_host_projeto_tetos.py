@@ -118,6 +118,32 @@ class DominiosDaFicha(unittest.TestCase):
                 self.assertIsNone(self.m.problema_do_dominio(dominio), dominio)
 
 
+class TetoContaItensDaFicha(unittest.TestCase):
+    """DECISAO-010, item 5: o teto de 200 domínios conta os itens da ficha, não as entradas que o perfil gera."""
+
+    def setUp(self):
+        self.m = carregar_preparo()
+
+    def resultado(self, dominios):
+        return {"projeto": "caso-real", "valida": True, "versao": 1, "arquivo": "ficha-v1.json", "sha256": "a" * 64,
+                "sig_sha256": "b" * 64, "ficha": {
+                    "schema_version": "fundacao.ficha_aberturas/1", "ficha_id": "f1", "project_id": "caso-real",
+                    "versao": 1, "motivo": "ensaio", "consequencias": "ensaio", "rede": {"dominios": dominios}}}
+
+    def test_duzentos_curingas_geram_quatrocentas_entradas_e_valem(self):
+        teto = self.m.modulos_do_kit().regras.TETO_DOMINIOS
+        dominios = [f"*.d{i}.ficticio.com" for i in range(teto)]
+        ab = self.m.aberturas_da_ficha(self.resultado(dominios), "caso-real")
+        self.assertTrue(ab["valida"], ab["motivo"])
+        self.assertEqual(len(ab["rede"]), teto)
+        self.assertEqual(len(self.m.expandir_curingas(ab["rede"])), 2 * teto)
+        regras = self.m.modulos_do_kit().regras
+        ficha = self.resultado(dominios)["ficha"]
+        self.assertEqual(regras.validar(ficha, projeto="caso-real")["erros"], [])
+        ficha["rede"]["dominios"] = dominios + ["*.d999.ficticio.com"]
+        self.assertEqual([e["campo"] for e in regras.validar(ficha, projeto="caso-real")["erros"]], ["rede.dominios"])
+
+
 class ProjetoNaFormaDoKit(unittest.TestCase):
     def test_a_forma_do_kit_e_do_porteiro(self):
         m = carregar_preparo()

@@ -30,6 +30,10 @@ CONFIG_FIELDS = (
     "schema_version", "project_id", "display_name", "purpose", "template_version",
     "enabled_components", "data_root", "memory_root",
 )
+# Campos opcionais. `regras_codigo` liga as regras de código enxuto (ponytail, P7): o lançador do Ubuntu o exporta como
+# FUNDACAO_REGRAS_CODIGO para o hook regras_codigo.py; a lista é fechada e a mesma do preparo do host.
+OPTIONAL_FIELDS = {"notes", "regras_codigo"}
+REGRAS_CODIGO = ("enxuto",)
 
 
 def projects_dir(root: Path) -> Path:
@@ -43,9 +47,11 @@ def validate_config(config: dict) -> dict:
     validate_id(config["project_id"], "project_id")
     if not isinstance(config.get("enabled_components"), list):
         raise ValidationError("enabled_components deve ser lista")
-    unknown = set(config) - set(CONFIG_FIELDS) - {"notes"}
+    unknown = set(config) - set(CONFIG_FIELDS) - OPTIONAL_FIELDS
     if unknown:
         raise ValidationError("campos desconhecidos na configuração", fields=sorted(unknown))
+    if "regras_codigo" in config and config["regras_codigo"] not in REGRAS_CODIGO:
+        raise ValidationError("regras_codigo fora da lista fechada", allowed=list(REGRAS_CODIGO))
     return config
 
 

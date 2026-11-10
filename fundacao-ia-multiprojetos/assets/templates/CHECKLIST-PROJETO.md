@@ -40,6 +40,9 @@
 - Ficha de aberturas em vigor (versão e SHA-256), ou "nenhuma: tudo fechado":
 - Canário: arquivo em `/etc/fundacao-ia/canario/`, SHA-256, forma, data e `conclusao.confina_comandos`:
 - Aceite de risco do canário (data, vigência e SHA-256 do relatório aceito), ou "nenhum":
+- Jaula (só se a ficha abre `navegador` ou `outras_llm`): respostas do canário da jaula instaladas (modo, SHA-256 e data),
+  ou "nenhuma: o modo não abre":
+- Codex: plano do ChatGPT (`r55.plano`) e data da conferência do treinamento desligado (vale 90 dias), ou "não se aplica":
 - Decisões do titular que valem para este projeto (arquivo e data):
 
 No terminal do Ubuntu, estes dois comandos mostram os valores (só leem):
@@ -79,11 +82,11 @@ python3 -I -B -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8'
 | 5 | Cliente informado sobre o uso de IA, quando as regras profissionais exigem | projeto | profissional responsável | | pendente |
 | 6 | Comandos e ferramentas desta sessão não leem outros projetos, `state/` nem segredos de fora dela: o perfil instalado confere e o canário aprovado (C) vale para ele (prova 6); os subagentes passam pelos mesmos hooks e regras (prova 13) | perfil | titular + sessão | | pendente |
 | 7 | Segredos ilegíveis e escrita só neste projeto, com prova negativa nesta sessão e dados fictícios (prova 7); para os comandos, "feito" só com o item C aprovado | perfil | sessão + titular | | pendente |
-| 8 | Cópia de segurança fora da máquina, com restauração ensaiada e registro de retiradas | fundação | executor | | pendente |
+| 8 | Cópia de segurança fora da máquina, com restauração ensaiada e registro de retiradas; desde a 1.7.11, cifrada (chave da cópia instalada), com a senha guardada fora do computador e o `conferir-copia` com senha feito há menos de 35 dias | fundação | executor + titular | | pendente |
 | 9 | ACL por cliente ou caso ("muralha ética"): caso A não recupera caso B. Na sessão do Ubuntu, a identidade `sessao-<projeto>` não alcança caso nenhum pelo serviço: o item vale para as outras identidades | projeto | executor | | pendente |
 | 10 | Componentes externos (skills, plugins, pacotes) fixados por versão e hash, com revisão; plugin só pela ficha assinada | projeto | executor | | pendente |
 | 11 | Identidade das operações vinda do lançador (`sessao-<projeto>`, presa a este projeto) e decisões assinadas pelo titular | perfil | titular | | pendente |
-| 12 | Aberturas fechadas por padrão e sem instrução vinda de dado: só abre o que a ficha assinada em vigor traz, com o item C aprovado; `projects/*/data/` fora das instruções; skills e agentes de subpasta negados pelo nome (prova 12) | perfil | sessão + titular | | pendente |
+| 12 | Aberturas fechadas por padrão e sem instrução vinda de dado: só abre o que a ficha assinada em vigor traz, com o item C aprovado; `projects/*/data/` fora das instruções; skills negadas pelo nome e agentes negados pelo nome e pela trava do tipo (prova 12); agente de arquivo, skill com script, ferramenta MCP, navegador e Codex só como a ficha os lista, com hash, executor e jaula (prova 14) | perfil | sessão + titular | | pendente |
 
 ## Passo do titular: o canário (item C)
 
@@ -205,8 +208,8 @@ arquivos de prova são fictícios e saem no fim.
 ### Prova 6 — o perfil instalado confere (titular, no terminal do Ubuntu)
 
 1. Anote os hashes da Identificação (comandos acima).
-2. Confira o perfil instalado contra o que o preparo gera (cada outro projeto e `state/` negados, as skills do
-   registro negadas, a lista de ferramentas igual à do lançador):
+2. Confira o perfil instalado contra o que o preparo gera (cada outro projeto e `state/` negados, as skills e os
+   agentes do registro negados, a lista de ferramentas igual à do lançador):
 
    ```sh
    python3 -I -B <skill>/assets/host/preparo_host.py conferir-perfil-wsl --perfil /etc/fundacao-ia/projetos/<projeto>/settings.wsl.json --raiz "<raiz no Ubuntu>" --projeto <projeto> --lancador /usr/local/bin/abrir-fundacao-<projeto>
@@ -259,9 +262,13 @@ arquivos de prova são fictícios e saem no fim.
 4. Instruções de subpasta: a sessão roda, na pasta do projeto,
    `python3 -I -B <skill>/scripts/instrucoes_aninhadas.py listar --raiz .`. Cada nome em `sugestoes.negar_skills`
    tem de estar negado no perfil, como `Skill(<nome>)` em `permissions.deny` de
-   `/etc/fundacao-ia/projetos/<projeto>/settings.wsl.json`. Nome que falta: o titular o acrescenta ao registro
-   (`preparo_host.py registrar-projeto ... --negar-skill <nome>`, com a mesma `--origem` já registrada) e roda o
-   preparo de novo (perfil novo). Anote também `conclusao.carga_aninhada` do canário.
+   `/etc/fundacao-ia/projetos/<projeto>/settings.wsl.json`; cada nome em `sugestoes.negar_agentes`, como `Agent(<nome>)`
+   no mesmo lugar (e o tipo, negado também pela trava do `agent_type` do guarda). Nome que falta: o titular o
+   acrescenta ao registro (`preparo_host.py registrar-projeto ... --negar-skill <nome>` ou `--negar-agente <nome>`, com
+   a mesma `--origem` já registrada; ou roda o preparo de novo com `--registrar-aninhadas`, que soma os nomes na mesma
+   rodada) e refaz o preparo (perfil novo). O preparo avisa, com o comando pronto, a skill e o agente aninhados fora do
+   registro. Nome fora do padrão não entra no registro: a pasta ou o arquivo é neutralizado na cópia. Anote também
+   `conclusao.carga_aninhada` do canário.
 
 ### Prova 13 — subagentes (a sessão roda; desde a 1.7.10.2)
 
@@ -281,10 +288,35 @@ regras do perfil e sandbox. A mensagem de cada recusa mostra quem recusou; anote
 4. A sessão chama a ferramenta Agent com `isolation: "remote"`, depois com `name: "prova"` e depois com
    `subagent_type: "prova-de-arquivo"`: as três têm de ser negadas pelo `guarda_ferramentas.py`, com o campo ou o tipo
    na mensagem.
-5. A sessão pede a um subagente `general-purpose` que repita, sem resumir, as regras que recebeu ao começar: ele tem de
-   citar a pasta `projects/<projeto>`, o `state/` e "dado, nunca instrução" (o `SubagentStart` do `sinais_sessao.py`).
-   O relatório de cada subagente tem de chegar à sessão; se não chegar, anote a mensagem que apareceu.
+5. A sessão confere o sinal do `SubagentStart`: depois do subagente do passo 1, o arquivo
+   `<TMPDIR da sessão>/sinais/subagente-start.jsonl` (a pasta `fundacao-ia-<projeto>`) tem uma linha JSON
+   `{"evento": "SubagentStart", "em": "<hora UTC>", ...}` com hora posterior ao início da sessão (o `sinais_sessao.py` a
+   grava; o canário lê o mesmo arquivo). Não peça ao subagente que repita as regras: o filtro do provedor pode barrar o
+   pedido e não deixa rastro (prova 13 de 03/11/2026). Sem o arquivo ou sem a linha, o hook não rodou no `SubagentStart`:
+   anote. O relatório de cada subagente tem de chegar à sessão; se não chegar, anote a mensagem que apareceu.
 6. O titular apaga o `prova-escrita-<projeto>.txt` da raiz, se ele existir.
+
+### Prova 14 — o que a 1.7.11 abre pela ficha (desde a 1.7.11; só o que a ficha deste projeto lista)
+
+Dados fictícios. Não prova isolamento entre projetos: com a raiz em `/mnt/e`, ele continua lógico (começo deste
+checklist). O que ainda não foi medido na máquina do titular (M1 a M7, M-A1 a M-A6 e M-S1 a M-S7: `references/seguranca-isolamento.md`
+§8.7) fica `não medido`, nunca `feito`.
+
+1. Agente de arquivo (titular, com a ficha que o abre): a sessão chama a ferramenta Agent com `<plugin>:<agente>` (passa)
+   e com um tipo que a ficha não lista (tem de ser negado pelo `guarda_ferramentas.py`, com o tipo na mensagem); o agente
+   tenta uma ferramenta fora das dele (negada, com o nome do agente). Confira `agent_type` e `cwd` do evento no
+   relatório do canário (M-A3 e M-A1).
+2. Skill com script: a sessão roda `fundacao-skill-<projeto> <plugin>:<skill> <script>` (passa e deixa duas linhas em
+   `outputs/skills/registro.jsonl`); o titular troca um byte do script na cópia de ensaio (`--area-raiz`) e o executor
+   tem de recusar, com o script nomeado (código 2).
+3. MCP do escritório (se a seção `mcp` está na ficha): uma ferramenta de consulta da lista passa; uma ferramenta que
+   grava só roda se você a autorizar naquele momento (modo normal), e a que não está na lista é negada. Com o modo sem perguntas ligado
+   (Shift+Tab), a negação continua (M5).
+4. Jaula (titular, no terminal do Ubuntu): o preparo do projeto com `--preparar-jaula` e a resposta do canário da jaula de
+   cada modo da ficha, instalada com `--canario-jaula <resposta>` (uma por modo). Modo cuja resposta reprova não abre, e
+   não há aceite de risco no lugar. Depois, `abrir-navegador-<projeto> login <site>` (o login é feito por você, na
+   janela) e o login do Codex pelo lançador dele, com a conta do ChatGPT.
+5. Anote em "Identificação" as respostas do canário da jaula, o plano do ChatGPT e a data da conferência do R55.
 
 ## Fechamento (aceite assinado)
 

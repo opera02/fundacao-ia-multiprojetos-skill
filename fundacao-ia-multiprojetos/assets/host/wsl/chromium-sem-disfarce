@@ -1,0 +1,97 @@
+#!/usr/bin/python3 -I
+"""Invólucro do Chromium da jaula (1.7.11, lote L5; DESENHO-JAULA §5.4, requisito 5; DECISAO-010).
+
+Cópia de dono root em /usr/local/lib/fundacao-ia/jaula/<versão>/chromium-sem-disfarce. É o `executable_path` de todo
+lançamento do Chromium DENTRO da jaula (o Playwright o chama no lugar do `chrome`) e entrega a execução ao Chromium do
+Playwright (pasta `ms-playwright`, de dono root). Faz três coisas, nesta ordem:
+- TIRA o que disfarçaria a automação ou abriria a rede por fora da jaula: `--disable-blink-features=AutomationControlled`
+  (o `navigator.webdriver` fica verdadeiro), `--no-proxy-server`, `--proxy-bypass-list`, `--host-resolver-rules`,
+  `--load-extension`, `--disable-extensions-except`, `--disable-web-security` e o `--remote-debugging-address` que não
+  seja 127.0.0.1. Recusa (código 2) `--user-data-dir` fora de /home/jaula: o perfil de um projeto não é escolha de quem
+  chama.
+- FORÇA `--enable-automation`, o proxy da jaula (`--proxy-server`, o único caminho de rede) e o ECH desligado
+  (`--disable-features=EncryptedClientHello`: o proxy recusa ClientHello com ECH, porque não veria o nome do site).
+- Nada mais: o User-Agent não é trocado, o esquema de cores fica no padrão e o Chromium não é tocado.
+Sem disfarce nem evasão: este programa não esconde a automação, e não resolve desafio nenhum; o desafio (CAPTCHA) é do
+titular, com a própria mão, na janela. Só biblioteca padrão; sem rede.
+"""
+
+import os
+import posixpath
+import re
+import sys
+from pathlib import Path
+
+PROXY = "http://127.0.0.1:3128"
+CASA_DA_JAULA = "/home/jaula"
+ECH = "EncryptedClientHello"
+SEM_VALOR = frozenset({"--no-proxy-server", "--disable-web-security"})
+# O --proxy-server de quem chama também sai: entra o da jaula, ao fim.
+COM_VALOR = frozenset({"--proxy-server", "--proxy-bypass-list", "--host-resolver-rules", "--load-extension",
+                       "--disable-extensions-except"})
+REVISAO = re.compile(r"chromium-([0-9]+)\Z")
+
+
+def _lista(valor: str) -> list[str]:
+    return [t for t in valor.split(",") if t]
+
+
+def filtrar(argv: list[str]) -> tuple[list[str], str | None]:
+    """(argumentos finais, None) ou ([], motivo da recusa). Pura: não toca em nada."""
+    saida, desligadas = [], []
+    for arg in argv:
+        nome, igual, valor = arg.partition("=")
+        if nome in SEM_VALOR or nome in COM_VALOR:
+            continue
+        if nome == "--remote-debugging-address" and valor != "127.0.0.1":
+            continue
+        if nome == "--user-data-dir":
+            pasta = posixpath.normpath(valor) if igual and valor else ""
+            if pasta != CASA_DA_JAULA and not pasta.startswith(CASA_DA_JAULA + "/"):
+                return [], f"--user-data-dir fora de {CASA_DA_JAULA} (o perfil não é escolha de quem chama)"
+        if nome == "--disable-blink-features":
+            restantes = [t for t in _lista(valor) if t != "AutomationControlled"]
+            if restantes:
+                saida.append(nome + "=" + ",".join(restantes))
+            continue
+        if nome == "--disable-features":
+            desligadas += _lista(valor)
+            continue
+        if nome == "--enable-features":
+            restantes = [t for t in _lista(valor) if t != ECH]
+            if restantes:
+                saida.append(nome + "=" + ",".join(restantes))
+            continue
+        if nome != "--enable-automation":
+            saida.append(arg)
+    desligadas += [ECH] if ECH not in desligadas else []
+    return [*saida, "--enable-automation", "--disable-features=" + ",".join(desligadas), "--proxy-server=" + PROXY], None
+
+
+def chromium_do_playwright(base: str) -> str | None:
+    """O `chrome` mais novo de `<base>/chromium-<revisão>/chrome-linux*/` (nunca o headless_shell: ele é de outra pasta)."""
+    achados = []
+    for caminho in Path(base).glob("chromium-*/chrome-linux*/chrome"):
+        m = REVISAO.fullmatch(caminho.parents[1].name)
+        if m and caminho.is_file() and os.access(caminho, os.X_OK):
+            achados.append((int(m.group(1)), str(caminho)))
+    return max(achados)[1] if achados else None
+
+
+def main(argv: list[str] | None = None, ambiente=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    ambiente = os.environ if ambiente is None else ambiente
+    args, recusa = filtrar(argv)
+    if recusa:
+        print(f"chromium-sem-disfarce: {recusa}", file=sys.stderr)
+        return 2
+    real = chromium_do_playwright(ambiente.get("PLAYWRIGHT_BROWSERS_PATH", ""))
+    if real is None:
+        print("chromium-sem-disfarce: o Chromium do Playwright não está instalado (preparar-wsl.sh, com sudo)", file=sys.stderr)
+        return 127
+    os.execv(real, [real, *args])
+    return 127
+
+
+if __name__ == "__main__":
+    sys.exit(main())

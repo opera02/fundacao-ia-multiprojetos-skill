@@ -17,6 +17,12 @@ projeto, `state/`, a chave do titular) e levá-lo para onde a sessão o veja. Po
    a proposta aceita: um conteúdo trocado no caminho é recusado mesmo onde o exame tem janela);
 4. aplica o modo (fora do Windows) e renomeia para o destino, que não pode existir.
 
+Destino por descritor de pasta (`descer_pastas` e `pasta_fd=`, só POSIX; revisão de segurança da 1.7.11, F2): quando a pasta
+do destino está dentro de uma árvore que a sessão também grava (a volta da saída da jaula para `projects/<p>/outputs/`), o
+caminho pode ser trocado por ligação entre a conferência e a gravação. `descer_pastas` abre cada pasta com
+`O_DIRECTORY|O_NOFOLLOW` a partir da anterior e devolve o descritor da última; `copiar_conferindo(..., pasta_fd=fd)` cria o
+temporário e renomeia relativos a esse descritor (`dir_fd`), então uma troca depois da abertura não muda onde o arquivo cai.
+
 Erro: `CopiaRecusada` (subclasse de `OSError`); o temporário é apagado e nada fica no destino. A pasta do destino é
 de quem chama (ex.: criada por `gravacao_segura.pasta_sem_ligacao`): aqui só se confere que ela é pasta e não
 ligação. Limite (o mesmo do kit): no Windows não há `O_NOFOLLOW` nem abertura por descritor de pasta; a defesa é o
@@ -73,6 +79,35 @@ def _abrir_por_descritor(base: Path, partes: list[str]) -> int:
         return os.open(partes[-1], os.O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, dir_fd=fd)
     finally:
         os.close(fd)
+
+
+def descer_pastas(base, partes: list[str], *, criar: bool = False, ultima_nova: bool = False) -> int:
+    """POSIX: descritor da pasta `base/partes...`, cada nível aberto com `O_DIRECTORY|O_NOFOLLOW` relativo ao anterior (ligação
+    no caminho é recusada, sem janela entre exame e abertura). `base`: caminho ou descritor de pasta (esse não é fechado).
+    `criar`: cria (0o755, por `dir_fd`) a parte que falta. `ultima_nova`: a última parte tem de ser criada agora (se já existe,
+    `FileExistsError`). Erro de sistema (`OSError`): nada fica aberto."""
+    if not _POR_DESCRITOR:
+        raise CopiaRecusada("abrir pasta por descritor só existe no POSIX")
+    flags = os.O_RDONLY | os.O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+    fd = os.dup(base) if isinstance(base, int) else os.open(base, flags)
+    try:
+        for i, parte in enumerate(partes):
+            if parte in ("", ".", "..") or "/" in parte:
+                raise CopiaRecusada(f"{parte!r}: parte de caminho inválida")
+            nova = ultima_nova and i == len(partes) - 1
+            if criar or nova:
+                try:
+                    os.mkdir(parte, 0o755, dir_fd=fd)
+                except FileExistsError:
+                    if nova:
+                        raise
+            novo = os.open(parte, flags, dir_fd=fd)
+            os.close(fd)
+            fd = novo
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def _conferir_aberto(fd: int, nome: str, antes: os.stat_result | None) -> None:
@@ -142,26 +177,43 @@ def hash_conferido(origem, dentro_de=None) -> dict:
 
 
 def copiar_conferindo(origem, destino, *, sha256_esperado: str | None = None, modo: int | None = 0o444,
-                      dentro_de=None) -> dict:
+                      dentro_de=None, pasta_fd: int | None = None) -> dict:
     """Copia `origem` para `destino` (que não pode existir) pelo caminho conferido; devolve sha256, bytes e o modo
-    aplicado (None no Windows). `modo=None` guarda o bit de execução da origem (`modo & 0o755`)."""
-    destino = Path(os.path.abspath(destino))
-    if os.path.lexists(destino):
-        raise CopiaRecusada(f"{destino.name}: o destino já existe")
-    try:
-        st_pasta = os.lstat(destino.parent)
-    except OSError as exc:
-        raise CopiaRecusada(f"{destino.parent}: a pasta do destino não existe ({_motivo(exc)})") from None
-    if e_ligacao(st_pasta) or not stat.S_ISDIR(st_pasta.st_mode):
-        raise CopiaRecusada(f"{destino.parent}: a pasta do destino é ligação ou não é pasta")
+    aplicado (None no Windows). `modo=None` guarda o bit de execução da origem (`modo & 0o755`). `pasta_fd`: o descritor da
+    pasta do destino (de `descer_pastas`); então só o NOME de `destino` vale e tudo (existência, temporário, modo, renomeação)
+    é relativo a esse descritor, sem seguir caminho."""
+    destino = Path(os.path.abspath(destino)) if pasta_fd is None else Path(Path(destino).name)
+    if pasta_fd is not None:
+        try:
+            st_pasta = os.fstat(pasta_fd)
+        except OSError as exc:
+            raise CopiaRecusada(f"{destino.name}: a pasta do destino não abriu ({_motivo(exc)})") from None
+        if not stat.S_ISDIR(st_pasta.st_mode):
+            raise CopiaRecusada(f"{destino.name}: a pasta do destino não é pasta")
+        try:
+            os.stat(destino.name, dir_fd=pasta_fd, follow_symlinks=False)
+            raise CopiaRecusada(f"{destino.name}: o destino já existe")
+        except FileNotFoundError:
+            pass
+        temp = Path(f"{PREFIXO_TEMP}{os.urandom(6).hex()}.tmp")
+    else:
+        if os.path.lexists(destino):
+            raise CopiaRecusada(f"{destino.name}: o destino já existe")
+        try:
+            st_pasta = os.lstat(destino.parent)
+        except OSError as exc:
+            raise CopiaRecusada(f"{destino.parent}: a pasta do destino não existe ({_motivo(exc)})") from None
+        if e_ligacao(st_pasta) or not stat.S_ISDIR(st_pasta.st_mode):
+            raise CopiaRecusada(f"{destino.parent}: a pasta do destino é ligação ou não é pasta")
+        temp = destino.parent / f"{PREFIXO_TEMP}{os.urandom(6).hex()}.tmp"
     fd = abrir_comum(origem, dentro_de)
-    temp = destino.parent / f"{PREFIXO_TEMP}{os.urandom(6).hex()}.tmp"
     criado = False
     try:
         aplicado = None if os.name == "nt" else (
             modo if modo is not None else stat.S_IMODE(os.fstat(fd).st_mode) & 0o755)
         try:
-            saida = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | O_BINARY | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            saida = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | O_BINARY | O_NOFOLLOW | O_CLOEXEC, 0o600,
+                            dir_fd=pasta_fd)
         except OSError as exc:
             raise CopiaRecusada(f"{destino.name}: não deu para criar o temporário ({_motivo(exc)})") from None
         criado = True
@@ -174,17 +226,25 @@ def copiar_conferindo(origem, destino, *, sha256_esperado: str | None = None, mo
                 while vista:
                     vista = vista[os.write(saida, vista):]
             os.fsync(saida)
+            if aplicado is not None:   # pelo descritor aberto (O_EXCL|O_NOFOLLOW): o chmod por nome seguiria uma ligação posta no lugar
+                os.fchmod(saida, aplicado)
         finally:
             os.close(saida)
         sha = h.hexdigest()
         if sha256_esperado is not None and sha != sha256_esperado.strip().lower():
             raise CopiaRecusada(f"{Path(origem).name}: o SHA-256 lido ({sha[:12]}...) difere do esperado "
                                 f"({sha256_esperado.strip().lower()[:12]}...): nada foi gravado")
-        if aplicado is not None:
-            os.chmod(temp, aplicado)
-        if os.path.lexists(destino):
-            raise CopiaRecusada(f"{destino.name}: o destino apareceu durante a cópia")
-        os.rename(temp, destino)  # no Windows falha se o destino existir; no POSIX, a conferência logo acima
+        if pasta_fd is None:
+            if os.path.lexists(destino):
+                raise CopiaRecusada(f"{destino.name}: o destino apareceu durante a cópia")
+            os.rename(temp, destino)  # no Windows falha se o destino existir; no POSIX, a conferência logo acima
+        else:
+            try:
+                os.stat(destino.name, dir_fd=pasta_fd, follow_symlinks=False)
+                raise CopiaRecusada(f"{destino.name}: o destino apareceu durante a cópia")
+            except FileNotFoundError:
+                pass
+            os.rename(temp, destino.name, src_dir_fd=pasta_fd, dst_dir_fd=pasta_fd)
         criado = False
     except CopiaRecusada:
         raise
@@ -194,7 +254,7 @@ def copiar_conferindo(origem, destino, *, sha256_esperado: str | None = None, mo
         os.close(fd)
         if criado:
             try:
-                os.unlink(temp)
+                os.unlink(temp, dir_fd=pasta_fd)
             except OSError:
                 pass
     return {"sha256": sha, "bytes": n, "modo": aplicado}
